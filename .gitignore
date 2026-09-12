@@ -1,0 +1,17 @@
+# 依赖与临时产物
+node_modules/
+.pnpm-store/
+*.log
+
+# 本机运行时状态（凭据等绝不入库；正常都在 $DSH_HOME/dsh-pocket 下，这里再兜一层）
+settings.json
+token
+token-lan
+bin/cloudflared*
+.upstream/
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
