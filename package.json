@@ -19,12 +19,16 @@
     "client",
     "cordis.patch.yml",
     "README.md",
-    "LICENSE"
+    "README.en.md",
+    "LICENSE",
+    "NOTICE.md",
+    "SECURITY-NOTES.md",
+    "verify-security.mjs"
   ],
   "scripts": {
     "build:client": "node client/build.mjs",
-    "release": "semantic-release",
-    "test": "node --test --test-timeout=30000 \"test/*.test.js\""
+    "verify:security": "node verify-security.mjs",
+    "test": "node verify-security.mjs"
   },
   "dependencies": {
     "qrcode": "^1.5.4",
