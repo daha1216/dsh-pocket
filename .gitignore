@@ -1,14 +1,21 @@
-# 依赖与临时产物
+# 依赖与构建产物
 node_modules/
 .pnpm-store/
 *.log
 
-# 本机运行时状态（凭据等绝不入库；正常都在 $DSH_HOME/dsh-pocket 下，这里再兜一层）
+# 本机运行时状态（凭据与设备记录绝不入库；正常都在 $DSH_HOME/dsh-pocket 下，这里再兜一层）
 settings.json
+devices.json
+vapid.json
 token
 token-lan
+token*
 bin/cloudflared*
 .upstream/
+
+# 临时 / 损坏残留
+*.tmp
+*.corrupt
 
 # 编辑器 / 系统
 .DS_Store

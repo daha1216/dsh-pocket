@@ -53,15 +53,19 @@ import { fadeOverlayOut } from './overlay-backdrop-fab.ts'
 /**
  * Start-zone width as a FRACTION of the viewport width: the pointer counts
  * as "from the left edge" anywhere inside the left (RTL: right) strip this
- * wide. Fifth tuning pass (2026-08-29, user preference "识别区再扩宽到约占
- * 总宽的 45%"): the fixed 96px strip still missed landings beyond it, and
- * the user wants the sloppy, anywhere-in-the-left-half feel of native apps.
+ * wide. The zone STAYS at 45% (2026-09-11 user decision): a brief seventh
+ * pass shrank it to 0.25 for the draggable-widget conflict and was rolled
+ * back the same day — the user keeps the "anywhere in the left half" feel
+ * and the conflict is handled by yield signals instead (the
+ * data-mobile-nav-dragging cooperation mark + the floating-widget positional
+ * heuristic, see dragMarkYields/findFloatingWidget).
  * History of the constant: 24px (hotspot era) → 48px (third pass, fixed
  * "识别成对话内容滚动") → 96px (fourth pass — at that point the zone also
  * finally cleared Chrome Android's EDGE_WIDTH_DP=48dp history-navigation
  * trigger strip, whose strokes the browser claims and pointercancels; the
  * browser gesture itself is suppressed by the root overscroll-behavior-x:
- * none rule in layout.css.ts) → 0.45×viewport (fifth pass, this value).
+ * none rule in layout.css.ts) → 0.45×viewport (fifth pass; brief 0.25
+ * experiment rolled back) — this value.
  * Safety at this width: the release classification (0.16×w travel OR
  * 0.45px/ms velocity) still gates the commit, so widening cannot open on a
  * tap; vertical strokes reset at axis lock (≤8px of prevented movement) and
@@ -483,6 +487,87 @@ function onCooldown(): boolean {
 }
 
 /**
+ * Draggable-element yield mark (2026-09-11, 桌宠拖动冲突 D 方案的 C 侧):
+ * a dragging component (desktop pet, floating ball, drag-to-reorder, …)
+ * marks itself with `data-mobile-nav-dragging` while its drag is live — on
+ * the element the pointer is holding (or any ancestor), or on
+ * documentElement/body as a global mark when the dragged node moves around
+ * or the dragger prefers not to touch the node tree. The gesture layer
+ * reads the mark at pointerdown AND at every axis-lock attempt before the
+ * stroke locks: a mark present at either point yields the whole stroke (no
+ * drawer arm, no touchmove preventDefault) because the two layers would
+ * otherwise both answer the same pointer stream — the exact bug the probe
+ * reproduces (draggable-conflict-probe pet.t1: a 56px floating ball dragged
+ * rightward inside the fifth-pass 45% zone opened the drawer mid-drag).
+ * Semantics mirror selectionOwnsStroke: the mark must be up by the first
+ * few move events (a pointerdown handler is the natural place); once the
+ * stroke axis-locks the gesture stays committed — a mark appearing
+ * mid-locked-stroke does not unwind an already-armed open follow.
+ */
+function dragMarkYields(event: PointerEvent): boolean {
+  if (document.documentElement.hasAttribute('data-mobile-nav-dragging')) return true
+  if (document.body.hasAttribute('data-mobile-nav-dragging')) return true
+  return (
+    event.target instanceof Element &&
+    event.target.closest('[data-mobile-nav-dragging]') !== null
+  )
+}
+
+/** Upper bound (px) of the "small floating widget" positional heuristic.
+ * The real-world reference is dsh-pet's floating ball (kz2Bea_float,
+ * position:fixed, measured 148x160 on the live profile page) — 160 would
+ * sit exactly on that widget's edge; 200 leaves headroom for sibling
+ * plugin widgets while a full-screen overlay (backdrop, sheets, dialogs)
+ * still cannot pass. */
+const FLOATING_WIDGET_MAX_PX = 200
+
+/**
+ * Floating-widget positional yield (2026-09-11, 悬浮窗拖动冲突 B 侧): plugins
+ * ship draggable floating widgets (desktop-pet / floating-ball / draggable
+ * panel shapes) that carry NO standard "draggable" DOM mark, yet the user
+ * presses the widget itself — so the stroke's start target sits inside that
+ * widget's layer. Draggable widgets almost always live in a SMALL
+ * freely-positioned layer (position: fixed | absolute, own box ≤ 160px)
+ * hovering above the page, so walk the ancestor chain from the event target:
+ * the first small positioned ancestor counts as a floating widget and the
+ * stroke yields (no arm, no touchmove preventDefault). Pairs with
+ * dragMarkYields (cooperation mark) which needs no shape guessing.
+ * Excluded: anything inside our own frame subtree — the FAB / backdrop /
+ * drawer content carry their own gesture semantics and must never be
+ * misread as floating widgets (the closed-state FAB sits in the start zone).
+ * ponytail: no DOM-standard draggable signal exists; shape ≈ draggable is an
+ * approximation with a known ceiling — a STATIC small positioned element
+ * (e.g. a message badge) also yields, costing a stroke start under a
+ * ≤160px dot; a REAL widget that misses (bigger layer, static positioning)
+ * upgrades via the data-mobile-nav-dragging mark or by raising the cap.
+ */
+function findFloatingWidget(target: Element): Element | null {
+  if (target.closest('[data-mobile-nav="frame"]') !== null) return null
+  let el: Element | null = target
+  while (el !== null) {
+    if (el instanceof HTMLElement) {
+      const cs = getComputedStyle(el)
+      if (
+        (cs.position === 'fixed' || cs.position === 'absolute') &&
+        el.offsetWidth <= FLOATING_WIDGET_MAX_PX &&
+        el.offsetHeight <= FLOATING_WIDGET_MAX_PX
+      ) {
+        return el
+      }
+    }
+    el = el.parentElement
+  }
+  return null
+}
+
+function floatingWidgetYields(event: PointerEvent): boolean {
+  return (
+    event.target instanceof Element &&
+    findFloatingWidget(event.target) !== null
+  )
+}
+
+/**
  * Cache the follow geometry for a freshly locked stroke. Runs ONCE per
  * stroke (one getComputedStyle, plus one getBoundingClientRect only for the
  * cold-start fallback); the per-move path afterwards is write-only.
@@ -792,6 +877,14 @@ function beginStroke(
   // selection everywhere, and backdrop tap-to-close is unaffected (a tap
   // never reaches tryLock).
   if (selectionOwnsStroke()) return false
+  // A live draggable (data-mobile-nav-dragging, see dragMarkYields) owns the
+  // stroke: yield before any geometric test so the drawer cannot arm for a
+  // drag that starts inside the start zone.
+  if (dragMarkYields(event)) return false
+  // Plugin-shipped draggable floating widgets (pet / floating-ball shapes
+  // without any cooperation mark) yield the same way, via the positional
+  // heuristic — the user pressed the widget itself.
+  if (floatingWidgetYields(event)) return false
   if (!(event.target instanceof Element)) return false
   // A stroke beginning inside a genuinely horizontally scrollable container
   // belongs to that scroller (the stats line, a message code block, any
@@ -844,6 +937,14 @@ function tryLock(event: PointerEvent): boolean {
   const dx = event.clientX - startX
   const dy = event.clientY - startY
   if (Math.max(Math.abs(dx), Math.abs(dy)) < LOCK_PX) return false
+  // Second timing window for the drag mark (same pattern as the selection
+  // check in onPointerMove): the dragger often raises the mark in its own
+  // pointerdown/move handler, i.e. AFTER our beginStroke ran. Re-check at
+  // every lock attempt so the stroke yields before the axis locks.
+  if (dragMarkYields(event) || floatingWidgetYields(event)) {
+    reset()
+    return false
+  }
   if (Math.abs(dx) <= Math.abs(dy)) {
     // Vertical-dominant: hand the touch back to scrolling.
     reset()

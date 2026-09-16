@@ -99,6 +99,38 @@ export function mobileApply(ctx: ClientContext): void {
 
   // ---- pocket 附加层 ----
 
+  // 移动端缩放锁定（2026-09-14 用户要求）：禁双击放大与捏合缩放，保留滑动滚动。
+  // iOS Safari ≥10 无视 viewport 的 user-scalable=no，捏合缩放靠拦截 gesturestart/
+  // gesturechange 阻断；双击放大由 touch-action: manipulation 消除（CSS 限窄屏，
+  // 不碰内部滚动区）。Android/Chrome 尊重 meta 的 maximum-scale=1。只挂窄屏，
+  // 旋转后需刷新生效（与本层其它 pocket 附加一致）。
+  ctx.effect(() => {
+    if (!narrow.matches) return () => {}
+    const viewport = document.querySelector('meta[name="viewport"]')
+    const originalContent = viewport?.getAttribute('content')
+    if (viewport !== null) {
+      let content = originalContent ?? ''
+      if (content !== '') content += ', '
+      if (!/maximum-scales*=/.test(content)) content += 'maximum-scale=1'
+      if (!/user-scalables*=/.test(content)) content += ', user-scalable=no'
+      viewport.setAttribute('content', content)
+    }
+    const prevent = (event: Event): void => { event.preventDefault() }
+    document.addEventListener('gesturestart', prevent, { passive: false })
+    document.addEventListener('gesturechange', prevent, { passive: false })
+    const style = document.createElement('style')
+    style.dataset.plugin = 'dsh-pocket'
+    style.dataset.pluginCss = 'dsh-pocket/mobile-zoom-lock.css'
+    style.textContent = '@media (max-width: 1023px) { html { touch-action: manipulation; } }'
+    document.head.appendChild(style)
+    return () => {
+      if (viewport !== null && originalContent !== null) viewport.setAttribute('content', originalContent)
+      document.removeEventListener('gesturestart', prevent)
+      document.removeEventListener('gesturechange', prevent)
+      style.remove()
+    }
+  }, 'dsh-pocket: mobile zoom lock')
+
   // explorer 可用性标记（issue #48）：上游假定宿主装了 dsh-web-ui（aionui 列），
   // 官方 DSH 没有。探测列存在与否标到 frame 上，配 POCKET_EXTRA_CSS 隐藏死按钮。
   ctx.effect(() => {

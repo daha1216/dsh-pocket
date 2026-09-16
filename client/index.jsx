@@ -84,6 +84,8 @@ function PocketSettingsTab({ rpcCall, t }) {
         }
       }
     } catch { /* 忽略瞬时失败 */ }
+    // 已授权设备：同一轮询里取（旧宿主没有这个 endpoint → 该区块不渲染）
+    try { setDevView(await call(POCKET_ENDPOINTS.devicesList, {})); } catch { /* 忽略 */ }
   };
 
   useEffect(() => {
@@ -163,11 +165,16 @@ function PocketSettingsTab({ rpcCall, t }) {
     }
   };
 
-  // 安全免责声明（issue #31）：每次开启公网都必须先弹框勾选「我已知情」。
-  // 服务端同样强制（tunnel.start 需 disclaimer: true），防绕过前端直接调 RPC。
+  // 安全免责声明（issue #31；本轮可配置 never | once | always，见设置页「安全声明」行）：
+  //   - never ：直接开启（不弹）；
+  //   - once  ：首次弹一次，勾选后服务端记住（status.disclaimerAckedAt > 0），之后直接开；
+  //   - always：每次开启都弹。
+  // 服务端同样按模式强制校验（tunnel.start），防绕过前端直接调 RPC。
 
   const [disclaimerOpen, setDisclaimerOpen] = useState(false);
   const [disclaimerChecked, setDisclaimerChecked] = useState(false);
+  /** 当前声明模式（服务端 status 为准；旧宿主没有该字段 → 按 once 处理）。 */
+  const disclaimerMode = status?.disclaimerMode ?? 'once';
 
   const doStartTunnel = async () => {
     // 命名隧道模式：Token/域名没配齐就不发起（服务端同样会拒绝）
@@ -188,7 +195,12 @@ function PocketSettingsTab({ rpcCall, t }) {
     }
   };
   const startTunnel = () => {
-    // 每次开启都弹免责确认（勾选后才能继续）
+    // never 直接开；once 且已确认过直接开；其余（always / once 首开）弹框确认。
+    const mode = status?.disclaimerMode ?? 'once';
+    if (mode === 'never' || (mode === 'once' && (status?.disclaimerAckedAt ?? 0) > 0)) {
+      doStartTunnel();
+      return;
+    }
     setDisclaimerChecked(false);
     setDisclaimerOpen(true);
   };
@@ -196,6 +208,14 @@ function PocketSettingsTab({ rpcCall, t }) {
     if (!disclaimerChecked) return; // 未勾选不允许
     setDisclaimerOpen(false);
     doStartTunnel();
+  };
+  /** 切换声明模式（服务端枚举校验；非法值直接报错，不静默降级）。 */
+  const applyDisclaimerMode = async (mode) => {
+    try {
+      setStatus(await call(POCKET_ENDPOINTS.disclaimerSetMode, { mode }));
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
   const stopTunnel = async () => {
@@ -369,6 +389,239 @@ function PocketSettingsTab({ rpcCall, t }) {
       h('span', { style: { fontSize: 13 } }, label), control), extra ?? null);
   // 高级（手动选地址）展开态
   const [advOpen, setAdvOpen] = useState(false);
+
+  // ---------- 已授权设备（本轮新增） ----------
+  // 每台设备一行：名称 + 范围徽标（局域网/公网）+ 在线/活跃状态 + IP + 「本机」标记；
+  // 操作：改名（行内编辑）/ 下线（确认弹窗）；区块右上角是「下线其他设备」（确认弹窗）。
+  // 数据来自 devices.list（宿主按请求 cookie 认定「本机」，代理每 3 秒把在线状态刷新一次）。
+  const [devView, setDevView] = useState(null);        // { devices, currentId, epoch } | null
+  const [devEdit, setDevEdit] = useState(null);        // { id, name, err } | null（行内改名）
+  const [devConfirm, setDevConfirm] = useState(null);  // 待确认下线的设备 | null
+  const [othersConfirm, setOthersConfirm] = useState(false);
+  const devLabel = (d) => (d.legacy ? t('deviceLegacy') : (d.label || d.uaType || t('unknownError')));
+  // 相对时间：拿 state 里的 now 参与计算，秒级 tick 会驱动重渲染（不额外开定时器）
+  const relActive = (ts) => {
+    const s = Math.max(0, Math.floor((now - (ts || 0)) / 1000));
+    if (s < 60) return t('deviceJustNow');
+    const m = Math.floor(s / 60);
+    if (m < 60) return fmt(t, 'deviceMinAgo', { n: m });
+    const hh = Math.floor(m / 60);
+    if (hh < 24) return fmt(t, 'deviceHourAgo', { n: hh });
+    return fmt(t, 'deviceDayAgo', { n: Math.floor(hh / 24) });
+  };
+  const chip = (text, strong) => h('span', {
+    style: {
+      fontSize: 11, lineHeight: 1.6, padding: '0 6px', borderRadius: 999, whiteSpace: 'nowrap',
+      border: '1px solid var(--dsw-alias-border-l2,#e5e7eb)',
+      color: strong ? 'var(--dsw-alias-brand-primary,#4f6ef7)' : 'var(--dsw-alias-label-secondary,#6b7280)',
+      background: 'var(--dsw-alias-bg-layer-2,#f3f4f6)',
+    },
+  }, text);
+  const doRename = async (id) => {
+    try {
+      setDevView(await call(POCKET_ENDPOINTS.devicesRename, { id, name: devEdit?.name ?? '' }));
+      setDevEdit(null);
+      showToast(t('deviceRenamed'));
+    } catch (err) {
+      setDevEdit((e) => ({ ...e, err: err.message }));
+    }
+  };
+  const doRevoke = async () => {
+    const dev = devConfirm;
+    setDevConfirm(null);
+    if (!dev) return;
+    try {
+      setDevView(await call(POCKET_ENDPOINTS.devicesRevoke, { id: dev.id }));
+      showToast(t('deviceRevoked'));
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+  const doRevokeOthers = async () => {
+    setOthersConfirm(false);
+    try {
+      setDevView(await call(POCKET_ENDPOINTS.devicesRevokeOthers, {}));
+      showToast(t('deviceOthersRevoked'));
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+  // 单台设备行（窄屏排得下：上行名称/徽标，下行状态/IP，操作用 sm 按钮换行）
+  const devRow = (d) => h('div', { style: { borderTop: '1px solid var(--dsw-alias-border-l2,#e5e7eb)', paddingTop: 9, marginTop: 9 } },
+    h('div', { style: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' } },
+      h('div', { style: { flex: '1 1 150px', minWidth: 0 } },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } },
+          h('span', { style: { fontSize: 13, fontWeight: 500, wordBreak: 'break-word' } }, devLabel(d)),
+          d.current ? chip(t('deviceThis'), true) : null,
+        ),
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 3, ...styles.muted } },
+          // scope 徽标始终显示真实 scope（legacy 的名称已经写在上面那行，徽标不再重复「旧设备」）
+          chip(d.scope === 'public' ? t('deviceScopePublic') : t('deviceScopeLan')),
+          h('span', null, d.online ? `🟢 ${t('deviceOnline')}` : `🕒 ${relActive(d.lastActive)}`),
+          d.lastIp ? h('span', { style: { fontFamily: 'ui-monospace,Menlo,monospace' } }, d.lastIp) : null,
+        ),
+      ),
+      d.revocable
+        ? h('div', { style: { display: 'flex', gap: 6, flexShrink: 0 } },
+          h('button', {
+            style: { ...styles.btn, height: 26, padding: '0 10px', fontSize: 12 },
+            onClick: () => setDevEdit({ id: d.id, name: d.customName ?? '', err: null }),
+          }, t('deviceRename')),
+          h('button', {
+            style: { ...styles.btn, height: 26, padding: '0 10px', fontSize: 12, color: 'var(--dsw-alias-state-error-primary,#dc2626)' },
+            onClick: () => setDevConfirm(d),
+          }, t('deviceRevoke')),
+        )
+        : null,
+    ),
+    d.legacy ? h('div', { style: { ...styles.muted, marginTop: 4 } }, t('deviceLegacyHint')) : null,
+    devEdit?.id === d.id
+      ? h('div', null,
+        h('div', { style: { marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } },
+          h('input', {
+            style: { flex: '1 1 120px', minWidth: 0, padding: '4px 8px', fontSize: 13, border: '1px solid var(--dsw-alias-border-l2,#d1d5db)', borderRadius: 6, outline: 'none' },
+            placeholder: t('deviceRenameHint'),
+            maxLength: 32,
+            value: devEdit.name,
+            autoFocus: true,
+            onChange: (e) => setDevEdit((x) => ({ ...x, name: e.target.value, err: null })),
+            onKeyDown: (e) => { if (e.key === 'Enter') doRename(d.id); if (e.key === 'Escape') setDevEdit(null); },
+          }),
+          h('button', { style: { ...styles.btn, height: 26, padding: '0 10px', fontSize: 12 }, onClick: () => doRename(d.id) }, t('save')),
+          h('button', { style: { ...styles.btn, height: 26, padding: '0 10px', fontSize: 12 }, onClick: () => setDevEdit(null) }, t('cancel')),
+        ),
+        devEdit.err ? h('div', { style: { marginTop: 4, fontSize: 12, color: 'var(--dsw-alias-state-error-primary,#dc2626)' } }, errText(devEdit.err)) : null,
+      )
+      : null,
+  );
+
+  // ---------- 通知（R3：Web Push） ----------
+  // 能力链：安全上下文 → Service Worker → PushManager → Notification。
+  // 三个典型不可用场景各有明确引导（规格 C）：
+  //   - http://IP（局域网明文）→ 没有安全上下文，通知无法注册：引导走公网 HTTPS 入口；
+  //   - iOS Safari 标签页（未「添加到主屏幕」）→ 没有 PushManager：引导先添加到主屏幕；
+  //   - 桌面 Firefox/旧浏览器不支持 → 如实说不支持。
+  // 订阅写在「当前设备」（服务端按请求 cookie 识别），所以状态也从 devices.list 的本机行读。
+  const [caps, setCaps] = useState(null);          // 能力探测结果
+  const [notifyBusy, setNotifyBusy] = useState(false);
+  const [notifyTesting, setNotifyTesting] = useState(false);
+  const [notifyMsg, setNotifyMsg] = useState(null); // 通知区块的即时反馈（成功/失败文案）
+  useEffect(() => {
+    const detect = () => {
+      const ua = navigator.userAgent || '';
+      // iPadOS 13+ 的 Safari 自称 Macintosh：用 maxTouchPoints 兜底识别
+      const ios = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1);
+      const standalone = window.navigator.standalone === true
+        || Boolean(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+      setCaps({
+        secure: window.isSecureContext === true,
+        sw: 'serviceWorker' in navigator,
+        push: 'PushManager' in window,
+        notif: typeof Notification !== 'undefined',
+        permission: typeof Notification !== 'undefined' ? Notification.permission : 'unsupported',
+        ios,
+        standalone,
+        origin: window.location.origin,
+      });
+    };
+    detect();
+    // 权限可能在系统/站点设置里被改（回前台后自愈），低频轮询即可
+    const t = setInterval(detect, 4000);
+    return () => clearInterval(t);
+  }, []);
+  const curDevRow = (devView?.devices || []).find((d) => d.current) ?? null;
+  const curPush = curDevRow?.push ?? null;
+  const canNotify = Boolean(caps?.secure && caps?.sw && caps?.push && caps?.notif);
+  /** base64url → Uint8Array（applicationServerKey 要的是字节数组，不是字符串）。 */
+  const keyBytes = (b64u) => {
+    const norm = String(b64u ?? '').replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(norm + '='.repeat((4 - (norm.length % 4)) % 4));
+    const out = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  };
+  /**
+   * 「开启通知」：用户手势内三连——权限 → 注册 SW（scope /）→ pushManager.subscribe
+   * → notify.subscribe 落盘到本机设备。任何一步失败都如实报错（不假装成功）。
+   */
+  const enableNotify = async () => {
+    setNotifyBusy(true);
+    setNotifyMsg(null);
+    try {
+      if (!window.isSecureContext) throw new Error(t('notifyNeedHttps'));
+      if (!('serviceWorker' in navigator) || !('PushManager' in window) || typeof Notification === 'undefined') {
+        throw new Error(t('notifyUnsupported'));
+      }
+      const perm = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+      if (perm !== 'granted') throw new Error(perm === 'denied' ? t('notifyDenied') : t('notifySubscribeFail'));
+      const reg = await navigator.serviceWorker.register('/dsh-pocket-assets/sw.js', { scope: '/' });
+      // 必须等 SW 激活：激活前 pushManager.subscribe 会抛 InvalidStateError
+      const ready = await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('service worker not ready | Service Worker 未就绪')), 15000)),
+      ]);
+      const target = ready && ready.pushManager ? ready : reg;
+      let sub = await target.pushManager.getSubscription();
+      if (!sub) {
+        const { key } = await call(POCKET_ENDPOINTS.notifyVapidKey, {});
+        sub = await target.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) });
+      }
+      const json = typeof sub.toJSON === 'function' ? sub.toJSON() : sub;
+      const view = await call(POCKET_ENDPOINTS.notifySubscribe, {
+        subscription: { endpoint: json.endpoint, keys: { p256dh: json.keys?.p256dh, auth: json.keys?.auth } },
+        events: { turn: true, approval: true },
+      });
+      setDevView(view);
+      setNotifyMsg(t('notifyEnabled'));
+      showToast(t('notifyEnabled'));
+    } catch (err) {
+      setNotifyMsg(fmt(t, 'notifySubscribeFail', { err: (err && err.message) || String(err) }));
+    }
+    setNotifyBusy(false);
+  };
+  /** 「关闭通知」：浏览器侧退订 + 服务端清掉本机订阅。 */
+  const disableNotify = async () => {
+    setNotifyBusy(true);
+    setNotifyMsg(null);
+    try {
+      try {
+        const reg = navigator.serviceWorker?.getRegistration ? await navigator.serviceWorker.getRegistration('/') : null;
+        const sub = reg?.pushManager ? await reg.pushManager.getSubscription() : null;
+        if (sub) await sub.unsubscribe();
+      } catch { /* 浏览器退订失败不阻塞服务端清理 */ }
+      setDevView(await call(POCKET_ENDPOINTS.notifyUnsubscribe, {}));
+      setNotifyMsg(t('notifyDisabled'));
+      showToast(t('notifyDisabled'));
+    } catch (err) {
+      setNotifyMsg(fmt(t, 'notifySubscribeFail', { err: (err && err.message) || String(err) }));
+    }
+    setNotifyBusy(false);
+  };
+  /** 发送测试通知（服务端真发一条到本机；发不出去如实回报）。 */
+  const sendTestNotify = async () => {
+    setNotifyTesting(true);
+    setNotifyMsg(null);
+    try {
+      const r = await call(POCKET_ENDPOINTS.notifyTest, {});
+      setNotifyMsg(r?.sent
+        ? t('notifyTestOk')
+        : fmt(t, 'notifyTestFail', { err: `HTTP ${r?.status ?? 0}${r?.error ? ` · ${r.error}` : ''}` }));
+    } catch (err) {
+      setNotifyMsg(fmt(t, 'notifyTestFail', { err: (err && err.message) || String(err) }));
+    }
+    setNotifyTesting(false);
+  };
+  /** 事件开关（回合完成 / 等待审批）。 */
+  const toggleNotifyEvents = async (key, on) => {
+    if (!curPush) return;
+    try {
+      setNotifyBusy(true);
+      setDevView(await call(POCKET_ENDPOINTS.notifySetEvents, { events: { [key]: on } }));
+    } catch (err) {
+      setNotifyMsg((err && err.message) || String(err));
+    }
+    setNotifyBusy(false);
+  };
 
   return h('div', { style: styles.card },
     h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 } },
@@ -553,7 +806,111 @@ function PocketSettingsTab({ rpcCall, t }) {
             : null,
         )
         : null,
+      // 安全声明（本轮）：开启公网前的确认方式 —— 每次确认 / 仅首次（默认）/ 从不提示。
+      // 与公网开关是否打开无关（关闭时也能改；服务端按同一份模式校验 tunnel.start）。
+      row(t('disclaimerMode'),
+        h('select', {
+          value: disclaimerMode,
+          onChange: (e) => applyDisclaimerMode(e.target.value),
+          style: { font: 'inherit', height: 30, padding: '0 8px', borderRadius: 8, border: '1px solid var(--dsw-alias-border-l2,#d1d5db)', background: 'var(--dsw-alias-bg-layer-1,#fff)', color: 'var(--dsw-alias-label-primary,inherit)' },
+        },
+        h('option', { value: 'always' }, t('disclaimerModeAlways')),
+        h('option', { value: 'once' }, t('disclaimerModeOnce')),
+        h('option', { value: 'never' }, t('disclaimerModeNever')),
+        ),
+        h('div', { style: { ...styles.muted, marginTop: 6 } }, t('disclaimerModeHint'))),
     ),
+
+    // 已授权设备（本轮新增）：局域网 / 公网区块之后。旧宿主没有 devices.list → devView 为 null，整块不渲染
+    devView ? h('div', { style: styles.block },
+      h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' } },
+        h('span', { style: { fontWeight: 600, fontSize: 13 } }, t('devicesTitle')),
+        h('button', {
+          style: { ...styles.btn, height: 28, padding: '0 12px', fontSize: 12, color: 'var(--dsw-alias-state-error-primary,#dc2626)', flexShrink: 0 },
+          onClick: () => setOthersConfirm(true),
+        }, t('devicesRevokeOthers')),
+      ),
+      h('div', { style: { ...styles.muted, marginTop: 6 } }, t('devicesIntro')),
+      (devView.devices || []).length === 0
+        ? h('div', { style: { ...styles.muted, marginTop: 8 } }, t('devicesEmpty'))
+        : (devView.devices || []).map((d) => h('div', { key: d.id }, devRow(d))),
+    ) : null,
+
+    // 通知（R3 Web Push）：已授权设备区块之后。旧宿主没有 notify.* → 能力探测照跑，
+    // 但任何操作都会失败并给出真实错误；区块本身在 devView 存在时才渲染（同设备区块）。
+    devView ? h('div', { style: styles.block },
+      h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' } },
+        h('span', { style: { fontWeight: 600, fontSize: 13 } }, t('notifyTitle')),
+        canNotify
+          ? (curPush
+            ? h('button', {
+              style: { ...styles.btn, height: 28, padding: '0 12px', fontSize: 12 },
+              disabled: notifyBusy,
+              onClick: disableNotify,
+            }, notifyBusy ? t('notifyEnabling') : t('notifyDisable'))
+            : h('button', {
+              style: { ...styles.primary, height: 28, padding: '0 12px', fontSize: 12 },
+              disabled: notifyBusy,
+              onClick: enableNotify,
+            }, notifyBusy ? t('notifyEnabling') : t('notifyEnable')))
+          : null,
+      ),
+      h('div', { style: { ...styles.muted, marginTop: 6 } }, t('notifyIntro')),
+      // 条件引导（按优先级）：非安全上下文 → iOS 未安装 → 浏览器不支持
+      !caps
+        ? null
+        : !caps.secure
+          ? h('div', { style: { ...styles.warn, marginTop: 6 } }, t('notifyNeedHttps'))
+          : (caps.ios && !caps.standalone)
+            ? h('div', { style: { marginTop: 6 } },
+              h('div', { style: { ...styles.warn } }, t('notifyNeedInstall')),
+              h('div', { style: { ...styles.muted, marginTop: 2 } }, t('notifyNeedInstallHow')))
+            : (!caps.sw || !caps.push || !caps.notif)
+              ? h('div', { style: { ...styles.warn, marginTop: 6 } }, t('notifyUnsupported'))
+              : null,
+      // 状态：本机订阅详情 + 事件开关 + 测试
+      canNotify && curPush
+        ? h('div', { style: { marginTop: 8 } },
+          h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-secondary,#6b7280)' } },
+            fmt(t, 'notifyStatusOn', { date: new Date(curPush.addedAt || Date.now()).toLocaleDateString() })),
+          h('label', { style: { display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 8, fontSize: 13, cursor: 'pointer' } },
+            h('input', {
+              type: 'checkbox',
+              checked: curPush.events?.turn !== false,
+              disabled: notifyBusy,
+              style: { width: 16, height: 16, marginTop: 2 },
+              onChange: (e) => toggleNotifyEvents('turn', e.target.checked),
+            }),
+            h('span', null,
+              h('div', null, t('notifyEventTurn')),
+              h('div', { style: { ...styles.muted } }, t('notifyEventTurnHint')))),
+          h('label', { style: { display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 8, fontSize: 13, cursor: 'pointer' } },
+            h('input', {
+              type: 'checkbox',
+              checked: curPush.events?.approval !== false,
+              disabled: notifyBusy,
+              style: { width: 16, height: 16, marginTop: 2 },
+              onChange: (e) => toggleNotifyEvents('approval', e.target.checked),
+            }),
+            h('span', null,
+              h('div', null, t('notifyEventApproval')),
+              h('div', { style: { ...styles.muted } }, t('notifyEventApprovalHint')))),
+          h('div', { style: { marginTop: 10 } },
+            h('button', {
+              style: { ...styles.btn, height: 28, padding: '0 12px', fontSize: 12 },
+              disabled: notifyTesting || notifyBusy,
+              onClick: sendTestNotify,
+            }, notifyTesting ? t('notifyTesting') : t('notifyTest'))),
+          h('div', { style: { ...styles.muted, marginTop: 8 } }, t('notifyHintKeepOpen')))
+        : null,
+      // 没有本机身份（桌面浏览器没走过手机访问密码）→ 通知只能绑定设备，如实引导
+      canNotify && !curPush && !devView.currentId
+        ? h('div', { style: { ...styles.muted, marginTop: 8 } }, t('notifyNoDevice'))
+        : null,
+      notifyMsg
+        ? h('div', { style: { marginTop: 8, fontSize: 12, color: /^❌/.test(notifyMsg) ? 'var(--dsw-alias-state-error-primary,#dc2626)' : 'var(--dsw-alias-label-secondary,#6b7280)' } }, notifyMsg)
+        : null,
+    ) : null,
 
     error ? h('div', { style: { color: 'var(--dsw-alias-state-error-primary,#dc2626)', fontSize: 12, marginTop: 8 } }, `❌ ${errText(error)}`) : null,
 
@@ -595,11 +952,13 @@ function PocketSettingsTab({ rpcCall, t }) {
       ),
     ) : null,
 
-    // 安全免责声明弹框（issue #31）：每次开启公网访问前确认
+    // 安全免责声明弹框（issue #31）：按模式弹出（每次确认 / 仅首次 / 从不，见「安全声明」设置行）
     disclaimerOpen ? h('div', { style: { position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } },
       h('div', { style: { background: 'var(--dsw-alias-bg-layer-1,#fff)', borderRadius: 12, maxWidth: 420, width: '100%', padding: '20px 22px', boxShadow: '0 8px 32px rgba(0,0,0,.18)' } },
         h('div', { style: { fontWeight: 600, fontSize: 15, color: 'var(--dsw-alias-state-warn-primary,#b45309)', marginBottom: 10 } }, t('disclaimerTitle')),
         h('div', { style: { fontSize: 13, lineHeight: 1.7, color: 'var(--dsw-alias-label-primary,inherit)' } }, t('disclaimerBody')),
+        // 仅首次模式：明确告知「记住」与改回路径，避免用户以为再也看不到声明
+        disclaimerMode === 'once' ? h('div', { style: { ...styles.muted, marginTop: 10 } }, t('disclaimerOnceNote')) : null,
         h('label', { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, fontSize: 13, cursor: 'pointer' } },
           h('input', { type: 'checkbox', checked: disclaimerChecked, onChange: (e) => setDisclaimerChecked(e.target.checked), style: { width: 16, height: 16 } }),
           t('disclaimerAgree'),
@@ -616,6 +975,33 @@ function PocketSettingsTab({ rpcCall, t }) {
       ),
     ) : null,
 
+    // 下线设备确认弹框（单台）
+    devConfirm ? h('div', { style: { position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } },
+      h('div', { style: { background: 'var(--dsw-alias-bg-layer-1,#fff)', borderRadius: 12, maxWidth: 420, width: '100%', padding: '20px 22px', boxShadow: '0 8px 32px rgba(0,0,0,.18)' } },
+        h('div', { style: { fontWeight: 600, fontSize: 15, color: 'var(--dsw-alias-state-warn-primary,#b45309)', marginBottom: 10 } }, t('deviceRevokeTitle')),
+        h('div', { style: { fontSize: 13, lineHeight: 1.7, color: 'var(--dsw-alias-label-primary,inherit)' } },
+          fmt(t, 'deviceRevokeBody', { name: devLabel(devConfirm) })),
+        h('div', { style: { display: 'flex', gap: 8, marginTop: 16 } },
+          h('button', { style: { ...styles.btn, flex: 1 }, onClick: () => setDevConfirm(null) }, t('cancel')),
+          h('button', { style: { ...styles.primary, flex: 1, background: 'var(--dsw-alias-state-error-primary,#dc2626)' }, onClick: doRevoke }, t('deviceRevokeConfirm')),
+        ),
+      ),
+    ) : null,
+
+    // 下线其他设备确认弹框（一次踢掉除本机外的全部设备）
+    othersConfirm ? h('div', { style: { position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } },
+      h('div', { style: { background: 'var(--dsw-alias-bg-layer-1,#fff)', borderRadius: 12, maxWidth: 440, width: '100%', padding: '20px 22px', boxShadow: '0 8px 32px rgba(0,0,0,.18)' } },
+        h('div', { style: { fontWeight: 600, fontSize: 15, color: 'var(--dsw-alias-state-warn-primary,#b45309)', marginBottom: 10 } }, t('deviceRevokeOthersTitle')),
+        h('div', { style: { fontSize: 13, lineHeight: 1.7, color: 'var(--dsw-alias-label-primary,inherit)' } }, t('deviceRevokeOthersBody')),
+        // 本机识别不出来（桌面浏览器没走过 pocket 密码）→ 如实提示：这次会把自己也踢掉
+        devView?.currentId ? null : h('div', { style: { ...styles.warn, marginTop: 8 } }, t('deviceRevokeOthersAll')),
+        h('div', { style: { display: 'flex', gap: 8, marginTop: 16 } },
+          h('button', { style: { ...styles.btn, flex: 1 }, onClick: () => setOthersConfirm(false) }, t('cancel')),
+          h('button', { style: { ...styles.primary, flex: 1, background: 'var(--dsw-alias-state-error-primary,#dc2626)' }, onClick: doRevokeOthers }, t('deviceRevokeConfirm')),
+        ),
+      ),
+    ) : null,
+
     // 页面最底部：反馈入口
     h('div', { style: { ...styles.block, textAlign: 'center' } },
       h('a', { href: 'https://github.com/daha1216/dsh-pocket/issues', target: '_blank', rel: 'noreferrer', style: { fontSize: 12, color: 'var(--dsw-alias-label-secondary,#6b7280)', textDecoration: 'none' } },
@@ -625,10 +1011,10 @@ function PocketSettingsTab({ rpcCall, t }) {
 }
 
 export function apply(ctx) {
-  // 双保险：确保 connection.isLoopback 为 true（issue #58）。
-  // 主修复在代理注入的 loopback 补丁（proxy.mjs LOOPBACK_ENV_PATCH）——它在
-  // connection 模块 provide 时就改写句柄，早于 ui-settings 选择镜像模式；
-  // 这里兜底覆盖时序差异（若本插件 apply 晚于 ui-settings，则只能影响后续读者）。
+  // 兜底：确保 connection.isLoopback 为 true（issue #58）。
+  // 注：代理注入的 loopback 补丁（proxy.mjs LOOPBACK_ENV_PATCH）已在 #105 移除——
+  // 它与 DSH Desktop 2.0.4+ 客户端运行时不兼容，会令 BootHandoff 阶段白屏。
+  // #58「远程浏览器开设置页」需上游提供官方信任来源机制才能正经解决；此处仅保留兜底。
   if (ctx?.connection) {
     try {
       Object.defineProperty(ctx.connection, 'isLoopback', { value: true, writable: true, configurable: true });

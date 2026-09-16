@@ -55,6 +55,20 @@ var POCKET_ENDPOINTS = Object.freeze({
   lanSetEnabled: "lan.setEnabled",
   pinSetCustom: "pin.setCustom",
   pocketReset: "pocket.reset",
+  // 安全免责声明（本轮）：声明模式可配置 never | once | always（默认 once）
+  disclaimerSetMode: "disclaimer.setMode",
+  // 已授权设备（本轮新增）：列表 / 改名 / 单独下线 / 全部下线
+  devicesList: "devices.list",
+  devicesRename: "devices.rename",
+  devicesRevoke: "devices.revoke",
+  devicesRevokeOthers: "devices.revokeOthers",
+  // Web Push 通知（R3）：公钥 / 订阅 / 退订 / 事件开关 / 测试推送。
+  // 写入对象一律是**调用者这台设备**（按请求 cookie 识别），不做跨设备订阅管理。
+  notifyVapidKey: "notify.vapidKey",
+  notifySubscribe: "notify.subscribe",
+  notifyUnsubscribe: "notify.unsubscribe",
+  notifySetEvents: "notify.setEvents",
+  notifyTest: "notify.test",
   // 移动端「复制文件内容」（issue #17）：手机经此 RPC 让主机读取文件正文，
   // 再写入剪贴板——因为手机无法直接打开电脑上的文件。
   fileRead: "pocket.fileRead"
@@ -101,6 +115,9 @@ function redactStatus(s) {
     tunnelQr: s?.tunnelQr ?? null,
     tunnelState: s?.tunnelState ?? { phase: "idle" },
     tunnelConfig: s?.tunnelConfig ?? { mode: "quick", hostname: "", tokenSet: false },
+    // 安全免责声明（本轮）：模式 + 确认时间戳（0=未确认）——前端据此决定开启公网时弹不弹
+    disclaimerMode: s?.disclaimerMode ?? "once",
+    disclaimerAckedAt: s?.disclaimerAckedAt ?? 0,
     dshPort: s?.dshPort ?? null
   };
 }
@@ -664,9 +681,10 @@ function createFileViewerMarkerTask() {
 var NS = "mobileNav";
 var MOBILE_QUERY = "(max-width: 1023px) and (pointer: coarse)";
 var DESKTOP_QUERY = "(min-width: 1024px)";
-function installMobileEffect(ctx, label, install) {
+var TOUCH_QUERY = "(pointer: coarse)";
+function installMobileEffect(ctx, label, install, query = MOBILE_QUERY) {
   ctx.effect(() => {
-    const narrow = window.matchMedia(MOBILE_QUERY);
+    const narrow = window.matchMedia(query);
     let cleanup;
     const arm = () => {
       cleanup?.();
@@ -1183,6 +1201,17 @@ var BASE_CSS = `
   box-shadow: 0 8px 30px rgba(0, 0, 0, .22);
   animation: dsh-web-mobile-sheet-in .22s var(--ds-ease-out, ease-in-out);
 }
+/* Wide touch (tablet landscape \u22651024px, pointer coarse): the card would
+   otherwise span the full desktop viewport. Cap and center it with margins
+   (not transform, which the entry animation would override mid-play). */
+@media (min-width: 1024px) and (pointer: coarse) {
+  [data-mobile-nav="delete-dialog"] {
+    left: 0;
+    right: 0;
+    width: 420px;
+    margin-inline: auto;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   [data-mobile-nav="delete-dialog-backdrop"],
   [data-mobile-nav="delete-dialog"] {
@@ -1191,11 +1220,12 @@ var BASE_CSS = `
 }
 
 /* Floating fallback button (hero / blank phases without a session header).
-   The top clears the camera band below the status bar; when the client has
-   set viewport-fit=cover the safe-area inset moves it below the notch too. */
+   Top aligns with the session header's toggle row (that row sits 12px below
+   the frame's safe-area padding); when the client has set viewport-fit=cover
+   the safe-area inset moves it below the notch too. */
 [data-mobile-nav="fab"] {
   position: absolute;
-  top: calc(env(safe-area-inset-top, 0px) + 72px);
+  top: calc(env(safe-area-inset-top, 0px) + 12px);
   left: 10px;
   z-index: 21;
   display: inline-flex;
@@ -3292,7 +3322,12 @@ var MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
    windows \u2014 the slot renders the buttons at every width, so before this the
    only guard was the width term (2026-08-30 PC leak: split windows and OS
    display scaling dropped the CSS viewport below 1024px and armed the whole
-   mobile shell on desktop). */
+   mobile shell on desktop).
+
+   The session-delete trio (menu item + confirm/error dialog) is the ONE
+   deliberate exception: its effect arms on TOUCH_QUERY (pointer: coarse at
+   every width \u2014 large tablets in landscape), so it lives in the pointer-only
+   block below instead of this width arm. */
 
 @media (min-width: 1024px), (pointer: fine), (pointer: none) {
   [data-mobile-nav="toggle"],
@@ -3302,7 +3337,16 @@ var MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
   [data-mobile-nav="session-log"],
   [data-mobile-nav="explorer"],
   [data-mobile-nav="preview-full-toggle"],
-  [data-mobile-nav="drawer-actions"],
+  [data-mobile-nav="drawer-actions"] {
+    display: none !important;
+  }
+}
+
+/* Session-delete trio: hide on mouse-driven or pointer-less windows at ANY
+   width. No width term \u2014 the injection is armed on touch at every width, so
+   a width arm here would hide the item on wide touch (the device class the
+   injection exists for). */
+@media (pointer: fine), (pointer: none) {
   [data-mobile-nav="session-delete"],
   [data-mobile-nav="delete-dialog-backdrop"],
   [data-mobile-nav="delete-dialog"] {
@@ -3447,6 +3491,29 @@ function selectionOwnsStroke() {
 }
 function onCooldown() {
   return performance.now() < cooldownUntil;
+}
+function dragMarkYields(event) {
+  if (document.documentElement.hasAttribute("data-mobile-nav-dragging")) return true;
+  if (document.body.hasAttribute("data-mobile-nav-dragging")) return true;
+  return event.target instanceof Element && event.target.closest("[data-mobile-nav-dragging]") !== null;
+}
+var FLOATING_WIDGET_MAX_PX = 200;
+function findFloatingWidget(target) {
+  if (target.closest('[data-mobile-nav="frame"]') !== null) return null;
+  let el = target;
+  while (el !== null) {
+    if (el instanceof HTMLElement) {
+      const cs = getComputedStyle(el);
+      if ((cs.position === "fixed" || cs.position === "absolute") && el.offsetWidth <= FLOATING_WIDGET_MAX_PX && el.offsetHeight <= FLOATING_WIDGET_MAX_PX) {
+        return el;
+      }
+    }
+    el = el.parentElement;
+  }
+  return null;
+}
+function floatingWidgetYields(event) {
+  return event.target instanceof Element && findFloatingWidget(event.target) !== null;
 }
 function startFollow() {
   followDrawer = null;
@@ -3594,6 +3661,8 @@ function beginStroke(event, rtl, viewportWidthPx) {
   if (modalOpen()) return false;
   if (takeoverActive()) return false;
   if (selectionOwnsStroke()) return false;
+  if (dragMarkYields(event)) return false;
+  if (floatingWidgetYields(event)) return false;
   if (!(event.target instanceof Element)) return false;
   if (findHorizontalScroller(chainFrom(event.target)) !== null) return false;
   const open = drawerOpen();
@@ -3618,6 +3687,10 @@ function tryLock(event) {
   const dx = event.clientX - startX;
   const dy = event.clientY - startY;
   if (Math.max(Math.abs(dx), Math.abs(dy)) < LOCK_PX) return false;
+  if (dragMarkYields(event) || floatingWidgetYields(event)) {
+    reset();
+    return false;
+  }
   if (Math.abs(dx) <= Math.abs(dy)) {
     reset();
     return false;
@@ -4002,7 +4075,7 @@ function installSessionMenuDelete(ctx) {
         if (wasCurrent) ctx.sessions.clear();
         const sessions = ctx.sessions;
         await sessions.refresh?.();
-        if (wasCurrent) ctx.layout.toggleSidebar();
+        if (wasCurrent && window.matchMedia(MOBILE_QUERY).matches) ctx.layout.toggleSidebar();
       });
       frame.appendChild(backdrop);
       frame.appendChild(card);
@@ -4126,7 +4199,7 @@ function installSessionMenuDelete(ctx) {
       closeDialog();
       anchor = null;
     };
-  });
+  }, TOUCH_QUERY);
 }
 
 // client/mobile/upstream/effects/composer-keyboard-guard.ts
@@ -4714,6 +4787,35 @@ function mobileApply(ctx) {
   ctx.effect(() => {
     if (!narrow.matches) return () => {
     };
+    const viewport = document.querySelector('meta[name="viewport"]');
+    const originalContent = viewport?.getAttribute("content");
+    if (viewport !== null) {
+      let content = originalContent ?? "";
+      if (content !== "") content += ", ";
+      if (!/maximum-scales*=/.test(content)) content += "maximum-scale=1";
+      if (!/user-scalables*=/.test(content)) content += ", user-scalable=no";
+      viewport.setAttribute("content", content);
+    }
+    const prevent = (event) => {
+      event.preventDefault();
+    };
+    document.addEventListener("gesturestart", prevent, { passive: false });
+    document.addEventListener("gesturechange", prevent, { passive: false });
+    const style = document.createElement("style");
+    style.dataset.plugin = "dsh-pocket";
+    style.dataset.pluginCss = "dsh-pocket/mobile-zoom-lock.css";
+    style.textContent = "@media (max-width: 1023px) { html { touch-action: manipulation; } }";
+    document.head.appendChild(style);
+    return () => {
+      if (viewport !== null && originalContent !== null) viewport.setAttribute("content", originalContent);
+      document.removeEventListener("gesturestart", prevent);
+      document.removeEventListener("gesturechange", prevent);
+      style.remove();
+    };
+  }, "dsh-pocket: mobile zoom lock");
+  ctx.effect(() => {
+    if (!narrow.matches) return () => {
+    };
     const frame = () => document.querySelector('[data-mobile-nav="frame"]');
     const check = () => {
       const has = document.querySelector("[data-aionui-explorer-col]") !== null;
@@ -4771,9 +4873,9 @@ var zh2 = {
   "section": "\u624B\u673A\u8BBF\u95EE",
   "title": "\u{1F4F1} \u624B\u673A\u8BBF\u95EE",
   "subtitle": "\u624B\u673A\u626B\u7801\u6253\u5F00\u7684\u5C31\u662F\u7535\u8111\u4E0A\u7684\u8FD9\u4E2A\u754C\u9762\uFF0C\u5B9E\u65F6\u540C\u6B65",
-  "developer": "\u5F00\u53D1\u8005\uFF1A\u7A0B\u5E8F\u5458\u5C11\u5317\u6668\uFF08\u672C\u4ED3\u5E93\u4E3A\u5176 fork\uFF0C\u7EF4\u62A4\u8005 daha1216\uFF09",
-  "starAsk": "\u2B50 \u987A\u624B\u7559\u9897 Star\uFF0C\u4F5C\u8005\u80FD\u9AD8\u5174\u4E00\u6574\u5929",
-  "starCta": "\u2605 \u53BB GitHub \u770B\u8FD9\u4E2A fork",
+  "developer": "\u5F00\u53D1\u8005\uFF1A\u5927\u54C8",
+  "starAsk": "\u2B50 \u987A\u624B\u7559\u9897 Star\uFF0C\u5927\u54C8\u80FD\u9AD8\u5174\u4E00\u6574\u5929",
+  "starCta": "\u597D\uFF0C\u8FD9\u5C31\u53BB Star",
   "restarted": "\u{1F504} \u5DF2\u91CD\u542F",
   "ok": "\u77E5\u9053\u4E86",
   "bgHint": "\u8FDB\u7A0B\u5728\u540E\u53F0\u8FD0\u884C\uFF08\u4E0D\u6302\u7EC8\u7AEF\uFF09\u3002\u5982\u9700\u505C\u6B62\uFF1A{cmd}",
@@ -4796,7 +4898,7 @@ var zh2 = {
   "pinLabel": "\u8BBF\u95EE\u5BC6\u7801",
   "modeLabel": "\u5730\u5740\u6A21\u5F0F",
   "advAddress": "\u9AD8\u7EA7 \xB7 \u624B\u52A8\u9009\u5730\u5740",
-  "wanOffHint": "\u5F00\u542F\u540E\u53EF\u4ECE\u4EFB\u4F55\u7F51\u7EDC\u8BBF\u95EE\uFF08\u6BCF\u6B21\u5F00\u542F\u9700\u786E\u8BA4\u514D\u8D23\u58F0\u660E\uFF09",
+  "wanOffHint": "\u5F00\u542F\u540E\u53EF\u4ECE\u4EFB\u4F55\u7F51\u7EDC\u8BBF\u95EE\uFF08\u5F00\u542F\u524D\u7684\u5B89\u5168\u58F0\u660E\u6309\u4E0B\u65B9\u300C\u5B89\u5168\u58F0\u660E\u300D\u8BBE\u7F6E\u786E\u8BA4\uFF09",
   "resetFactory": "\u{1F9F9} \u6062\u590D\u51FA\u5382\u8BBE\u7F6E",
   "resetGo": "\u6062\u590D",
   "resetIntro": "\u8BBE\u7F6E\u641E\u51FA\u95EE\u9898\u65F6\u7684\u4E34\u65F6\u515C\u5E95\uFF1A\u6E05\u7A7A\u672C\u673A\u914D\u7F6E\u5E76\u91CD\u8BBE\u968F\u673A\u5BC6\u7801\uFF08DSH \u7684\u4F1A\u8BDD\u3001\u6A21\u578B\u3001\u63D2\u4EF6\u914D\u7F6E\u4E0D\u53D7\u5F71\u54CD\uFF09",
@@ -4856,20 +4958,78 @@ var zh2 = {
   "disclaimerBody": "\u5F00\u542F\u516C\u7F51 = \u628A\u672C\u673A DSH\uFF08\u80FD\u6267\u884C\u4EE3\u7801\uFF09\u66B4\u9732\u5230\u4E92\u8054\u7F51\u3002\u4EFB\u4F55\u4EBA\u62FF\u5230\u516C\u7F51\u94FE\u63A5\u548C\u5BC6\u7801\uFF0C\u90FD\u80FD\u8BBF\u95EE\u751A\u81F3\u64CD\u4F5C\u4F60\u7684\u7535\u8111\u3002\u8BF7\u786E\u8BA4\uFF1A\u2460 \u4F7F\u7528\u81EA\u5B9A\u4E49\u5F3A\u5BC6\u7801\u6216\u59A5\u5584\u4FDD\u7BA1\u81EA\u52A8\u5BC6\u7801\uFF1B\u2461 \u7528\u5B8C\u7ACB\u5373\u300C\u5173\u95ED\u516C\u7F51\u300D\uFF1B\u2462 \u516C\u53F8/\u6D89\u5BC6\u7F51\u7EDC\u8BF7\u5148\u786E\u8BA4\u5408\u89C4\u3002",
   "disclaimerAgree": "\u6211\u5DF2\u77E5\u60C5\uFF0C\u540C\u610F\u5F00\u542F",
   "disclaimerHint": "\u8BF7\u52FE\u9009\u300C\u6211\u5DF2\u77E5\u60C5\u300D\u540E\u518D\u5F00\u542F\u516C\u7F51",
+  "disclaimerOnceNote": "\u5F53\u524D\u4E3A\u300C\u4EC5\u9996\u6B21\u300D\uFF1A\u52FE\u9009\u540E\u4E0B\u6B21\u5F00\u542F\u516C\u7F51\u4E0D\u518D\u5F39\u672C\u58F0\u660E\uFF08\u53EF\u5728\u8BBE\u7F6E \u2192 \u516C\u7F51\u8BBF\u95EE \u2192 \u5B89\u5168\u58F0\u660E\u91CC\u6539\u56DE\u300C\u6BCF\u6B21\u786E\u8BA4\u300D\u6216\u300C\u4ECE\u4E0D\u63D0\u793A\u300D\uFF09\u3002",
+  "disclaimerMode": "\u5B89\u5168\u58F0\u660E",
+  "disclaimerModeHint": "\u5F00\u542F\u516C\u7F51\u524D\u7684\u786E\u8BA4\u65B9\u5F0F\uFF1A\u4EC5\u9996\u6B21 = \u7B2C\u4E00\u6B21\u52FE\u9009\u540E\u8BB0\u4F4F\uFF08\u63A8\u8350\uFF09\uFF1B\u6BCF\u6B21\u786E\u8BA4 = \u6BCF\u6B21\u90FD\u5F39\uFF1B\u4ECE\u4E0D\u63D0\u793A = \u4E0D\u518D\u5F39\uFF08\u81EA\u884C\u627F\u62C5\u98CE\u9669\uFF09\u3002",
+  "disclaimerModeAlways": "\u6BCF\u6B21\u786E\u8BA4",
+  "disclaimerModeOnce": "\u4EC5\u9996\u6B21\uFF08\u63A8\u8350\uFF09",
+  "disclaimerModeNever": "\u4ECE\u4E0D\u63D0\u793A",
   "downloading": "\u23F3 \u4E0B\u8F7D cloudflared\uFF08\u9996\u6B21\u7EA6 20-50MB\uFF0C\u901A\u5E38 1-2 \u5206\u949F\uFF1B\u4E4B\u540E\u79D2\u5F00\uFF09\xB7 \u5DF2\u7B49\u5F85 {s} \u79D2",
   "connecting": "\u23F3 \u8FDE\u63A5 Cloudflare \u8FB9\u7F18\uFF08\u901A\u5E38 5-30 \u79D2\uFF09\xB7 \u5DF2\u7B49\u5F85 {s} \u79D2{suffix}",
   "slowHint": " \u2014 \u6709\u70B9\u4E45\uFF1F\u68C0\u67E5\u662F\u5426\u5F00\u7740\u4EE3\u7406/VPN\uFF08Clash TUN \u7B49\uFF09",
   "error": "\u274C \u5F00\u542F\u5931\u8D25\uFF1A{detail}\uFF08\u53EF\u91CD\u8BD5\uFF1B\u82E5\u662F\u4EE3\u7406/VPN \u95EE\u9898\u89C1 README \u6392\u969C\uFF09",
   "unknownError": "\u672A\u77E5\u9519\u8BEF",
+  // 已授权设备（本轮新增）：每台手机独立身份，可改名 / 单独下线 / 全部下线
+  "devicesTitle": "\u5DF2\u6388\u6743\u8BBE\u5907",
+  "devicesIntro": "\u901A\u8FC7\u8BBF\u95EE\u5BC6\u7801\u767B\u5F55\u8FC7\u7684\u8BBE\u5907\u3002\u53EF\u5355\u72EC\u6539\u540D\u6216\u4E0B\u7EBF\uFF1B\u88AB\u4E0B\u7EBF\u7684\u8BBE\u5907\u9700\u8981\u91CD\u65B0\u8F93\u5165\u5BC6\u7801\u3002",
+  "devicesEmpty": "\u6682\u65E0\uFF08\u7528\u5BC6\u7801\u767B\u5F55\u8FC7\u7684\u8BBE\u5907\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC\uFF09",
+  "devicesRevokeOthers": "\u4E0B\u7EBF\u5176\u4ED6\u8BBE\u5907",
+  "deviceThis": "\u672C\u673A",
+  "deviceOnline": "\u5728\u7EBF",
+  "deviceJustNow": "\u521A\u521A\u6D3B\u8DC3",
+  "deviceMinAgo": "{n} \u5206\u949F\u524D",
+  "deviceHourAgo": "{n} \u5C0F\u65F6\u524D",
+  "deviceDayAgo": "{n} \u5929\u524D",
+  "deviceScopeLan": "\u5C40\u57DF\u7F51",
+  "deviceScopePublic": "\u516C\u7F51",
+  "deviceLegacy": "\u65E7\u8BBE\u5907\uFF08\u5347\u7EA7\u524D\u767B\u5F55\uFF09",
+  "deviceLegacyHint": "\u5347\u7EA7\u524D\u7684\u51ED\u8BC1\u6CA1\u6709\u8BBE\u5907\u8EAB\u4EFD\uFF0C\u65E0\u6CD5\u5355\u72EC\u4E0B\u7EBF\uFF1B\u7528\u300C\u4E0B\u7EBF\u5176\u4ED6\u8BBE\u5907\u300D\u53EF\u8BA9\u5B83\u5931\u6548\uFF0C\u91CD\u65B0\u767B\u5F55\u540E\u5373\u53EF\u663E\u793A\u4E3A\u72EC\u7ACB\u8BBE\u5907\u3002",
+  "deviceRename": "\u6539\u540D",
+  "deviceRevoke": "\u4E0B\u7EBF",
+  "deviceRenameHint": "\u8BBE\u5907\u540D\u79F0\uFF08\u6700\u957F 32 \u5B57\uFF0C\u7559\u7A7A\u6062\u590D\u9ED8\u8BA4\uFF09",
+  "deviceRevokeTitle": "\u786E\u8BA4\u4E0B\u7EBF\u8BE5\u8BBE\u5907\uFF1F",
+  "deviceRevokeBody": "{name} \u4F1A\u7ACB\u5373\u9000\u51FA\u767B\u5F55\uFF08\u9700\u8981\u91CD\u65B0\u8F93\u5165\u5BC6\u7801\uFF09\uFF0C\u5B83\u7684\u5B9E\u65F6\u8FDE\u63A5\u4E5F\u4F1A\u88AB\u65AD\u5F00\u3002",
+  "deviceRevokeOthersTitle": "\u4E0B\u7EBF\u5176\u4ED6\u8BBE\u5907\uFF1F",
+  "deviceRevokeOthersBody": "\u9664\u672C\u673A\u5916\uFF0C\u6240\u6709\u5DF2\u6388\u6743\u8BBE\u5907\u90FD\u4F1A\u9000\u51FA\u767B\u5F55\uFF08\u9700\u8981\u91CD\u65B0\u8F93\u5165\u5BC6\u7801\uFF09\uFF0C\u5B9E\u65F6\u8FDE\u63A5\u4F1A\u88AB\u65AD\u5F00\u3002\u82E5\u5217\u8868\u91CC\u6709\u65E7\u8BBE\u5907\uFF08\u5347\u7EA7\u524D\u767B\u5F55\uFF09\uFF0C\u5B83\u7684\u51ED\u8BC1\u4E5F\u4F1A\u4E00\u5E76\u5931\u6548\u3002",
+  "deviceRevokeOthersAll": "\u6CE8\u610F\uFF1A\u5F53\u524D\u6D4F\u89C8\u5668\u6CA1\u6709\u88AB\u8BC6\u522B\u4E3A\u5DF2\u6388\u6743\u8BBE\u5907\uFF0C\u6B64\u64CD\u4F5C\u4F1A\u8BA9\u6240\u6709\u8BBE\u5907\uFF08\u5305\u62EC\u5F53\u524D\u6D4F\u89C8\u5668\uFF09\u90FD\u9700\u8981\u91CD\u65B0\u8F93\u5165\u5BC6\u7801\u3002",
+  "deviceRevokeConfirm": "\u786E\u8BA4\u4E0B\u7EBF",
+  "deviceRevoked": "\u2705 \u5DF2\u4E0B\u7EBF\u8BE5\u8BBE\u5907",
+  "deviceOthersRevoked": "\u2705 \u5DF2\u4E0B\u7EBF\u5176\u4ED6\u8BBE\u5907",
+  "deviceRenamed": "\u2705 \u5DF2\u6539\u540D",
+  // Web Push 通知（R3）：手机在系统通知里收到「回合完成 / 等待审批」
+  "notifyTitle": "\u901A\u77E5",
+  "notifyIntro": "agent \u8DD1\u5B8C\u4E00\u8F6E\u6216\u7B49\u4F60\u5BA1\u6279\u65F6\uFF0C\u7ED9\u8FD9\u53F0\u624B\u673A\u53D1\u7CFB\u7EDF\u901A\u77E5\uFF08\u9875\u9762\u5F00\u7740\u65F6\u4E0D\u6253\u6270\uFF09\u3002",
+  "notifyEnable": "\u5F00\u542F\u901A\u77E5",
+  "notifyEnabling": "\u5F00\u542F\u4E2D\u2026",
+  "notifyEnabled": "\u2705 \u5DF2\u5F00\u542F\u901A\u77E5",
+  "notifyDisable": "\u5173\u95ED\u901A\u77E5",
+  "notifyDisabled": "\u5DF2\u5173\u95ED\u901A\u77E5",
+  "notifyTest": "\u53D1\u9001\u6D4B\u8BD5\u901A\u77E5",
+  "notifyTesting": "\u53D1\u9001\u4E2D\u2026",
+  "notifyTestOk": "\u2705 \u5DF2\u53D1\u9001\uFF0C\u8BF7\u67E5\u770B\u624B\u673A\u901A\u77E5",
+  "notifyTestFail": "\u274C \u53D1\u9001\u5931\u8D25\uFF1A{err}",
+  "notifyEventTurn": "\u56DE\u5408\u5B8C\u6210",
+  "notifyEventTurnHint": "agent \u7B54\u5B8C\u4E00\u8F6E\u3001\u7B49\u4F60\u4E0B\u4E00\u6B65\u65F6\u901A\u77E5",
+  "notifyEventApproval": "\u7B49\u5F85\u5BA1\u6279",
+  "notifyEventApprovalHint": "\u5DE5\u5177\u8C03\u7528\u9700\u8981\u4F60\u6279\u51C6\u65F6\u901A\u77E5",
+  "notifyStatusOn": "\u672C\u673A\u5DF2\u5F00\u542F\uFF08{date}\uFF09",
+  "notifyNoDevice": "\u901A\u77E5\u7ED1\u5B9A\u5728\u5F53\u524D\u767B\u5F55\u7684\u8BBE\u5907\u4E0A\u3002\u8BF7\u7528\u624B\u673A\u7ECF\u300C\u624B\u673A\u8BBF\u95EE\u300D\u5165\u53E3\uFF08\u5C40\u57DF\u7F51\u6216\u516C\u7F51\u5730\u5740 + \u5BC6\u7801\uFF09\u6253\u5F00\u672C\u9875\u518D\u5F00\u542F\u3002",
+  "notifyNeedHttps": "\u901A\u77E5\u9700\u8981 HTTPS\uFF08\u5B89\u5168\u4E0A\u4E0B\u6587\uFF09\u3002\u5F53\u524D\u662F\u5C40\u57DF\u7F51 http:// \u5730\u5740\uFF0C\u8BF7\u6539\u7528\u300C\u516C\u7F51\u5165\u53E3\u300D\u6253\u5F00\u672C\u9875\u540E\u518D\u5F00\u542F\u3002",
+  "notifyNeedInstall": "iOS \u9700\u5148\u628A\u672C\u9875\u300C\u6DFB\u52A0\u5230\u4E3B\u5C4F\u5E55\u300D\uFF0C\u518D\u4ECE\u4E3B\u5C4F\u5E55\u56FE\u6807\u6253\u5F00\uFF0C\u624D\u80FD\u5F00\u542F\u901A\u77E5\u3002",
+  "notifyNeedInstallHow": "\u5728 Safari \u70B9\u5E95\u90E8\u5206\u4EAB\u6309\u94AE \u2192 \u6DFB\u52A0\u5230\u4E3B\u5C4F\u5E55 \u2192 \u4ECE\u4E3B\u5C4F\u5E55\u56FE\u6807\u91CD\u65B0\u6253\u5F00\u672C\u9875\u3002",
+  "notifyUnsupported": "\u5F53\u524D\u6D4F\u89C8\u5668\u4E0D\u652F\u6301 Web Push \u901A\u77E5\uFF08\u9700\u8981 Chrome / Edge / \u4E09\u661F\u6D4F\u89C8\u5668\uFF0C\u6216 iOS 16.4+ \u7684 Safari \u6DFB\u52A0\u5230\u4E3B\u5C4F\u5E55\uFF09\u3002",
+  "notifyDenied": "\u6D4F\u89C8\u5668\u5DF2\u62D2\u7EDD\u901A\u77E5\u6743\u9650\uFF1A\u8BF7\u5728\u7AD9\u70B9\u8BBE\u7F6E\u91CC\u628A\u300C\u901A\u77E5\u300D\u6539\u4E3A\u5141\u8BB8\u540E\u91CD\u8BD5\u3002",
+  "notifySubscribeFail": "\u8BA2\u9605\u5931\u8D25\uFF1A{err}",
+  "notifyHintKeepOpen": "\u63D0\u793A\uFF1A\u9875\u9762\u5F00\u7740\u65F6\u4E0D\u4F1A\u63A8\u9001\uFF08\u4E0D\u6253\u6270\uFF09\uFF0C\u9000\u51FA\u5E94\u7528\u6216\u9501\u5C4F\u540E\u4ECD\u80FD\u6536\u5230\u3002",
   "feedback": "\u6709\u95EE\u9898\uFF1F\u6B22\u8FCE\u5230 GitHub Issues \u53CD\u9988 \u{1F64F}"
 };
 var en2 = {
   "section": "Phone access",
   "title": "\u{1F4F1} Phone access",
   "subtitle": "The phone shows this exact screen, live",
-  "developer": "Developer: daha1216 (fork of \u5C11\u5317\u6668 / shaobeichen)",
-  "starAsk": "\u2B50 Drop a Star if it helped \u2014 it makes the author\u2019s day",
-  "starCta": "\u2605 View this fork on GitHub",
+  "developer": "Developer: daha1216 (\u5927\u54C8)",
+  "starAsk": "\u2B50 Drop a Star if it helped \u2014 it makes daha1216\u2019s day",
+  "starCta": "\u2605 Star it on GitHub",
   "restarted": "\u{1F504} Restarted",
   "ok": "Got it",
   "bgHint": "Running in the background (not attached to a terminal). To stop: {cmd}",
@@ -4892,7 +5052,7 @@ var en2 = {
   "pinLabel": "Access PIN",
   "modeLabel": "Address mode",
   "advAddress": "Advanced \xB7 Pick address",
-  "wanOffHint": "Reachable from any network once enabled (a disclaimer is confirmed on each enable)",
+  "wanOffHint": 'Reachable from any network once enabled (the pre-enable disclaimer follows the "Security disclaimer" setting below)',
   "resetFactory": "\u{1F9F9} Factory reset",
   "resetGo": "Reset",
   "resetIntro": "Temporary fallback when settings break: clear local config and re-roll random PINs (DSH sessions, models and plugin config are untouched)",
@@ -4952,11 +5112,69 @@ var en2 = {
   "disclaimerBody": "Enabling public access exposes this computer\u2019s DSH (which can execute code) to the internet. Anyone with the public link and PIN can reach \u2014 and operate \u2014 your computer. Please confirm: \u2460 use a strong custom PIN or keep the auto-generated one safe; \u2461 turn public access OFF as soon as you\u2019re done; \u2462 on a corporate/classified network, confirm compliance first.",
   "disclaimerAgree": "I understand and agree",
   "disclaimerHint": 'Check "I understand" before enabling public access',
+  "disclaimerOnceNote": 'Mode is "first time only": after you check the box, enabling public access will not show this again (change it back to "Every time" or "Never" in Settings \u2192 Public access \u2192 Security disclaimer).',
+  "disclaimerMode": "Security disclaimer",
+  "disclaimerModeHint": "How to confirm before enabling public access: first time only = remember after the first check (recommended); every time = always show it; never = do not show it (at your own risk).",
+  "disclaimerModeAlways": "Every time",
+  "disclaimerModeOnce": "First time only (recommended)",
+  "disclaimerModeNever": "Never",
   "downloading": "\u23F3 Downloading cloudflared (first run ~20-50MB, usually 1-2 min; instant afterward) \xB7 {s}s elapsed",
   "connecting": "\u23F3 Connecting to Cloudflare edge (usually 5-30s) \xB7 {s}s elapsed{suffix}",
   "slowHint": " \u2014 taking long? Check for a proxy/VPN (e.g., Clash TUN)",
   "error": "\u274C Failed to enable: {detail} (you can retry; for proxy/VPN issues see the README)",
   "unknownError": "unknown error",
+  // Authorized devices (this round): per-device identity, rename / revoke one / revoke others
+  "devicesTitle": "Authorized devices",
+  "devicesIntro": "Devices that signed in with the access PIN. Rename or revoke individually; a revoked device must enter the PIN again.",
+  "devicesEmpty": "None yet (devices that sign in with the PIN appear here)",
+  "devicesRevokeOthers": "Sign out others",
+  "deviceThis": "This device",
+  "deviceOnline": "Online",
+  "deviceJustNow": "active just now",
+  "deviceMinAgo": "{n} min ago",
+  "deviceHourAgo": "{n} h ago",
+  "deviceDayAgo": "{n} d ago",
+  "deviceScopeLan": "LAN",
+  "deviceScopePublic": "Public",
+  "deviceLegacy": "Legacy device (signed in before the upgrade)",
+  "deviceLegacyHint": 'Pre-upgrade credentials carry no device identity, so they cannot be revoked individually; use "Sign out others" to invalidate it \u2014 after signing in again it shows up as its own device.',
+  "deviceRename": "Rename",
+  "deviceRevoke": "Sign out",
+  "deviceRenameHint": "Device name (max 32 chars; empty restores the default)",
+  "deviceRevokeTitle": "Sign out this device?",
+  "deviceRevokeBody": "{name} will be signed out immediately (it must enter the PIN again) and its live connections are dropped.",
+  "deviceRevokeOthersTitle": "Sign out other devices?",
+  "deviceRevokeOthersBody": "Every authorized device except this one will be signed out (they must enter the PIN again) and their live connections are dropped. If a legacy device (signed in before the upgrade) is listed, its credential is invalidated as well.",
+  "deviceRevokeOthersAll": "Note: this browser is not recognized as an authorized device, so ALL devices \u2014 including this browser \u2014 will need the PIN again.",
+  "deviceRevokeConfirm": "Sign out",
+  "deviceRevoked": "\u2705 Device signed out",
+  "deviceOthersRevoked": "\u2705 Other devices signed out",
+  "deviceRenamed": "\u2705 Renamed",
+  // Web Push notifications (R3): the phone gets a system notification when a turn finishes / approval is pending
+  "notifyTitle": "Notifications",
+  "notifyIntro": "Get a system notification on this phone when the agent finishes a turn or waits for your approval (no buzz while the page is open).",
+  "notifyEnable": "Enable notifications",
+  "notifyEnabling": "Enabling\u2026",
+  "notifyEnabled": "\u2705 Notifications enabled",
+  "notifyDisable": "Disable notifications",
+  "notifyDisabled": "Notifications disabled",
+  "notifyTest": "Send test notification",
+  "notifyTesting": "Sending\u2026",
+  "notifyTestOk": "\u2705 Sent \u2014 check your phone notifications",
+  "notifyTestFail": "\u274C Send failed: {err}",
+  "notifyEventTurn": "Turn finished",
+  "notifyEventTurnHint": "Notify when the agent finishes a turn and waits for you",
+  "notifyEventApproval": "Approval pending",
+  "notifyEventApprovalHint": "Notify when a tool call needs your approval",
+  "notifyStatusOn": "Enabled on this device ({date})",
+  "notifyNoDevice": "Notifications are bound to the device you signed in with. Open this page on the phone through the phone-access entry (LAN or public address + PIN) and enable it there.",
+  "notifyNeedHttps": "Notifications need HTTPS (a secure context). This page is on a LAN http:// address \u2014 reopen it via the public entry and enable notifications there.",
+  "notifyNeedInstall": "On iOS add this page to the Home Screen first, then open it from the Home Screen icon to enable notifications.",
+  "notifyNeedInstallHow": "In Safari tap Share \u2192 Add to Home Screen \u2192 reopen this page from the Home Screen icon.",
+  "notifyUnsupported": "This browser does not support Web Push (needs Chrome / Edge / Samsung Internet, or iOS 16.4+ Safari added to the Home Screen).",
+  "notifyDenied": 'Notification permission was denied: set Notifications to "Allow" in site settings, then retry.',
+  "notifySubscribeFail": "Subscription failed: {err}",
+  "notifyHintKeepOpen": "Note: nothing is pushed while the page is open (no interruption); notifications keep arriving once you leave the app or lock the screen.",
   "feedback": "\u{1F64F} Questions? Open an issue on GitHub"
 };
 
@@ -5022,6 +5240,10 @@ function PocketSettingsTab({ rpcCall, t }) {
           }, 2e3);
         }
       }
+    } catch {
+    }
+    try {
+      setDevView(await call(POCKET_ENDPOINTS.devicesList, {}));
     } catch {
     }
   };
@@ -5094,6 +5316,7 @@ function PocketSettingsTab({ rpcCall, t }) {
   };
   const [disclaimerOpen, setDisclaimerOpen] = (0, import_react.useState)(false);
   const [disclaimerChecked, setDisclaimerChecked] = (0, import_react.useState)(false);
+  const disclaimerMode = status?.disclaimerMode ?? "once";
   const doStartTunnel = async () => {
     const cfg = status?.tunnelConfig;
     if (cfg?.mode === "named" && (!cfg.hostname || !cfg.tokenSet)) {
@@ -5112,6 +5335,11 @@ function PocketSettingsTab({ rpcCall, t }) {
     }
   };
   const startTunnel = () => {
+    const mode = status?.disclaimerMode ?? "once";
+    if (mode === "never" || mode === "once" && (status?.disclaimerAckedAt ?? 0) > 0) {
+      doStartTunnel();
+      return;
+    }
     setDisclaimerChecked(false);
     setDisclaimerOpen(true);
   };
@@ -5119,6 +5347,13 @@ function PocketSettingsTab({ rpcCall, t }) {
     if (!disclaimerChecked) return;
     setDisclaimerOpen(false);
     doStartTunnel();
+  };
+  const applyDisclaimerMode = async (mode) => {
+    try {
+      setStatus(await call(POCKET_ENDPOINTS.disclaimerSetMode, { mode }));
+    } catch (err) {
+      setError(err.message);
+    }
   };
   const stopTunnel = async () => {
     try {
@@ -5293,6 +5528,230 @@ function PocketSettingsTab({ rpcCall, t }) {
     extra ?? null
   );
   const [advOpen, setAdvOpen] = (0, import_react.useState)(false);
+  const [devView, setDevView] = (0, import_react.useState)(null);
+  const [devEdit, setDevEdit] = (0, import_react.useState)(null);
+  const [devConfirm, setDevConfirm] = (0, import_react.useState)(null);
+  const [othersConfirm, setOthersConfirm] = (0, import_react.useState)(false);
+  const devLabel = (d) => d.legacy ? t("deviceLegacy") : d.label || d.uaType || t("unknownError");
+  const relActive = (ts) => {
+    const s = Math.max(0, Math.floor((now - (ts || 0)) / 1e3));
+    if (s < 60) return t("deviceJustNow");
+    const m = Math.floor(s / 60);
+    if (m < 60) return fmt(t, "deviceMinAgo", { n: m });
+    const hh = Math.floor(m / 60);
+    if (hh < 24) return fmt(t, "deviceHourAgo", { n: hh });
+    return fmt(t, "deviceDayAgo", { n: Math.floor(hh / 24) });
+  };
+  const chip = (text, strong) => (0, import_react.createElement)("span", {
+    style: {
+      fontSize: 11,
+      lineHeight: 1.6,
+      padding: "0 6px",
+      borderRadius: 999,
+      whiteSpace: "nowrap",
+      border: "1px solid var(--dsw-alias-border-l2,#e5e7eb)",
+      color: strong ? "var(--dsw-alias-brand-primary,#4f6ef7)" : "var(--dsw-alias-label-secondary,#6b7280)",
+      background: "var(--dsw-alias-bg-layer-2,#f3f4f6)"
+    }
+  }, text);
+  const doRename = async (id) => {
+    try {
+      setDevView(await call(POCKET_ENDPOINTS.devicesRename, { id, name: devEdit?.name ?? "" }));
+      setDevEdit(null);
+      showToast(t("deviceRenamed"));
+    } catch (err) {
+      setDevEdit((e) => ({ ...e, err: err.message }));
+    }
+  };
+  const doRevoke = async () => {
+    const dev = devConfirm;
+    setDevConfirm(null);
+    if (!dev) return;
+    try {
+      setDevView(await call(POCKET_ENDPOINTS.devicesRevoke, { id: dev.id }));
+      showToast(t("deviceRevoked"));
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+  const doRevokeOthers = async () => {
+    setOthersConfirm(false);
+    try {
+      setDevView(await call(POCKET_ENDPOINTS.devicesRevokeOthers, {}));
+      showToast(t("deviceOthersRevoked"));
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+  const devRow = (d) => (0, import_react.createElement)(
+    "div",
+    { style: { borderTop: "1px solid var(--dsw-alias-border-l2,#e5e7eb)", paddingTop: 9, marginTop: 9 } },
+    (0, import_react.createElement)(
+      "div",
+      { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, flexWrap: "wrap" } },
+      (0, import_react.createElement)(
+        "div",
+        { style: { flex: "1 1 150px", minWidth: 0 } },
+        (0, import_react.createElement)(
+          "div",
+          { style: { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" } },
+          (0, import_react.createElement)("span", { style: { fontSize: 13, fontWeight: 500, wordBreak: "break-word" } }, devLabel(d)),
+          d.current ? chip(t("deviceThis"), true) : null
+        ),
+        (0, import_react.createElement)(
+          "div",
+          { style: { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 3, ...styles.muted } },
+          // scope 徽标始终显示真实 scope（legacy 的名称已经写在上面那行，徽标不再重复「旧设备」）
+          chip(d.scope === "public" ? t("deviceScopePublic") : t("deviceScopeLan")),
+          (0, import_react.createElement)("span", null, d.online ? `\u{1F7E2} ${t("deviceOnline")}` : `\u{1F552} ${relActive(d.lastActive)}`),
+          d.lastIp ? (0, import_react.createElement)("span", { style: { fontFamily: "ui-monospace,Menlo,monospace" } }, d.lastIp) : null
+        )
+      ),
+      d.revocable ? (0, import_react.createElement)(
+        "div",
+        { style: { display: "flex", gap: 6, flexShrink: 0 } },
+        (0, import_react.createElement)("button", {
+          style: { ...styles.btn, height: 26, padding: "0 10px", fontSize: 12 },
+          onClick: () => setDevEdit({ id: d.id, name: d.customName ?? "", err: null })
+        }, t("deviceRename")),
+        (0, import_react.createElement)("button", {
+          style: { ...styles.btn, height: 26, padding: "0 10px", fontSize: 12, color: "var(--dsw-alias-state-error-primary,#dc2626)" },
+          onClick: () => setDevConfirm(d)
+        }, t("deviceRevoke"))
+      ) : null
+    ),
+    d.legacy ? (0, import_react.createElement)("div", { style: { ...styles.muted, marginTop: 4 } }, t("deviceLegacyHint")) : null,
+    devEdit?.id === d.id ? (0, import_react.createElement)(
+      "div",
+      null,
+      (0, import_react.createElement)(
+        "div",
+        { style: { marginTop: 6, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" } },
+        (0, import_react.createElement)("input", {
+          style: { flex: "1 1 120px", minWidth: 0, padding: "4px 8px", fontSize: 13, border: "1px solid var(--dsw-alias-border-l2,#d1d5db)", borderRadius: 6, outline: "none" },
+          placeholder: t("deviceRenameHint"),
+          maxLength: 32,
+          value: devEdit.name,
+          autoFocus: true,
+          onChange: (e) => setDevEdit((x) => ({ ...x, name: e.target.value, err: null })),
+          onKeyDown: (e) => {
+            if (e.key === "Enter") doRename(d.id);
+            if (e.key === "Escape") setDevEdit(null);
+          }
+        }),
+        (0, import_react.createElement)("button", { style: { ...styles.btn, height: 26, padding: "0 10px", fontSize: 12 }, onClick: () => doRename(d.id) }, t("save")),
+        (0, import_react.createElement)("button", { style: { ...styles.btn, height: 26, padding: "0 10px", fontSize: 12 }, onClick: () => setDevEdit(null) }, t("cancel"))
+      ),
+      devEdit.err ? (0, import_react.createElement)("div", { style: { marginTop: 4, fontSize: 12, color: "var(--dsw-alias-state-error-primary,#dc2626)" } }, errText(devEdit.err)) : null
+    ) : null
+  );
+  const [caps, setCaps] = (0, import_react.useState)(null);
+  const [notifyBusy, setNotifyBusy] = (0, import_react.useState)(false);
+  const [notifyTesting, setNotifyTesting] = (0, import_react.useState)(false);
+  const [notifyMsg, setNotifyMsg] = (0, import_react.useState)(null);
+  (0, import_react.useEffect)(() => {
+    const detect = () => {
+      const ua = navigator.userAgent || "";
+      const ios = /iPad|iPhone|iPod/.test(ua) || /Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1;
+      const standalone = window.navigator.standalone === true || Boolean(window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+      setCaps({
+        secure: window.isSecureContext === true,
+        sw: "serviceWorker" in navigator,
+        push: "PushManager" in window,
+        notif: typeof Notification !== "undefined",
+        permission: typeof Notification !== "undefined" ? Notification.permission : "unsupported",
+        ios,
+        standalone,
+        origin: window.location.origin
+      });
+    };
+    detect();
+    const t2 = setInterval(detect, 4e3);
+    return () => clearInterval(t2);
+  }, []);
+  const curDevRow = (devView?.devices || []).find((d) => d.current) ?? null;
+  const curPush = curDevRow?.push ?? null;
+  const canNotify = Boolean(caps?.secure && caps?.sw && caps?.push && caps?.notif);
+  const keyBytes = (b64u) => {
+    const norm = String(b64u ?? "").replace(/-/g, "+").replace(/_/g, "/");
+    const raw = atob(norm + "=".repeat((4 - norm.length % 4) % 4));
+    const out = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  };
+  const enableNotify = async () => {
+    setNotifyBusy(true);
+    setNotifyMsg(null);
+    try {
+      if (!window.isSecureContext) throw new Error(t("notifyNeedHttps"));
+      if (!("serviceWorker" in navigator) || !("PushManager" in window) || typeof Notification === "undefined") {
+        throw new Error(t("notifyUnsupported"));
+      }
+      const perm = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+      if (perm !== "granted") throw new Error(perm === "denied" ? t("notifyDenied") : t("notifySubscribeFail"));
+      const reg = await navigator.serviceWorker.register("/dsh-pocket-assets/sw.js", { scope: "/" });
+      const ready = await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise((_, reject) => setTimeout(() => reject(new Error("service worker not ready | Service Worker \u672A\u5C31\u7EEA")), 15e3))
+      ]);
+      const target = ready && ready.pushManager ? ready : reg;
+      let sub = await target.pushManager.getSubscription();
+      if (!sub) {
+        const { key } = await call(POCKET_ENDPOINTS.notifyVapidKey, {});
+        sub = await target.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) });
+      }
+      const json = typeof sub.toJSON === "function" ? sub.toJSON() : sub;
+      const view = await call(POCKET_ENDPOINTS.notifySubscribe, {
+        subscription: { endpoint: json.endpoint, keys: { p256dh: json.keys?.p256dh, auth: json.keys?.auth } },
+        events: { turn: true, approval: true }
+      });
+      setDevView(view);
+      setNotifyMsg(t("notifyEnabled"));
+      showToast(t("notifyEnabled"));
+    } catch (err) {
+      setNotifyMsg(fmt(t, "notifySubscribeFail", { err: err && err.message || String(err) }));
+    }
+    setNotifyBusy(false);
+  };
+  const disableNotify = async () => {
+    setNotifyBusy(true);
+    setNotifyMsg(null);
+    try {
+      try {
+        const reg = navigator.serviceWorker?.getRegistration ? await navigator.serviceWorker.getRegistration("/") : null;
+        const sub = reg?.pushManager ? await reg.pushManager.getSubscription() : null;
+        if (sub) await sub.unsubscribe();
+      } catch {
+      }
+      setDevView(await call(POCKET_ENDPOINTS.notifyUnsubscribe, {}));
+      setNotifyMsg(t("notifyDisabled"));
+      showToast(t("notifyDisabled"));
+    } catch (err) {
+      setNotifyMsg(fmt(t, "notifySubscribeFail", { err: err && err.message || String(err) }));
+    }
+    setNotifyBusy(false);
+  };
+  const sendTestNotify = async () => {
+    setNotifyTesting(true);
+    setNotifyMsg(null);
+    try {
+      const r = await call(POCKET_ENDPOINTS.notifyTest, {});
+      setNotifyMsg(r?.sent ? t("notifyTestOk") : fmt(t, "notifyTestFail", { err: `HTTP ${r?.status ?? 0}${r?.error ? ` \xB7 ${r.error}` : ""}` }));
+    } catch (err) {
+      setNotifyMsg(fmt(t, "notifyTestFail", { err: err && err.message || String(err) }));
+    }
+    setNotifyTesting(false);
+  };
+  const toggleNotifyEvents = async (key, on) => {
+    if (!curPush) return;
+    try {
+      setNotifyBusy(true);
+      setDevView(await call(POCKET_ENDPOINTS.notifySetEvents, { events: { [key]: on } }));
+    } catch (err) {
+      setNotifyMsg(err && err.message || String(err));
+    }
+    setNotifyBusy(false);
+  };
   return (0, import_react.createElement)(
     "div",
     { style: styles.card },
@@ -5520,8 +5979,126 @@ function PocketSettingsTab({ rpcCall, t }) {
             namedMode ? (0, import_react.createElement)("div", { style: { ...styles.warn } }, t("namedSecurity")) : null
           )
         ) : null
-      ) : null
+      ) : null,
+      // 安全声明（本轮）：开启公网前的确认方式 —— 每次确认 / 仅首次（默认）/ 从不提示。
+      // 与公网开关是否打开无关（关闭时也能改；服务端按同一份模式校验 tunnel.start）。
+      row(
+        t("disclaimerMode"),
+        (0, import_react.createElement)(
+          "select",
+          {
+            value: disclaimerMode,
+            onChange: (e) => applyDisclaimerMode(e.target.value),
+            style: { font: "inherit", height: 30, padding: "0 8px", borderRadius: 8, border: "1px solid var(--dsw-alias-border-l2,#d1d5db)", background: "var(--dsw-alias-bg-layer-1,#fff)", color: "var(--dsw-alias-label-primary,inherit)" }
+          },
+          (0, import_react.createElement)("option", { value: "always" }, t("disclaimerModeAlways")),
+          (0, import_react.createElement)("option", { value: "once" }, t("disclaimerModeOnce")),
+          (0, import_react.createElement)("option", { value: "never" }, t("disclaimerModeNever"))
+        ),
+        (0, import_react.createElement)("div", { style: { ...styles.muted, marginTop: 6 } }, t("disclaimerModeHint"))
+      )
     ),
+    // 已授权设备（本轮新增）：局域网 / 公网区块之后。旧宿主没有 devices.list → devView 为 null，整块不渲染
+    devView ? (0, import_react.createElement)(
+      "div",
+      { style: styles.block },
+      (0, import_react.createElement)(
+        "div",
+        { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" } },
+        (0, import_react.createElement)("span", { style: { fontWeight: 600, fontSize: 13 } }, t("devicesTitle")),
+        (0, import_react.createElement)("button", {
+          style: { ...styles.btn, height: 28, padding: "0 12px", fontSize: 12, color: "var(--dsw-alias-state-error-primary,#dc2626)", flexShrink: 0 },
+          onClick: () => setOthersConfirm(true)
+        }, t("devicesRevokeOthers"))
+      ),
+      (0, import_react.createElement)("div", { style: { ...styles.muted, marginTop: 6 } }, t("devicesIntro")),
+      (devView.devices || []).length === 0 ? (0, import_react.createElement)("div", { style: { ...styles.muted, marginTop: 8 } }, t("devicesEmpty")) : (devView.devices || []).map((d) => (0, import_react.createElement)("div", { key: d.id }, devRow(d)))
+    ) : null,
+    // 通知（R3 Web Push）：已授权设备区块之后。旧宿主没有 notify.* → 能力探测照跑，
+    // 但任何操作都会失败并给出真实错误；区块本身在 devView 存在时才渲染（同设备区块）。
+    devView ? (0, import_react.createElement)(
+      "div",
+      { style: styles.block },
+      (0, import_react.createElement)(
+        "div",
+        { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" } },
+        (0, import_react.createElement)("span", { style: { fontWeight: 600, fontSize: 13 } }, t("notifyTitle")),
+        canNotify ? curPush ? (0, import_react.createElement)("button", {
+          style: { ...styles.btn, height: 28, padding: "0 12px", fontSize: 12 },
+          disabled: notifyBusy,
+          onClick: disableNotify
+        }, notifyBusy ? t("notifyEnabling") : t("notifyDisable")) : (0, import_react.createElement)("button", {
+          style: { ...styles.primary, height: 28, padding: "0 12px", fontSize: 12 },
+          disabled: notifyBusy,
+          onClick: enableNotify
+        }, notifyBusy ? t("notifyEnabling") : t("notifyEnable")) : null
+      ),
+      (0, import_react.createElement)("div", { style: { ...styles.muted, marginTop: 6 } }, t("notifyIntro")),
+      // 条件引导（按优先级）：非安全上下文 → iOS 未安装 → 浏览器不支持
+      !caps ? null : !caps.secure ? (0, import_react.createElement)("div", { style: { ...styles.warn, marginTop: 6 } }, t("notifyNeedHttps")) : caps.ios && !caps.standalone ? (0, import_react.createElement)(
+        "div",
+        { style: { marginTop: 6 } },
+        (0, import_react.createElement)("div", { style: { ...styles.warn } }, t("notifyNeedInstall")),
+        (0, import_react.createElement)("div", { style: { ...styles.muted, marginTop: 2 } }, t("notifyNeedInstallHow"))
+      ) : !caps.sw || !caps.push || !caps.notif ? (0, import_react.createElement)("div", { style: { ...styles.warn, marginTop: 6 } }, t("notifyUnsupported")) : null,
+      // 状态：本机订阅详情 + 事件开关 + 测试
+      canNotify && curPush ? (0, import_react.createElement)(
+        "div",
+        { style: { marginTop: 8 } },
+        (0, import_react.createElement)(
+          "div",
+          { style: { fontSize: 12, color: "var(--dsw-alias-label-secondary,#6b7280)" } },
+          fmt(t, "notifyStatusOn", { date: new Date(curPush.addedAt || Date.now()).toLocaleDateString() })
+        ),
+        (0, import_react.createElement)(
+          "label",
+          { style: { display: "flex", alignItems: "flex-start", gap: 8, marginTop: 8, fontSize: 13, cursor: "pointer" } },
+          (0, import_react.createElement)("input", {
+            type: "checkbox",
+            checked: curPush.events?.turn !== false,
+            disabled: notifyBusy,
+            style: { width: 16, height: 16, marginTop: 2 },
+            onChange: (e) => toggleNotifyEvents("turn", e.target.checked)
+          }),
+          (0, import_react.createElement)(
+            "span",
+            null,
+            (0, import_react.createElement)("div", null, t("notifyEventTurn")),
+            (0, import_react.createElement)("div", { style: { ...styles.muted } }, t("notifyEventTurnHint"))
+          )
+        ),
+        (0, import_react.createElement)(
+          "label",
+          { style: { display: "flex", alignItems: "flex-start", gap: 8, marginTop: 8, fontSize: 13, cursor: "pointer" } },
+          (0, import_react.createElement)("input", {
+            type: "checkbox",
+            checked: curPush.events?.approval !== false,
+            disabled: notifyBusy,
+            style: { width: 16, height: 16, marginTop: 2 },
+            onChange: (e) => toggleNotifyEvents("approval", e.target.checked)
+          }),
+          (0, import_react.createElement)(
+            "span",
+            null,
+            (0, import_react.createElement)("div", null, t("notifyEventApproval")),
+            (0, import_react.createElement)("div", { style: { ...styles.muted } }, t("notifyEventApprovalHint"))
+          )
+        ),
+        (0, import_react.createElement)(
+          "div",
+          { style: { marginTop: 10 } },
+          (0, import_react.createElement)("button", {
+            style: { ...styles.btn, height: 28, padding: "0 12px", fontSize: 12 },
+            disabled: notifyTesting || notifyBusy,
+            onClick: sendTestNotify
+          }, notifyTesting ? t("notifyTesting") : t("notifyTest"))
+        ),
+        (0, import_react.createElement)("div", { style: { ...styles.muted, marginTop: 8 } }, t("notifyHintKeepOpen"))
+      ) : null,
+      // 没有本机身份（桌面浏览器没走过手机访问密码）→ 通知只能绑定设备，如实引导
+      canNotify && !curPush && !devView.currentId ? (0, import_react.createElement)("div", { style: { ...styles.muted, marginTop: 8 } }, t("notifyNoDevice")) : null,
+      notifyMsg ? (0, import_react.createElement)("div", { style: { marginTop: 8, fontSize: 12, color: /^❌/.test(notifyMsg) ? "var(--dsw-alias-state-error-primary,#dc2626)" : "var(--dsw-alias-label-secondary,#6b7280)" } }, notifyMsg) : null
+    ) : null,
     error ? (0, import_react.createElement)("div", { style: { color: "var(--dsw-alias-state-error-primary,#dc2626)", fontSize: 12, marginTop: 8 } }, `\u274C ${errText(error)}`) : null,
     // 恢复出厂设置：设置出问题时的临时兜底（最底部，避免误触）
     (0, import_react.createElement)(
@@ -5573,7 +6150,7 @@ function PocketSettingsTab({ rpcCall, t }) {
         )
       )
     ) : null,
-    // 安全免责声明弹框（issue #31）：每次开启公网访问前确认
+    // 安全免责声明弹框（issue #31）：按模式弹出（每次确认 / 仅首次 / 从不，见「安全声明」设置行）
     disclaimerOpen ? (0, import_react.createElement)(
       "div",
       { style: { position: "fixed", inset: 0, zIndex: 1e4, background: "rgba(0,0,0,.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 } },
@@ -5582,6 +6159,8 @@ function PocketSettingsTab({ rpcCall, t }) {
         { style: { background: "var(--dsw-alias-bg-layer-1,#fff)", borderRadius: 12, maxWidth: 420, width: "100%", padding: "20px 22px", boxShadow: "0 8px 32px rgba(0,0,0,.18)" } },
         (0, import_react.createElement)("div", { style: { fontWeight: 600, fontSize: 15, color: "var(--dsw-alias-state-warn-primary,#b45309)", marginBottom: 10 } }, t("disclaimerTitle")),
         (0, import_react.createElement)("div", { style: { fontSize: 13, lineHeight: 1.7, color: "var(--dsw-alias-label-primary,inherit)" } }, t("disclaimerBody")),
+        // 仅首次模式：明确告知「记住」与改回路径，避免用户以为再也看不到声明
+        disclaimerMode === "once" ? (0, import_react.createElement)("div", { style: { ...styles.muted, marginTop: 10 } }, t("disclaimerOnceNote")) : null,
         (0, import_react.createElement)(
           "label",
           { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 14, fontSize: 13, cursor: "pointer" } },
@@ -5599,6 +6178,46 @@ function PocketSettingsTab({ rpcCall, t }) {
           }, t("disclaimerAgree"))
         ),
         !disclaimerChecked ? (0, import_react.createElement)("div", { style: { marginTop: 8, fontSize: 12, color: "var(--dsw-alias-state-error-primary,#dc2626)" } }, t("disclaimerHint")) : null
+      )
+    ) : null,
+    // 下线设备确认弹框（单台）
+    devConfirm ? (0, import_react.createElement)(
+      "div",
+      { style: { position: "fixed", inset: 0, zIndex: 1e4, background: "rgba(0,0,0,.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 } },
+      (0, import_react.createElement)(
+        "div",
+        { style: { background: "var(--dsw-alias-bg-layer-1,#fff)", borderRadius: 12, maxWidth: 420, width: "100%", padding: "20px 22px", boxShadow: "0 8px 32px rgba(0,0,0,.18)" } },
+        (0, import_react.createElement)("div", { style: { fontWeight: 600, fontSize: 15, color: "var(--dsw-alias-state-warn-primary,#b45309)", marginBottom: 10 } }, t("deviceRevokeTitle")),
+        (0, import_react.createElement)(
+          "div",
+          { style: { fontSize: 13, lineHeight: 1.7, color: "var(--dsw-alias-label-primary,inherit)" } },
+          fmt(t, "deviceRevokeBody", { name: devLabel(devConfirm) })
+        ),
+        (0, import_react.createElement)(
+          "div",
+          { style: { display: "flex", gap: 8, marginTop: 16 } },
+          (0, import_react.createElement)("button", { style: { ...styles.btn, flex: 1 }, onClick: () => setDevConfirm(null) }, t("cancel")),
+          (0, import_react.createElement)("button", { style: { ...styles.primary, flex: 1, background: "var(--dsw-alias-state-error-primary,#dc2626)" }, onClick: doRevoke }, t("deviceRevokeConfirm"))
+        )
+      )
+    ) : null,
+    // 下线其他设备确认弹框（一次踢掉除本机外的全部设备）
+    othersConfirm ? (0, import_react.createElement)(
+      "div",
+      { style: { position: "fixed", inset: 0, zIndex: 1e4, background: "rgba(0,0,0,.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 } },
+      (0, import_react.createElement)(
+        "div",
+        { style: { background: "var(--dsw-alias-bg-layer-1,#fff)", borderRadius: 12, maxWidth: 440, width: "100%", padding: "20px 22px", boxShadow: "0 8px 32px rgba(0,0,0,.18)" } },
+        (0, import_react.createElement)("div", { style: { fontWeight: 600, fontSize: 15, color: "var(--dsw-alias-state-warn-primary,#b45309)", marginBottom: 10 } }, t("deviceRevokeOthersTitle")),
+        (0, import_react.createElement)("div", { style: { fontSize: 13, lineHeight: 1.7, color: "var(--dsw-alias-label-primary,inherit)" } }, t("deviceRevokeOthersBody")),
+        // 本机识别不出来（桌面浏览器没走过 pocket 密码）→ 如实提示：这次会把自己也踢掉
+        devView?.currentId ? null : (0, import_react.createElement)("div", { style: { ...styles.warn, marginTop: 8 } }, t("deviceRevokeOthersAll")),
+        (0, import_react.createElement)(
+          "div",
+          { style: { display: "flex", gap: 8, marginTop: 16 } },
+          (0, import_react.createElement)("button", { style: { ...styles.btn, flex: 1 }, onClick: () => setOthersConfirm(false) }, t("cancel")),
+          (0, import_react.createElement)("button", { style: { ...styles.primary, flex: 1, background: "var(--dsw-alias-state-error-primary,#dc2626)" }, onClick: doRevokeOthers }, t("deviceRevokeConfirm"))
+        )
       )
     ) : null,
     // 页面最底部：反馈入口

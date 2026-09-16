@@ -15,6 +15,20 @@ export const POCKET_ENDPOINTS = Object.freeze({
   lanSetEnabled: 'lan.setEnabled',
   pinSetCustom: 'pin.setCustom',
   pocketReset: 'pocket.reset',
+  // 安全免责声明（本轮）：声明模式可配置 never | once | always（默认 once）
+  disclaimerSetMode: 'disclaimer.setMode',
+  // 已授权设备（本轮新增）：列表 / 改名 / 单独下线 / 全部下线
+  devicesList: 'devices.list',
+  devicesRename: 'devices.rename',
+  devicesRevoke: 'devices.revoke',
+  devicesRevokeOthers: 'devices.revokeOthers',
+  // Web Push 通知（R3）：公钥 / 订阅 / 退订 / 事件开关 / 测试推送。
+  // 写入对象一律是**调用者这台设备**（按请求 cookie 识别），不做跨设备订阅管理。
+  notifyVapidKey: 'notify.vapidKey',
+  notifySubscribe: 'notify.subscribe',
+  notifyUnsubscribe: 'notify.unsubscribe',
+  notifySetEvents: 'notify.setEvents',
+  notifyTest: 'notify.test',
   // 移动端「复制文件内容」（issue #17）：手机经此 RPC 让主机读取文件正文，
   // 再写入剪贴板——因为手机无法直接打开电脑上的文件。
   fileRead: 'pocket.fileRead',
@@ -68,6 +82,63 @@ export function redactStatus(s) {
     tunnelQr: s?.tunnelQr ?? null,
     tunnelState: s?.tunnelState ?? { phase: 'idle' },
     tunnelConfig: s?.tunnelConfig ?? { mode: 'quick', hostname: '', tokenSet: false },
+    // 安全免责声明（本轮）：模式 + 确认时间戳（0=未确认）——前端据此决定开启公网时弹不弹
+    disclaimerMode: s?.disclaimerMode ?? 'once',
+    disclaimerAckedAt: s?.disclaimerAckedAt ?? 0,
     dshPort: s?.dshPort ?? null,
   };
+}
+
+// ---------- 已授权设备（本轮新增） ----------
+/** 「在线」判定窗口：lastActive 距今小于该毫秒数，或该设备有活着的 WebSocket。 */
+export const DEVICE_ONLINE_WINDOW_MS = 60_000;
+/** 旧版（升级前登录、无设备 id）在列表里的固定 id。 */
+export const LEGACY_DEVICE_ID = 'legacy';
+/** 推送事件开关的键（与 lib/devices.mjs 的 PUSH_EVENT_KEYS 对齐）。 */
+export const PUSH_EVENT_KEYS = ['turn', 'approval'];
+
+/** 设备推送订阅 → 设置页可见的投影（**不含 endpoint/密钥**：那些是可用来推送的能力数据）。 */
+export function pushView(push) {
+  if (!push || typeof push !== 'object' || typeof push.endpoint !== 'string' || !push.endpoint) return null;
+  return {
+    subscribed: true,
+    events: {
+      turn: push.events?.turn !== false,
+      approval: push.events?.approval !== false,
+    },
+    addedAt: Number.isFinite(push.addedAt) ? push.addedAt : 0,
+  };
+}
+
+/**
+ * 设备注册表 → 设置页可见的列表（不含任何秘密：只有 id/名称/UA 类型/时间/IP/scope）。
+ * @param {{list:()=>Array, isOnline?:(id:string)=>boolean}} store 设备注册表
+ * @param {{currentId?:string|null, now?:number}} [opts] currentId = 调用者自己的设备 id
+ * @returns {{devices:Array, currentId:string|null}} 列表已排序：本机 → 在线 → 最近活跃
+ */
+export function deviceViews(store, { currentId = null, now = Date.now() } = {}) {
+  const rows = (store?.list?.() ?? []).map((d) => {
+    const legacy = d.id === LEGACY_DEVICE_ID || d.uaType === 'legacy';
+    const lastActive = Number.isFinite(d.lastActive) ? d.lastActive : 0;
+    return {
+      id: d.id,
+      // 展示名：用户改过就用用户的；没改过由前端按语言渲染（legacy/UA 类型）
+      customName: typeof d.customName === 'string' ? d.customName : '',
+      label: typeof d.customName === 'string' && d.customName ? d.customName : (legacy ? '' : (d.uaType ?? '')),
+      uaType: d.uaType ?? '',
+      legacy,
+      scope: d.scope === 'public' ? 'public' : 'lan',
+      firstSeen: Number.isFinite(d.firstSeen) ? d.firstSeen : 0,
+      lastActive,
+      lastIp: typeof d.lastIp === 'string' ? d.lastIp : '',
+      online: Boolean(store?.isOnline?.(d.id)) || (lastActive > 0 && now - lastActive < DEVICE_ONLINE_WINDOW_MS),
+      current: Boolean(currentId) && d.id === currentId,
+      // Web Push 订阅状态（R3；无订阅 = null）。投影里不含 endpoint/密钥。
+      push: pushView(d.push),
+      // 旧版凭证没有个体身份：不能单独下线（只能用「下线其他设备」让它整体失效）
+      revocable: d.id !== LEGACY_DEVICE_ID,
+    };
+  });
+  rows.sort((a, b) => (Number(b.current) - Number(a.current)) || (Number(b.online) - Number(a.online)) || (b.lastActive - a.lastActive));
+  return { devices: rows, currentId: currentId ?? null };
 }

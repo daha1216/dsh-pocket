@@ -20,12 +20,9 @@ client/mobile/
 
 ## 同步步骤（上游发新版后）
 
-> 上游同步脚本与 detached 重启脚本住在**维护者本机的工作目录**，不在本仓库里；
-> 下面的 `<dsh-pocket-work>` 换成你自己的脚本目录。
-
 ```powershell
-node <dsh-pocket-work>\sync-dsh-web-mobile.mjs          # 跟 origin/main
-node <dsh-pocket-work>\sync-dsh-web-mobile.mjs v2.4.0   # 或指定 tag
+node C:\Users\daha\.dsh\dsh-pocket\sync-dsh-web-mobile.mjs          # 跟 origin/main
+node C:\Users\daha\.dsh\dsh-pocket\sync-dsh-web-mobile.mjs v2.4.0   # 或指定 tag
 ```
 
 脚本会：fetch → 镜像 src/client → esbuild 重建 client.js → node --check。
@@ -33,11 +30,12 @@ node <dsh-pocket-work>\sync-dsh-web-mobile.mjs v2.4.0   # 或指定 tag
 `window.__ModuleLoader__.load` 包装的 CJS bundle（react 与
 `@deepseek-ai/dsh-client-ui-primitives` 保持 external）。
 
-本仓库自带打包入口：`node client/build.mjs`（需要 esbuild），改 `client/` 后即可重建
-`client/client.js`，不依赖上面的外部脚本。
+构建依赖 esbuild：vendored 于 `C:\Users\daha\.dsh\dsh-pocket\vendor\node_modules\`
+（esbuild@0.28.1 + @esbuild/win32-x64），sync 脚本自动 junction 进包内 node_modules。
+`dsh plugin update dsh-pocket` 重装包后 junction 会丢——重跑 sync 脚本即可恢复。
 
 **同步后必做：**
-1. 重启 dsh web（用你自己习惯的 restart 脚本；重启会断当前会话）。
+1. 重启 dsh web（`node C:\Users\daha\.dsh\dsh-pocket\detached-restart.cjs`，注意会断当前会话）。
    combo URL 的 rev 启动时重分配，无缓存问题。
 2. WebKit（JSC/同 iPhone 引擎）回归：登录 PIN → 开历史会话（对话渲染）→ 抽屉开合 → 左缘右滑。
 3. 若上游改了 slots 注册或 inject 依赖，检查适配器（mobile-apply.tsx）里 upstreamApply 的调用注释。

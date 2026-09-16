@@ -1,19 +1,26 @@
+<p align="center">
+  <img src="docs/banner.jpg" alt="DSH Pocket" width="100%">
+</p>
+
 <h1 align="center">DSH Pocket</h1>
 
 <p align="center"><a href="README.en.md">English</a> | <a href="README.md">中文</a></p>
 
 <p align="center">
-  <a href="LICENSE"><img alt="License: GPL-2.0" src="https://img.shields.io/badge/license-GPL--2.0-red.svg"></a>
+  <a href="https://www.npmjs.com/package/dsh-pocket"><img alt="npm" src="https://img.shields.io/npm/v/dsh-pocket?color=4d6bfe&label=npm"></a>
+  <a href="https://www.npmjs.com/package/dsh-pocket"><img alt="downloads" src="https://img.shields.io/npm/dm/dsh-pocket?color=4d6bfe"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-GPL--2.0-red.svg"></a>
+  <a href="https://github.com/daha1216/dsh-pocket/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/daha1216/dsh-pocket"></a>
+  <a href="https://awesome-dsh-plugin.com"><img alt="Awesome DSH Plugin" src="https://awesome-dsh-plugin.com/badge.svg"></a>
 </p>
-
-> **Personal fork**: this repo is a privately maintained copy of [shaobeichen/dsh-pocket](https://github.com/shaobeichen/dsh-pocket)
-> (GPL-2.0), based on the installed artifacts of upstream **v2.10.3**, with two security hardenings only
-> (see `SECURITY-NOTES.md`). Features match upstream; for upstream updates, issues and release notes go to the
-> [upstream repo](https://github.com/shaobeichen/dsh-pocket).
 
 > Put **DeepSeek Harness in your pocket**: one package, one settings tab — scan a QR code and your phone shows exactly what's on your computer screen, live, from anywhere.
 
-> Screenshots (banner / UI / entry) live in upstream's `docs/` and are not included in this repo, so they are not shown here.
+> **This is a personal fork**: based on [shaobeichen/dsh-pocket](https://github.com/shaobeichen/dsh-pocket) **v2.10.6** (GPL-2.0), maintained by **daha1216 (大哈)**; it adds a few self-use customizations on top of upstream (static-asset caching and PWA, authorized-device management, Web Push notifications). For upstream features, updates and releases see the [upstream repo](https://github.com/shaobeichen/dsh-pocket).
+
+<p align="center">
+  ⭐ A Star would make daha1216's day &nbsp;·&nbsp; <a href="https://github.com/daha1216/dsh-pocket">Star it on GitHub</a>
+</p>
 
 ## What is this
 
@@ -25,29 +32,37 @@
 
 That's what DSH Pocket does: **install it, scan a QR code, and your phone shows and controls the DeepSeek Harness UI in real time — from anywhere.**
 
-What it looks like — the phone shows the exact same UI as your computer, live (screenshots live in the upstream repo):
+What it looks like — the phone shows the exact same UI as your computer, live:
+
+<p align="center">
+  <img src="docs/interface.jpg" alt="DSH UI on the phone" width="100%">
+</p>
 
 ## ✨ Features
 
-| Feature | Description |
-|---|---|
-| 📶 LAN QR access | Works out of the box: Settings → Phone access — scan the LAN QR on the same Wi-Fi (auto-detects the LAN IP; **under WSL it picks the Windows host's physical NIC IP**) |
-| 🚪 LAN switch | **Turn LAN access off/on with one click** in Settings (a confirmation dialog shows each time): off kills the LAN QR code and link instantly; public access is unaffected |
-| 🌐 Public QR (from anywhere) | Click "Enable anywhere" → cloudflared tunnel → scan the public QR over 4G / any network |
-| 🏷️ Fixed public hostname | Optional "**Named tunnel**" mode: paste a Cloudflare Tunnel Token + your own domain — the public address stays **fixed across restarts** (see below) |
-| 🔐 Access PIN | Public links require an **8-character PIN** (rotated on every tunnel start by default; **customizable to a fixed PIN** — custom PINs are not rotated); LAN has its own separate **8-character PIN** (on by default; switchable off in Settings — then LAN scans connect directly) |
-| 🔑 Custom PINs | Both the public and LAN PINs can be **set to your own fixed 8-character PIN (letters and digits) in Settings** (custom PINs are never auto-rotated) |
-| 🧘 Session persistence | Enter the PIN once and you're set for a long time (login is tied to the computer's dsh web process: as long as it stays up, the phone won't ask again; **after a dsh web restart/update, enter it once more**) |
-| ⚡ Real-time sync | Streaming output passes through WebSocket untouched — what the computer renders, the phone renders live; fully interactive both ways; built-in WS heartbeat keep-alive (defeats silent NAT/battery link drops with auto-reconnect) |
-| 📱 Mobile-adaptive layout | Narrow screens get a drawer layout automatically (ported from dsh-web-mobile, MIT): sidebar drawer, full-width conversation, safe-area insets, touch optimizations |
-| 📁 File browser | The mobile "Files" entries need a host-side explorer panel (a dsh-web-ui component); on stock DSH without it the entries are auto-hidden instead of doing nothing |
-| 🗜️ Transfer compression | Large JSON responses are gzip/brotli'd on the fly (17MB session history → ~1MB; brotli quality 6: fast and bandwidth-friendly) — faster loads, less mobile data |
-| 🔁 Tunnel auto-restore | After a DSH restart the previously-running public tunnel comes back automatically |
-| 🧩 Zero-dependency install | One npm package, one settings tab — no core/adapter split, no account, no server |
+| Feature                      | Description                                                                                                                                                                                                                                                                       |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 📶 LAN QR access             | Works out of the box: Settings → Phone access — scan the LAN QR on the same Wi-Fi (auto-detects the LAN IP; **under WSL it picks the Windows host's physical NIC IP**)                                                                                                            |
+| 🚪 LAN switch                | **Turn LAN access off/on with one click** in Settings (a confirmation dialog shows each time): off kills the LAN QR code and link instantly; public access is unaffected                                                                                                          |
+| 🌐 Public QR (from anywhere) | Click "Enable anywhere" → cloudflared tunnel → scan the public QR over 4G / any network                                                                                                                                                                                           |
+| 🏷️ Fixed public hostname     | Optional "**Named tunnel**" mode: paste a Cloudflare Tunnel Token + your own domain — the public address stays **fixed across restarts** (see below)                                                                                                                              |
+| 🔐 Access PIN                | Public links require an **8-character PIN** (rotated on every tunnel start by default; **customizable to a fixed PIN** — custom PINs are not rotated); LAN has its own separate **8-character PIN** (on by default; switchable off in Settings — then LAN scans connect directly) |
+| 🔑 Custom PINs               | Both the public and LAN PINs can be **set to your own fixed 8-character PIN (letters and digits) in Settings** (custom PINs are never auto-rotated)                                                                                                                               |
+| 🧘 Session persistence       | Enter the PIN once and you're set for a long time (login is tied to the computer's dsh web process: as long as it stays up, the phone won't ask again; **after a dsh web restart/update, enter it once more**)                                                                    |
+| ⚡ Real-time sync            | Streaming output passes through WebSocket untouched — what the computer renders, the phone renders live; fully interactive both ways; built-in WS heartbeat keep-alive (defeats silent NAT/battery link drops with auto-reconnect)                                                |
+| 📱 Mobile-adaptive layout    | Narrow screens get a drawer layout automatically (ported from dsh-web-mobile, MIT): sidebar drawer, full-width conversation, safe-area insets, touch optimizations                                                                                                                |
+| 📁 File browser              | The mobile "Files" entries need a host-side explorer panel (a dsh-web-ui component); on stock DSH without it the entries are auto-hidden instead of doing nothing                                                                                                                 |
+| 🗜️ Transfer compression      | Large JSON responses are gzip/brotli'd on the fly (17MB session history → ~1MB; brotli quality 6: fast and bandwidth-friendly) — faster loads, less mobile data                                                                                                                   |
+| 🔁 Tunnel auto-restore       | After a DSH restart the previously-running public tunnel comes back automatically                                                                                                                                                                                                 |
+| 🧩 Zero-dependency install   | One npm package, one settings tab — no core/adapter split, no account, no server                                                                                                                                                                                                  |
 
 ## 🚀 Usage
 
-**Where the entry is**: after installing and restarting `dsh web`, open **Settings** — the left sidebar shows **"Phone access"** at the top level (same level as General / Models).
+**Where the entry is**: after installing and restarting `dsh web`, open **Settings** — the left sidebar shows **"Phone access"** at the top level (same level as General / Models):
+
+<p align="center">
+  <img src="docs/entry.jpg" alt="Phone access entry" width="70%">
+</p>
 
 **Prerequisite**: [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) installed. If your terminal says `dsh: command not found`, install it first:
 
@@ -57,8 +72,8 @@ npm install -g @deepseek-ai/dsh     # global install; verify: dsh --version
 ```
 
 ```sh
-# 1. Install the plugin (this repo is a GitHub source, not an npm package)
-dsh plugin --profile web add github:daha1216/dsh-pocket -w
+# 1. Install the plugin (everything in one package)
+dsh plugin --profile web add dsh-pocket -w
 
 # 2. Restart dsh web
 npx @deepseek-ai/dsh web
@@ -112,18 +127,18 @@ Note: in named-tunnel mode the public PIN is **not auto-rotated** (the address i
 
 ## 🩹 Troubleshooting (traps users step on)
 
-| Symptom | Cause & fix |
-|---|---|
-| `dsh: command not found` / "DSH is not defined" | dsh CLI missing: `npm install -g @deepseek-ai/dsh`, or prefix commands with `npx @deepseek-ai/dsh` |
-| `ERR_PNPM_ADDING_TO_ROOT` | pnpm 9 workspace-root restriction: append `-w` (`--workspace-root`) to install/update commands |
-| Nothing changed after install/update | **You must restart `dsh web`**; the running process still loads the old code |
-| `listen EADDRINUSE ... :3081` | A stale dsh-pocket process holds the port: macOS/Linux `lsof -ti :3081 \| xargs kill -9`; Windows `netstat -ano \| findstr :3081` (find the LISTENING PID) → `taskkill /PID <PID> /F`, then retry |
-| Want a different port (issue #70) | Plugin mode: write `"proxyPort": 3082` into `$DSH_HOME/dsh-pocket/settings.json` and restart `dsh web`. CLI mode: `dsh-pocket --port 3082`. If the port is taken you'll get `EADDRINUSE` — kill the old process or pick another one |
-| Issue a temporary PIN to a guest (issue #69) | Settings → "Temporary access PINs" → pick public/LAN + duration (1h/24h/7d) + note → Create. Share the 8-char PIN + the access URL with the guest; it auto-expires and can be revoked manually. Temp PINs share the main PIN rate limit |
-| cloudflared install fails on a remote Linux server (issue #45) | If all CDN sources (GitHub / ghproxy / gh.ddlc / gh-proxy) are unreachable on a remote Linux host, install `cloudflared` yourself (e.g. `apt install cloudflared`, `dnf install cloudflared`, or download the tgz and unpack it), then add `"cloudflaredPath": "/path/to/cloudflared"` into `$DSH_HOME/dsh-pocket/settings.json` and restart `dsh web`. The plugin will then use that binary directly and skip the auto-download |
-| Version stuck below 1.x | `^0.x` ranges never jump to 1.x: update with `--latest` (`dsh plugin --profile web update dsh-pocket --latest -w`) |
-| Public `error 1033` | See "Public tunnel troubleshooting" below — usually a local proxy/VPN (Clash etc. TUN mode) killing the tunnel |
-| After "Restart dsh web", the page says the process is running in the background | The new process from in-page self-restart is a detached background process (not attached to your terminal) — that's the standard way to apply updates in-page; stop it: macOS/Linux `lsof -ti :3080 \| xargs kill -9`; Windows `netstat -ano \| findstr :3080` → `taskkill /PID <PID> /F` (logs under `$DSH_HOME` as `dsh-pocket-restart-*.log`) |
+| Symptom                                                                         | Cause & fix                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dsh: command not found` / "DSH is not defined"                                 | dsh CLI missing: `npm install -g @deepseek-ai/dsh`, or prefix commands with `npx @deepseek-ai/dsh`                                                                                                                                                                                                                                                                                                                               |
+| `ERR_PNPM_ADDING_TO_ROOT`                                                       | pnpm 9 workspace-root restriction: append `-w` (`--workspace-root`) to install/update commands                                                                                                                                                                                                                                                                                                                                   |
+| Nothing changed after install/update                                            | **You must restart `dsh web`**; the running process still loads the old code                                                                                                                                                                                                                                                                                                                                                     |
+| `listen EADDRINUSE ... :3081`                                                   | A stale dsh-pocket process holds the port: macOS/Linux `lsof -ti :3081 \| xargs kill -9`; Windows `netstat -ano \| findstr :3081` (find the LISTENING PID) → `taskkill /PID <PID> /F`, then retry                                                                                                                                                                                                                                |
+| Want a different port (issue #70)                                               | Plugin mode: write `"proxyPort": 3082` into `$DSH_HOME/dsh-pocket/settings.json` and restart `dsh web`. CLI mode: `dsh-pocket --port 3082`. If the port is taken you'll get `EADDRINUSE` — kill the old process or pick another one                                                                                                                                                                                              |
+| Issue a temporary PIN to a guest                                                | Not available: the temporary access PIN feature (issue #69) was removed in 2.6.x (it crashed on revoke). To share access, send the main PIN or a `?token=<main PIN>` link, then hit "Refresh" in Settings once the guest is done                                                                                                                                                                                                 |
+| cloudflared install fails on a remote Linux server (issue #45)                  | If all CDN sources (GitHub / ghproxy / gh.ddlc / gh-proxy) are unreachable on a remote Linux host, install `cloudflared` yourself (e.g. `apt install cloudflared`, `dnf install cloudflared`, or download the tgz and unpack it), then add `"cloudflaredPath": "/path/to/cloudflared"` into `$DSH_HOME/dsh-pocket/settings.json` and restart `dsh web`. The plugin will then use that binary directly and skip the auto-download |
+| Version stuck below 1.x                                                         | `^0.x` ranges never jump to 1.x: update with `--latest` (`dsh plugin --profile web update dsh-pocket --latest -w`)                                                                                                                                                                                                                                                                                                               |
+| Public `error 1033`                                                             | See "Public tunnel troubleshooting" below — usually a local proxy/VPN (Clash etc. TUN mode) killing the tunnel                                                                                                                                                                                                                                                                                                                   |
+| After "Restart dsh web", the page says the process is running in the background | The new process from in-page self-restart is a detached background process (not attached to your terminal) — that's the standard way to apply updates in-page; stop it: macOS/Linux `lsof -ti :3080 \| xargs kill -9`; Windows `netstat -ano \| findstr :3080` → `taskkill /PID <PID> /F` (logs under `$DSH_HOME` as `dsh-pocket-restart-*.log`)                                                                                 |
 
 ## ⚠️ Public tunnel troubleshooting (read first)
 
@@ -152,9 +167,11 @@ Such tools take over all traffic and often cut cloudflared's tunnel-edge connect
 **Other causes**: corporate firewalls / campus networks blocking outbound — ask IT to allow it, or use a hotspot.
 
 **First run: "Downloading cloudflared" fails or hangs**:
+
 - **macOS/Linux**: the plugin first downloads from the **Tsinghua mirror** (measured ~3MB/s, done in seconds); falls back to official GitHub + acceleration mirrors if it fails.
 - **Windows**: no Tsinghua mirror (Homebrew doesn't support Windows) — downloads the ~50MB exe from GitHub directly; **single-threaded, so it's slower — that's expected**, wait a few minutes, or use a proxy.
 - If all sources fail, the settings page shows a hint. Alternatives (any one):
+
 1. Install the `cloudflared` command and retry (the plugin then uses the PATH binary, no download):
    - macOS: `brew install cloudflared`; Linux: `sudo apt install cloudflared` or from the official site
    - Windows: `winget install cloudflared` or from the official site
@@ -164,16 +181,16 @@ Such tools take over all traffic and often cut cloudflared's tunnel-edge connect
 
 ## 🗂 Architecture (single package)
 
-| File | Purpose |
-|---|---|
-| `lib/index.js` | Plugin entry: auto-start proxy + register RPC + access-PIN management (public: 8 digits rotated per tunnel start; LAN: separate 8 digits, manually refreshable / switchable) + LAN access switch + DSH Desktop detection |
-| `lib/settings.mjs` | Settings persistence: LAN access switch (on by default) + LAN-PIN switch (on by default) stored in `$DSH_HOME/dsh-pocket/settings.json` |
-| `lib/service.mjs` | Service: proxy lifecycle (port auto-fallback), public tunnel (auto-restore), status snapshot (with QR data URLs) |
-| `lib/proxy.mjs` | Header-rewriting reverse proxy: Host/Origin → loopback, HTTP + WebSocket passthrough + polyfill injection + gzip/brotli compression + per-host token auth (public always; LAN per switch) + blocks LAN Hosts when LAN is off |
-| `lib/tunnel.mjs` | cloudflared: multi-mirror download (Tsinghua first) / adaptive parallel / start / parse public URL (HTTP/2) |
-| `lib/web-rpc.js` | Loopback RPC: `status` / `tunnel.start` / `tunnel.stop` / `lan.setEnabled` / `version` / `update` / `restart` |
-| `client/` | "Phone access" settings tab + mobile adaptation (dsh-web-mobile port) |
-| `bin/dsh-pocket.mjs` | CLI: LAN/public modes, prints URL + QR |
+| File                 | Purpose                                                                                                                                                                                                                      |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lib/index.js`       | Plugin entry: auto-start proxy + register RPC + access-PIN management (public: 8 digits rotated per tunnel start; LAN: separate 8 digits, manually refreshable / switchable) + LAN access switch + DSH Desktop detection     |
+| `lib/settings.mjs`   | Settings persistence: LAN access switch (on by default) + LAN-PIN switch (on by default) stored in `$DSH_HOME/dsh-pocket/settings.json`                                                                                      |
+| `lib/service.mjs`    | Service: proxy lifecycle (port auto-fallback), public tunnel (auto-restore), status snapshot (with QR data URLs)                                                                                                             |
+| `lib/proxy.mjs`      | Header-rewriting reverse proxy: Host/Origin → loopback, HTTP + WebSocket passthrough + polyfill injection + gzip/brotli compression + per-host token auth (public always; LAN per switch) + blocks LAN Hosts when LAN is off |
+| `lib/tunnel.mjs`     | cloudflared: multi-mirror download (Tsinghua first) / adaptive parallel / start / parse public URL (HTTP/2)                                                                                                                  |
+| `lib/web-rpc.js`     | Loopback RPC: `status` / `tunnel.start` / `tunnel.stop` / `lan.setEnabled` / `version` / `update` / `restart`                                                                                                                |
+| `client/`            | "Phone access" settings tab + mobile adaptation (dsh-web-mobile port)                                                                                                                                                        |
+| `bin/dsh-pocket.mjs` | CLI: LAN/public modes, prints URL + QR                                                                                                                                                                                       |
 
 ## 🛠 Development
 
@@ -187,6 +204,7 @@ npm test                # proxy / auth / compression / tunnel / service / RPC / 
 
 ## 🤝 Credits
 
+- This project is a fork of [shaobeichen/dsh-pocket](https://github.com/shaobeichen/dsh-pocket) (by 程序员少北晨, GPL-2.0); upstream copyright and the full license text are preserved in [LICENSE](LICENSE)
 - Mobile adaptation ported from [mexiaosqwq/dsh-web-mobile](https://github.com/mexiaosqwq/dsh-web-mobile) (MIT)
 - Public tunnel powered by [cloudflared](https://github.com/cloudflare/cloudflared)
 
@@ -198,15 +216,4 @@ npm test                # proxy / auth / compression / tunnel / service / RPC / 
 
 ---
 
-**Questions? Feedback welcome**: for this fork, open an issue at [this repo's Issues](https://github.com/daha1216/dsh-pocket/issues); for general plugin bugs/requests, prefer the [upstream Issues](https://github.com/shaobeichen/dsh-pocket/issues) 🙏
-
----
-
-## 📌 Relationship to upstream
-
-- Baseline: the installed artifacts of upstream **v2.10.3** (not a git-history fork, so upstream commits are not included)
-- Changes: two security hardenings (rate-limit identity key, constant-time login comparison) — see [`SECURITY-NOTES.md`](SECURITY-NOTES.md)
-- Self-check: `node verify-security.mjs` (8 assertions, no third-party deps, exit 0 when green)
-- Not included: upstream's `docs/` screenshots, `test/`, `LOCAL-DEV.md` (this repo is based on published artifacts)
-- Upstream release notes for later versions: [upstream Releases](https://github.com/shaobeichen/dsh-pocket/releases)
-- To merge upstream updates: `git remote add upstream https://github.com/shaobeichen/dsh-pocket.git` and reconcile yourself
+**Questions? Feedback welcome**: for this fork, open an issue at [this repo's Issues](https://github.com/daha1216/dsh-pocket/issues); for general plugin bugs or feature requests, prefer the [upstream Issues](https://github.com/shaobeichen/dsh-pocket/issues) 🙏

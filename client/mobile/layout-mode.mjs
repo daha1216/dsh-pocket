@@ -18,16 +18,11 @@ export function resolveLayout({ urlValue, stored, narrowMatch }) {
   return narrowMatch ? 'mobile' : 'desktop';
 }
 
-/** 同步 localStorage 的副作用（在 mobileApply 入口跑一次）。返回最终存储值。
- *
- * 三种输入语义不同（issue #74 的持久化承诺：「下次无 URL 参数也走同样布局」）：
- *   - 'desktop' / 'mobile' → 写入存储；
- *   - 'auto' / ''（URL 里显式写了 dsh-layout=auto 或 dsh-layout=）→ 清除存储；
- *   - null / undefined（URL 里根本没有 dsh-layout 参数）→ **不动存储**，
- *     否则每次无参数加载都会把上次的显式选择抹掉，持久化形同虚设。
- */
+/** 同步 localStorage 的副作用（在 mobileApply 入口跑一次）。返回最终存储值。 */
 export function persistLayoutFromUrl(urlValue) {
   if (typeof localStorage === 'undefined') return '';
+  // 没有 ?dsh-layout= 参数（null/undefined）→ 不写不改，直接用已存的布局（issue #74）。
+  // 缺这一分支时 `String(null ?? '') = ''` 会走下面的 removeItem，把用户存过的布局每次刷新都清掉。
   if (urlValue === null || urlValue === undefined) return readStoredLayout();
   const v = String(urlValue).trim();
   try {

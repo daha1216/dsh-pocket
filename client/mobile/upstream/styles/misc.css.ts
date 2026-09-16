@@ -242,7 +242,12 @@ export const MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
    windows — the slot renders the buttons at every width, so before this the
    only guard was the width term (2026-08-30 PC leak: split windows and OS
    display scaling dropped the CSS viewport below 1024px and armed the whole
-   mobile shell on desktop). */
+   mobile shell on desktop).
+
+   The session-delete trio (menu item + confirm/error dialog) is the ONE
+   deliberate exception: its effect arms on TOUCH_QUERY (pointer: coarse at
+   every width — large tablets in landscape), so it lives in the pointer-only
+   block below instead of this width arm. */
 
 @media (min-width: 1024px), (pointer: fine), (pointer: none) {
   [data-mobile-nav="toggle"],
@@ -252,7 +257,16 @@ export const MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
   [data-mobile-nav="session-log"],
   [data-mobile-nav="explorer"],
   [data-mobile-nav="preview-full-toggle"],
-  [data-mobile-nav="drawer-actions"],
+  [data-mobile-nav="drawer-actions"] {
+    display: none !important;
+  }
+}
+
+/* Session-delete trio: hide on mouse-driven or pointer-less windows at ANY
+   width. No width term — the injection is armed on touch at every width, so
+   a width arm here would hide the item on wide touch (the device class the
+   injection exists for). */
+@media (pointer: fine), (pointer: none) {
   [data-mobile-nav="session-delete"],
   [data-mobile-nav="delete-dialog-backdrop"],
   [data-mobile-nav="delete-dialog"] {

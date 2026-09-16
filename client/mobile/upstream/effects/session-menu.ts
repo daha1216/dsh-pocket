@@ -1,8 +1,8 @@
 /**
- * Session-row action-menu injection: on mobile, adds a "delete session" item
- * to the host's per-row ⋯ menu (beside rename / fork / archive) and drives
- * the whole delete flow: row → session id resolution, a confirm dialog, the
- * host delete endpoint, and the list refresh.
+ * Session-row action-menu injection: on touch-primary devices, adds a
+ * "delete session" item to the host's per-row ⋯ menu (beside rename / fork /
+ * archive) and drives the whole delete flow: row → session id resolution, a
+ * confirm dialog, the host delete endpoint, and the list refresh.
  *
  * The host menu is React-owned (ui-workspace) with no extension slot, so the
  * item is injected into the portaled `[role="menu"]` list by cloning the
@@ -20,7 +20,7 @@
  * `dsh-mobile-nav-*` names, which silently no-op).
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import { getFrame, installMobileEffect } from './phone-chrome.ts'
+import { MOBILE_QUERY, TOUCH_QUERY, getFrame, installMobileEffect } from './phone-chrome.ts'
 
 // Mirrored from src/client/locales.ts: the custom client bundler cannot
 // resolve `../` requires from effects/. Keep in sync.
@@ -65,10 +65,12 @@ function escapeHtml(value: string): string {
 }
 
 /**
- * Install the mobile session-delete menu machinery. Mobile-only: the whole
- * effect arms under the ≤1023px breakpoint and is a complete no-op on
- * desktop. Returns a disposer (via installMobileEffect) that removes every
- * listener, observer, injected node, and the confirm dialog.
+ * Install the mobile session-delete menu machinery. Touch-gated: the whole
+ * effect arms under TOUCH_QUERY — (pointer: coarse) at EVERY width — so a
+ * large tablet in landscape keeps the desktop layout but still gets the
+ * delete item, while any mouse-driven or pointer-less window stays a
+ * complete no-op. Returns a disposer (via installMobileEffect) that removes
+ * every listener, observer, injected node, and the confirm dialog.
  * @param ctx - client root context.
  */
 export function installSessionMenuDelete(ctx: ClientContext): void {
@@ -223,7 +225,11 @@ export function installSessionMenuDelete(ctx: ClientContext): void {
         // mode that left deleted cold sessions lingering as ghost rows.
         const sessions = ctx.sessions as { refresh?: () => Promise<void> }
         await sessions.refresh?.()
-        if (wasCurrent) ctx.layout.toggleSidebar()
+        // On the mobile branch the drawer hosts the list, so closing it is
+        // the right follow-up after deleting the current session; on the
+        // desktop layout (wide touch) the same call would collapse the
+        // always-visible sidebar panel, so gate it on the mobile query.
+        if (wasCurrent && window.matchMedia(MOBILE_QUERY).matches) ctx.layout.toggleSidebar()
       })
 
       frame.appendChild(backdrop)
@@ -364,5 +370,5 @@ export function installSessionMenuDelete(ctx: ClientContext): void {
       closeDialog()
       anchor = null
     }
-  })
+  }, TOUCH_QUERY)
 }

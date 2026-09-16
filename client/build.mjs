@@ -24,20 +24,6 @@ const result = await build({
 const bundled = result.outputFiles?.[0]?.text;
 if (!bundled) throw new Error('esbuild did not produce a client bundle');
 
-// esbuild 在产物里插入 `// <入口路径>` 溯源注释，路径是**绝对路径**：
-// 直接提交会把构建机器的路径（用户名、盘符、目录名）写进公开仓库。
-// 这里统一剥掉 packageRoot 前缀，只保留仓库内相对路径（跨机器重建结果一致）。
-const pathPrefix = packageRoot.replace(/\\/g, '/');
-const bundledClean = bundled
-  .split('\n')
-  .map((line) => {
-    const m = /^(\s*\/\/ )([A-Za-z]:[\\/].*)$/.exec(line);
-    if (!m) return line;
-    const rel = m[2].replace(/\\/g, '/').replace(pathPrefix + '/', '');
-    return m[1] + rel;
-  })
-  .join('\n');
-
 const wrapped = `window.__ModuleLoader__.load({
   id: ${JSON.stringify(loaderId)},
   factory: (require) => {
@@ -50,7 +36,7 @@ const wrapped = `window.__ModuleLoader__.load({
     // the bundle must bind React itself - otherwise every mobile component
     // crashes at render time with "ReferenceError: React is not defined".
     var React = require("react");
-${bundledClean}
+${bundled}
     return module.exports;
   }
 });
