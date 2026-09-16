@@ -856,6 +856,16 @@ function PocketSettingsTab({ rpcCall, t }) {
           : null,
       ),
       h('div', { style: { ...styles.muted, marginTop: 6 } }, t('notifyIntro')),
+      // iOS 使用流程（纯文案，独立成段）：只看 caps.ios，不参与下面的失败引导优先级链
+      // （旧引导说「当前不行」，本段说「完整流程」，两者并存）。standalone 为真时缀状态词，
+      // 说明步骤供重装/换机时参考；非 iOS 不渲染。
+      caps && caps.ios
+        ? h('div', { style: { marginTop: 8 } },
+          caps.standalone
+            ? h('div', { style: { ...styles.muted } }, t('notifyIosInstalled'))
+            : null,
+          h('div', { style: { ...styles.muted, marginTop: caps.standalone ? 2 : 0 } }, t('notifyIosSteps')))
+        : null,
       // 条件引导（按优先级）：非安全上下文 → iOS 未安装 → 浏览器不支持
       !caps
         ? null

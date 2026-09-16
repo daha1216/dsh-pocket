@@ -4998,7 +4998,7 @@ var zh2 = {
   "deviceRenamed": "\u2705 \u5DF2\u6539\u540D",
   // Web Push 通知（R3）：手机在系统通知里收到「回合完成 / 等待审批」
   "notifyTitle": "\u901A\u77E5",
-  "notifyIntro": "agent \u8DD1\u5B8C\u4E00\u8F6E\u6216\u7B49\u4F60\u5BA1\u6279\u65F6\uFF0C\u7ED9\u8FD9\u53F0\u624B\u673A\u53D1\u7CFB\u7EDF\u901A\u77E5\uFF08\u9875\u9762\u5F00\u7740\u65F6\u4E0D\u6253\u6270\uFF09\u3002",
+  "notifyIntro": "\u5F00\u542F\u540E\uFF0Cagent \u56DE\u5408\u5B8C\u6210\u6216\u7B49\u5F85\u4F60\u5BA1\u6279\u65F6\uFF0C\u624B\u673A\u4F1A\u6536\u5230\u7CFB\u7EDF\u901A\u77E5\uFF08\u9501\u5C4F/\u901A\u77E5\u4E2D\u5FC3\u53EF\u89C1\uFF09\u3002\u9875\u9762\u5F00\u7740\u65F6\u4E0D\u6253\u6270\uFF1B\u5207\u5230\u540E\u53F0\u6216\u9501\u5C4F\u540E\u6B63\u5E38\u9001\u8FBE\u3002",
   "notifyEnable": "\u5F00\u542F\u901A\u77E5",
   "notifyEnabling": "\u5F00\u542F\u4E2D\u2026",
   "notifyEnabled": "\u2705 \u5DF2\u5F00\u542F\u901A\u77E5",
@@ -5018,6 +5018,8 @@ var zh2 = {
   "notifyNeedInstall": "iOS \u9700\u5148\u628A\u672C\u9875\u300C\u6DFB\u52A0\u5230\u4E3B\u5C4F\u5E55\u300D\uFF0C\u518D\u4ECE\u4E3B\u5C4F\u5E55\u56FE\u6807\u6253\u5F00\uFF0C\u624D\u80FD\u5F00\u542F\u901A\u77E5\u3002",
   "notifyNeedInstallHow": "\u5728 Safari \u70B9\u5E95\u90E8\u5206\u4EAB\u6309\u94AE \u2192 \u6DFB\u52A0\u5230\u4E3B\u5C4F\u5E55 \u2192 \u4ECE\u4E3B\u5C4F\u5E55\u56FE\u6807\u91CD\u65B0\u6253\u5F00\u672C\u9875\u3002",
   "notifyUnsupported": "\u5F53\u524D\u6D4F\u89C8\u5668\u4E0D\u652F\u6301 Web Push \u901A\u77E5\uFF08\u9700\u8981 Chrome / Edge / \u4E09\u661F\u6D4F\u89C8\u5668\uFF0C\u6216 iOS 16.4+ \u7684 Safari \u6DFB\u52A0\u5230\u4E3B\u5C4F\u5E55\uFF09\u3002",
+  "notifyIosSteps": "iOS \u4F7F\u7528\u6B65\u9AA4\uFF1A\u2460 \u7528 Safari \u6253\u5F00\u516C\u7F51\u94FE\u63A5\u5E76\u8F93\u5165\u8BBF\u95EE\u5BC6\u7801 \u2461 \u5206\u4EAB \u2192 \u6DFB\u52A0\u5230\u4E3B\u5C4F\u5E55 \u2462 \u4ECE\u4E3B\u5C4F\u5E55\u56FE\u6807\u6253\u5F00 \u2192 \u8BBE\u7F6E \u2192 \u624B\u673A\u8BBF\u95EE \u2192 \u901A\u77E5 \u2192 \u5F00\u542F\u901A\u77E5\u3002\u5F00\u542F\u540E\u5EFA\u8BAE\u70B9\u4E00\u6B21\u300C\u53D1\u9001\u6D4B\u8BD5\u901A\u77E5\u300D\u786E\u8BA4\uFF08\u9996\u6B21\u53EF\u80FD\u9700\u8981\u5141\u8BB8\u7CFB\u7EDF\u901A\u77E5\u6743\u9650\uFF09\u3002",
+  "notifyIosInstalled": "\u68C0\u6D4B\u5230\u4F60\u5DF2\u4ECE\u4E3B\u5C4F\u5E55\u6253\u5F00 \u2713 \u4EE5\u4E0B\u6B65\u9AA4\u4F9B\u4EE5\u540E\u91CD\u88C5\u6216\u6362\u673A\u65F6\u53C2\u8003\u3002",
   "notifyDenied": "\u6D4F\u89C8\u5668\u5DF2\u62D2\u7EDD\u901A\u77E5\u6743\u9650\uFF1A\u8BF7\u5728\u7AD9\u70B9\u8BBE\u7F6E\u91CC\u628A\u300C\u901A\u77E5\u300D\u6539\u4E3A\u5141\u8BB8\u540E\u91CD\u8BD5\u3002",
   "notifySubscribeFail": "\u8BA2\u9605\u5931\u8D25\uFF1A{err}",
   "notifyHintKeepOpen": "\u63D0\u793A\uFF1A\u9875\u9762\u5F00\u7740\u65F6\u4E0D\u4F1A\u63A8\u9001\uFF08\u4E0D\u6253\u6270\uFF09\uFF0C\u9000\u51FA\u5E94\u7528\u6216\u9501\u5C4F\u540E\u4ECD\u80FD\u6536\u5230\u3002",
@@ -5152,7 +5154,7 @@ var en2 = {
   "deviceRenamed": "\u2705 Renamed",
   // Web Push notifications (R3): the phone gets a system notification when a turn finishes / approval is pending
   "notifyTitle": "Notifications",
-  "notifyIntro": "Get a system notification on this phone when the agent finishes a turn or waits for your approval (no buzz while the page is open).",
+  "notifyIntro": "Once enabled, this phone gets a system notification when the agent finishes a turn or waits for your approval (visible on the lock screen and in Notification Center). Nothing buzzes while the page is open; notifications arrive normally once you switch to the background or lock the screen.",
   "notifyEnable": "Enable notifications",
   "notifyEnabling": "Enabling\u2026",
   "notifyEnabled": "\u2705 Notifications enabled",
@@ -5172,6 +5174,8 @@ var en2 = {
   "notifyNeedInstall": "On iOS add this page to the Home Screen first, then open it from the Home Screen icon to enable notifications.",
   "notifyNeedInstallHow": "In Safari tap Share \u2192 Add to Home Screen \u2192 reopen this page from the Home Screen icon.",
   "notifyUnsupported": "This browser does not support Web Push (needs Chrome / Edge / Samsung Internet, or iOS 16.4+ Safari added to the Home Screen).",
+  "notifyIosSteps": "iOS steps: 1. Open the public link in Safari and enter the access PIN 2. Share \u2192 Add to Home Screen 3. Open from the Home Screen icon \u2192 Settings \u2192 Phone access \u2192 Notifications \u2192 Enable. Once enabled, send one test notification to confirm (iOS may ask for notification permission the first time).",
+  "notifyIosInstalled": "Home Screen mode detected \u2713 \u2014 the steps below are for future reinstalls or a new phone.",
   "notifyDenied": 'Notification permission was denied: set Notifications to "Allow" in site settings, then retry.',
   "notifySubscribeFail": "Subscription failed: {err}",
   "notifyHintKeepOpen": "Note: nothing is pushed while the page is open (no interruption); notifications keep arriving once you leave the app or lock the screen.",
@@ -6034,6 +6038,15 @@ function PocketSettingsTab({ rpcCall, t }) {
         }, notifyBusy ? t("notifyEnabling") : t("notifyEnable")) : null
       ),
       (0, import_react.createElement)("div", { style: { ...styles.muted, marginTop: 6 } }, t("notifyIntro")),
+      // iOS 使用流程（纯文案，独立成段）：只看 caps.ios，不参与下面的失败引导优先级链
+      // （旧引导说「当前不行」，本段说「完整流程」，两者并存）。standalone 为真时缀状态词，
+      // 说明步骤供重装/换机时参考；非 iOS 不渲染。
+      caps && caps.ios ? (0, import_react.createElement)(
+        "div",
+        { style: { marginTop: 8 } },
+        caps.standalone ? (0, import_react.createElement)("div", { style: { ...styles.muted } }, t("notifyIosInstalled")) : null,
+        (0, import_react.createElement)("div", { style: { ...styles.muted, marginTop: caps.standalone ? 2 : 0 } }, t("notifyIosSteps"))
+      ) : null,
       // 条件引导（按优先级）：非安全上下文 → iOS 未安装 → 浏览器不支持
       !caps ? null : !caps.secure ? (0, import_react.createElement)("div", { style: { ...styles.warn, marginTop: 6 } }, t("notifyNeedHttps")) : caps.ios && !caps.standalone ? (0, import_react.createElement)(
         "div",

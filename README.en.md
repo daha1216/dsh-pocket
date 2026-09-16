@@ -16,6 +16,8 @@
 
 > Put **DeepSeek Harness in your pocket**: one package, one settings tab — scan a QR code and your phone shows exactly what's on your computer screen, live, from anywhere.
 
+> **This is a personal fork**: based on [shaobeichen/dsh-pocket](https://github.com/shaobeichen/dsh-pocket) **v2.10.6** (GPL-2.0), maintained by **daha1216 (大哈)**; it adds a few self-use customizations on top of upstream (static-asset caching and PWA, authorized-device management, Web Push notifications). For upstream features, updates and releases see the [upstream repo](https://github.com/shaobeichen/dsh-pocket).
+
 <p align="center">
   ⭐ A Star would make daha1216's day &nbsp;·&nbsp; <a href="https://github.com/daha1216/dsh-pocket">Star it on GitHub</a>
 </p>
@@ -200,6 +202,12 @@ npm test                # proxy / auth / compression / tunnel / service / RPC / 
 
 **Want to try your changes locally without publishing?** Point the installed plugin at your local checkout with a symlink and restart dsh web. Full steps (including switching back to the npm release) are in [LOCAL-DEV.md](./LOCAL-DEV.md).
 
+## 🤝 Credits
+
+- This project is a fork of [shaobeichen/dsh-pocket](https://github.com/shaobeichen/dsh-pocket) (by 程序员少北晨, GPL-2.0); upstream copyright and the full license text are preserved in [LICENSE](LICENSE)
+- Mobile adaptation ported from [mexiaosqwq/dsh-web-mobile](https://github.com/mexiaosqwq/dsh-web-mobile) (MIT)
+- Public tunnel powered by [cloudflared](https://github.com/cloudflare/cloudflared)
+
 ## 📄 License
 
 [GPL-2.0](LICENSE) — copyleft: free to use, modify, and redistribute, but **derivatives must stay GPL** and keep the copyright notice; commercial use included.
@@ -208,4 +216,4 @@ npm test                # proxy / auth / compression / tunnel / service / RPC / 
 
 ---
 
-**Questions? Feedback welcome**: open an issue at [this repo's Issues](https://github.com/daha1216/dsh-pocket/issues) 🙏
+**Questions? Feedback welcome**: for this fork, open an issue at [this repo's Issues](https://github.com/daha1216/dsh-pocket/issues); for general plugin bugs or feature requests, prefer the [upstream Issues](https://github.com/shaobeichen/dsh-pocket/issues) 🙏

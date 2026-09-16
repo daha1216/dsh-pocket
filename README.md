@@ -16,6 +16,8 @@
 
 > 把 **DeepSeek Harness 装进你的口袋**：一个包、一个设置页，手机扫二维码就实时看到电脑上的同一个界面——人在外面也能用。
 
+> **本仓库是个人 fork**：基于 [shaobeichen/dsh-pocket](https://github.com/shaobeichen/dsh-pocket) **v2.10.6**（GPL-2.0），维护者 **大哈**（[@daha1216](https://github.com/daha1216)）；在上游基础上加了少量自用定制（静态资源缓存与 PWA、已授权设备管理、Web Push 通知等）。上游的功能说明、更新与 release 请看[上游仓库](https://github.com/shaobeichen/dsh-pocket)。
+
 <p align="center">
   ⭐ 顺手留颗 Star，大哈能高兴一整天 &nbsp;·&nbsp; <a href="https://github.com/daha1216/dsh-pocket">好，这就去 Star</a>
 </p>
@@ -202,6 +204,12 @@ npm test                # 代理 / 认证 / 压缩 / 隧道 / 服务 / RPC / 设
 
 **改完想在本机先试？** 不用发版：把插件换成指向本地仓库的软链，重启 dsh web 就是本地代码。完整步骤（含怎么换回 npm 官方版本）见 [LOCAL-DEV.md](./LOCAL-DEV.md)。
 
+## 🤝 致谢
+
+- 本项目 fork 自 [shaobeichen/dsh-pocket](https://github.com/shaobeichen/dsh-pocket)（作者：程序员少北晨，GPL-2.0），上游版权与许可全文保留在 [LICENSE](LICENSE)
+- 移动端适配移植自 [mexiaosqwq/dsh-web-mobile](https://github.com/mexiaosqwq/dsh-web-mobile)（MIT）
+- 公网隧道基于 [cloudflared](https://github.com/cloudflare/cloudflared)
+
 ## 📄 License
 
 [GPL-2.0](LICENSE) —— 自由软件许可：可自由使用、修改、分发，但**修改版必须同样以 GPL 开源**并保留版权声明；商用同样适用。
@@ -210,4 +218,4 @@ npm test                # 代理 / 认证 / 压缩 / 隧道 / 服务 / RPC / 设
 
 ---
 
-**有问题？欢迎反馈**：欢迎提到 [本仓库 Issues](https://github.com/daha1216/dsh-pocket/issues) 🙏
+**有问题？欢迎反馈**：本 fork 的问题请提到 [本仓库 Issues](https://github.com/daha1216/dsh-pocket/issues)；属于插件本身的通用 Bug / 需求，建议提到[上游仓库 Issues](https://github.com/shaobeichen/dsh-pocket/issues) 🙏
