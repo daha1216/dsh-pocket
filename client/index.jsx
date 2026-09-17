@@ -398,6 +398,10 @@ function PocketSettingsTab({ rpcCall, t }) {
   const [devEdit, setDevEdit] = useState(null);        // { id, name, err } | null（行内改名）
   const [devConfirm, setDevConfirm] = useState(null);  // 待确认下线的设备 | null
   const [othersConfirm, setOthersConfirm] = useState(false);
+  // R7：设备区块默认收起——设备多了（实测 44 台）会把设置页拉得很长。
+  // 收起态只渲染「标题行（点击展开 + 计数徽标）+ 简介行」，不渲染任何设备行；
+  // 展开态与改动前完全一致（改名 / 下线 / 本机标记 / 空态文案）。
+  const [devOpen, setDevOpen] = useState(false);
   const devLabel = (d) => (d.legacy ? t('deviceLegacy') : (d.label || d.uaType || t('unknownError')));
   // 相对时间：拿 state 里的 now 参与计算，秒级 tick 会驱动重渲染（不额外开定时器）
   const relActive = (ts) => {
@@ -447,7 +451,7 @@ function PocketSettingsTab({ rpcCall, t }) {
     }
   };
   // 单台设备行（窄屏排得下：上行名称/徽标，下行状态/IP，操作用 sm 按钮换行）
-  const devRow = (d) => h('div', { style: { borderTop: '1px solid var(--dsw-alias-border-l2,#e5e7eb)', paddingTop: 9, marginTop: 9 } },
+  const devRow = (d) => h('div', { 'data-dsh-pocket-device-row': '1', style: { borderTop: '1px solid var(--dsw-alias-border-l2,#e5e7eb)', paddingTop: 9, marginTop: 9 } },
     h('div', { style: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' } },
       h('div', { style: { flex: '1 1 150px', minWidth: 0 } },
         h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } },
@@ -821,19 +825,38 @@ function PocketSettingsTab({ rpcCall, t }) {
         h('div', { style: { ...styles.muted, marginTop: 6 } }, t('disclaimerModeHint'))),
     ),
 
-    // 已授权设备（本轮新增）：局域网 / 公网区块之后。旧宿主没有 devices.list → devView 为 null，整块不渲染
+    // 已授权设备（R7 折叠）：局域网 / 公网区块之后。旧宿主没有 devices.list → devView 为 null，整块不渲染。
+    // 标题行整体是折叠头（点击切换 devOpen，aria-expanded 同步）：收起态显示计数徽标
+    // 「已访问设备（N）」，展开态显示原标题；右侧「下线其他设备」两种状态都保留。
+    // 收起态**不渲染设备行列表**（设备多了设置页会被拉得很长）；展开态行为与改动前一致。
     devView ? h('div', { style: styles.block },
       h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' } },
-        h('span', { style: { fontWeight: 600, fontSize: 13 } }, t('devicesTitle')),
+        h('button', {
+          type: 'button',
+          'data-dsh-pocket-devices-toggle': '1',
+          'aria-expanded': devOpen,
+          onClick: () => setDevOpen((v) => !v),
+          style: {
+            display: 'inline-flex', alignItems: 'center', gap: 6, flex: '1 1 auto', minWidth: 0,
+            background: 'transparent', border: 'none', padding: 0, margin: 0, font: 'inherit',
+            color: 'inherit', cursor: 'pointer', textAlign: 'left',
+          },
+        },
+          h('span', { style: { fontSize: 11, lineHeight: 1, color: 'var(--dsw-alias-label-tertiary,#8b93a1)' } }, devOpen ? '▾' : '▸'),
+          h('span', { style: { fontWeight: 600, fontSize: 13 } },
+            devOpen ? t('devicesTitle') : fmt(t, 'devicesCount', { n: (devView.devices || []).length })),
+        ),
         h('button', {
           style: { ...styles.btn, height: 28, padding: '0 12px', fontSize: 12, color: 'var(--dsw-alias-state-error-primary,#dc2626)', flexShrink: 0 },
           onClick: () => setOthersConfirm(true),
         }, t('devicesRevokeOthers')),
       ),
       h('div', { style: { ...styles.muted, marginTop: 6 } }, t('devicesIntro')),
-      (devView.devices || []).length === 0
-        ? h('div', { style: { ...styles.muted, marginTop: 8 } }, t('devicesEmpty'))
-        : (devView.devices || []).map((d) => h('div', { key: d.id }, devRow(d))),
+      devOpen
+        ? ((devView.devices || []).length === 0
+          ? h('div', { style: { ...styles.muted, marginTop: 8 } }, t('devicesEmpty'))
+          : (devView.devices || []).map((d) => h('div', { key: d.id }, devRow(d))))
+        : null,
     ) : null,
 
     // 通知（R3 Web Push）：已授权设备区块之后。旧宿主没有 notify.* → 能力探测照跑，

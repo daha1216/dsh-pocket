@@ -28,7 +28,7 @@ var __copyProps = (to, from, except, desc) => {
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// client/index.jsx
+// index.jsx
 var index_exports = {};
 __export(index_exports, {
   apply: () => apply2,
@@ -39,7 +39,7 @@ __export(index_exports, {
 module.exports = __toCommonJS(index_exports);
 var import_react = require("react");
 
-// client/api.js
+// api.js
 var POCKET_RPC_CHANNEL = "/dsh-pocket";
 var POCKET_ENDPOINTS = Object.freeze({
   status: "pocket.status",
@@ -122,10 +122,10 @@ function redactStatus(s) {
   };
 }
 
-// client/mobile/upstream/components/MobileNavToggle.tsx
+// mobile/upstream/components/MobileNavToggle.tsx
 var import_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 
-// client/mobile/upstream/effects/gesture-guard.ts
+// mobile/upstream/effects/gesture-guard.ts
 var consumed = /* @__PURE__ */ new Map();
 var strokeLocked = false;
 function markStrokeLocked() {
@@ -177,7 +177,7 @@ function consumeIfGestured(event) {
   return false;
 }
 
-// client/mobile/upstream/core/reconciler-core.ts
+// mobile/upstream/core/reconciler-core.ts
 function createReconcilerCore(options) {
   const onError = options.onError ?? ((taskName, error, phase) => {
     console.error(
@@ -280,7 +280,7 @@ function createReconcilerCore(options) {
   };
 }
 
-// client/mobile/upstream/effects/aionui-compat.ts
+// mobile/upstream/effects/aionui-compat.ts
 function installAionuiCompat(ctx) {
   installMobileEffect(ctx, "dsh-web-mobile: aionui explorer close marker", () => {
     const onChevronClick = (event) => {
@@ -413,7 +413,7 @@ function createSheetRiseTask() {
   };
 }
 
-// client/mobile/upstream/effects/stats-line.ts
+// mobile/upstream/effects/stats-line.ts
 function statsAnchorAlive(el) {
   if (el === null || !el.isConnected) return false;
   if (el.closest("[data-phase]") === null) return false;
@@ -479,7 +479,7 @@ function createStatsLineTask() {
   };
 }
 
-// client/mobile/upstream/effects/preview-fullscreen.ts
+// mobile/upstream/effects/preview-fullscreen.ts
 function createPreviewFullscreenTask(t) {
   let button = null;
   const syncLabel = (target) => {
@@ -523,7 +523,7 @@ function createPreviewFullscreenTask(t) {
   };
 }
 
-// client/mobile/upstream/effects/git-chip-reparent.ts
+// mobile/upstream/effects/git-chip-reparent.ts
 function createGitChipTask() {
   return {
     name: "git-chip-reparent",
@@ -543,7 +543,7 @@ function createGitChipTask() {
   };
 }
 
-// client/mobile/upstream/effects/settings-toolbar-reparent.ts
+// mobile/upstream/effects/settings-toolbar-reparent.ts
 function createSettingsToolbarTask() {
   let origin = null;
   return {
@@ -572,7 +572,7 @@ function createSettingsToolbarTask() {
   };
 }
 
-// client/mobile/upstream/effects/overlay-backdrop-fab.ts
+// mobile/upstream/effects/overlay-backdrop-fab.ts
 function fadeOverlayOut() {
   fadeHook?.();
 }
@@ -656,7 +656,7 @@ function createOverlayTask(t, toggleSidebar) {
   };
 }
 
-// client/mobile/upstream/effects/file-viewer-compat.ts
+// mobile/upstream/effects/file-viewer-compat.ts
 function createFileViewerMarkerTask() {
   return {
     name: "file-viewer-open-marker",
@@ -677,7 +677,7 @@ function createFileViewerMarkerTask() {
   };
 }
 
-// client/mobile/upstream/effects/phone-chrome.ts
+// mobile/upstream/effects/phone-chrome.ts
 var NS = "mobileNav";
 var MOBILE_QUERY = "(max-width: 1023px) and (pointer: coarse)";
 var DESKTOP_QUERY = "(min-width: 1024px)";
@@ -979,7 +979,7 @@ function registerReconcileTasks(ctx) {
   };
 }
 
-// client/mobile/upstream/components/MobileNavToggle.tsx
+// mobile/upstream/components/MobileNavToggle.tsx
 function MobileNavToggle({ toggleSidebar, t }) {
   const toggleExplorer = () => {
     const frame = getFrame();
@@ -1014,7 +1014,7 @@ function MobileNavToggle({ toggleSidebar, t }) {
   ));
 }
 
-// client/mobile/upstream/components/MobileDrawerFooter.tsx
+// mobile/upstream/components/MobileDrawerFooter.tsx
 var import_dsh_client_ui_primitives2 = require("@deepseek-ai/dsh-client-ui-primitives");
 function MobileDrawerFooter({ useSessions, downloadSessionLog, toggleSidebar, t }) {
   const sessionId = useSessions((state) => state.current);
@@ -1051,7 +1051,7 @@ function MobileDrawerFooter({ useSessions, downloadSessionLog, toggleSidebar, t 
   ));
 }
 
-// client/mobile/upstream/styles/base.css.ts
+// mobile/upstream/styles/base.css.ts
 var BASE_CSS = `
 /* ---------- base control styles (rendered at any width, hidden where unused) ---------- */
 
@@ -1301,7 +1301,7 @@ var BASE_CSS = `
 
 `;
 
-// client/mobile/upstream/styles/layout.css.ts
+// mobile/upstream/styles/layout.css.ts
 var LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND touch-primary pointer) ---------- */
 
 @media (max-width: 1023px) and (pointer: coarse) {
@@ -2154,7 +2154,7 @@ var LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND touch-pr
 }
 `;
 
-// client/mobile/upstream/styles/compat.css.ts
+// mobile/upstream/styles/compat.css.ts
 var COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
   /* ---------- dsh-web-ui family compatibility ----------
      The linxin666 plugin suite extends the shell frame directly:
@@ -3081,7 +3081,7 @@ var COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
 
 `;
 
-// client/mobile/upstream/styles/misc.css.ts
+// mobile/upstream/styles/misc.css.ts
 var MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
   /* ---------- hero composer on mobile ----------
      The official hero card carries a 2-line textarea plus a tall tool row,
@@ -3355,10 +3355,10 @@ var MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
 }
 `;
 
-// client/mobile/upstream/styles/index.ts
+// mobile/upstream/styles/index.ts
 var MOBILE_CSS = [BASE_CSS, LAYOUT_CSS, COMPAT_CSS, MISC_CSS].join("\n");
 
-// client/mobile/upstream/effects/sidebar-swipe.ts
+// mobile/upstream/effects/sidebar-swipe.ts
 var START_ZONE_RATIO = 0.45;
 function startZonePxFor(viewportWidthPx, ratio = START_ZONE_RATIO) {
   return Math.round(viewportWidthPx * ratio);
@@ -3867,7 +3867,7 @@ function installSidebarSwipe(ctx) {
   });
 }
 
-// client/mobile/upstream/effects/subagent-chip-touch.ts
+// mobile/upstream/effects/subagent-chip-touch.ts
 var CHIP_TRIGGER_SELECTOR = '[data-mobile-nav="frame"] button[class*="_trigger"][aria-haspopup="tree"][aria-expanded]:not([class*="_switcherTrigger"])';
 var HOVER_SUBTREE_SELECTOR = '[class*="ZKlsPq_root"], [class*="ZKlsPq_menu"], [class*="h8S2Va_root"], [class*="h8S2Va_menu"]';
 var SWALLOW_WINDOW_MS = 800;
@@ -3942,7 +3942,7 @@ function installSubagentChipTouch(ctx) {
   });
 }
 
-// client/mobile/upstream/effects/session-menu.ts
+// mobile/upstream/effects/session-menu.ts
 var NS2 = "mobileNav";
 var WORKSPACE_NS = "workspace";
 var DELETE_ITEM_MARKER = 'data-mobile-nav="session-delete"';
@@ -4202,7 +4202,7 @@ function installSessionMenuDelete(ctx) {
   }, TOUCH_QUERY);
 }
 
-// client/mobile/upstream/effects/composer-keyboard-guard.ts
+// mobile/upstream/effects/composer-keyboard-guard.ts
 var COMPOSER_CARD_SELECTOR = "[data-composer-card]";
 var COMPOSER_INPUT_SELECTOR = "[data-composer-input]";
 var SHADOW_MARKER = "data-mobile-nav-focus-shadow";
@@ -4244,7 +4244,7 @@ function installComposerKeyboardGuard(ctx) {
   });
 }
 
-// client/mobile/upstream/core/raf-scheduler.ts
+// mobile/upstream/core/raf-scheduler.ts
 function createRafScheduler(raf, caf) {
   let pending = 0;
   let queued = false;
@@ -4265,7 +4265,7 @@ function createRafScheduler(raf, caf) {
   };
 }
 
-// client/mobile/upstream/debug.ts
+// mobile/upstream/debug.ts
 function installDebugBadge(ctx) {
   ctx.effect(() => {
     if (!new URLSearchParams(location.search).has("mobile-nav-debug")) return () => {
@@ -4337,7 +4337,7 @@ function installDebugBadge(ctx) {
   }, "dsh-web-mobile: debug badge");
 }
 
-// client/mobile/upstream/i18n/locales.ts
+// mobile/upstream/i18n/locales.ts
 var NS3 = "mobileNav";
 var zh = {
   "open": "\u6253\u5F00\u76EE\u5F55",
@@ -4378,7 +4378,7 @@ var en = {
   "deleteErrorGeneric": "Delete failed: {message}"
 };
 
-// client/mobile/upstream/index.tsx
+// mobile/upstream/index.tsx
 function apply(ctx) {
   ctx.effect(() => ctx.locale.register(NS3, { zh, en }), "dsh-web-mobile: dictionaries");
   ctx.effect(() => {
@@ -4523,7 +4523,7 @@ function apply(ctx) {
   }, MobileDrawerFooter));
 }
 
-// client/mobile/fileGuard.ts
+// mobile/fileGuard.ts
 var GUARD_MSG = "\u624B\u673A\u4E0A\u65E0\u6CD5\u76F4\u63A5\u6253\u5F00\u7535\u8111\u4E0A\u7684\u6587\u4EF6";
 var WS_LABELS = ["\u6DFB\u52A0\u5DE5\u4F5C\u533A", "\u6DFB\u52A0\u5DE5\u4F5C\u533A\u2026", "Add workspace", "Add workspace\u2026"];
 var COPY_LABEL = "\u590D\u5236";
@@ -4686,7 +4686,7 @@ function startFileGuard(readFile) {
   };
 }
 
-// client/mobile/layout-mode.mjs
+// mobile/layout-mode.mjs
 function resolveLayout({ urlValue, stored, narrowMatch }) {
   const url = String(urlValue ?? "").trim();
   if (url === "desktop") return "desktop";
@@ -4720,7 +4720,7 @@ function readStoredLayout() {
   }
 }
 
-// client/mobile/mobile-apply.tsx
+// mobile/mobile-apply.tsx
 var POCKET_EXTRA_CSS = `@media (max-width: 1023px) {
   /* ---------- \u5BBF\u4E3B\u6CA1\u6709 aionui explorer \u5217\u65F6\u9690\u85CF\u300C\u6587\u4EF6\u6D4F\u89C8\u300D\u5165\u53E3\uFF08issue #48\uFF09 ----------
      \u5B98\u65B9 DeepSeek Harness \u4E0D\u5E26 dsh-web-ui\uFF1Bexplorer \u5217\u5B58\u5728\u4E0E\u5426\u7531\u4E0B\u65B9\u63A2\u6D4B effect
@@ -4867,7 +4867,7 @@ function mobileApply(ctx) {
   }, "dsh-pocket: file open guard + copy button + hide add-workspace (issue #17)");
 }
 
-// client/pocket-locales.js
+// pocket-locales.js
 var NS4 = "pocket";
 var zh2 = {
   "section": "\u624B\u673A\u8BBF\u95EE",
@@ -4971,6 +4971,8 @@ var zh2 = {
   "unknownError": "\u672A\u77E5\u9519\u8BEF",
   // 已授权设备（本轮新增）：每台手机独立身份，可改名 / 单独下线 / 全部下线
   "devicesTitle": "\u5DF2\u6388\u6743\u8BBE\u5907",
+  // R7 折叠头：收起态用计数徽标替代标题（设备多了不再把设置页拉长）
+  "devicesCount": "\u5DF2\u8BBF\u95EE\u8BBE\u5907\uFF08{n}\uFF09",
   "devicesIntro": "\u901A\u8FC7\u8BBF\u95EE\u5BC6\u7801\u767B\u5F55\u8FC7\u7684\u8BBE\u5907\u3002\u53EF\u5355\u72EC\u6539\u540D\u6216\u4E0B\u7EBF\uFF1B\u88AB\u4E0B\u7EBF\u7684\u8BBE\u5907\u9700\u8981\u91CD\u65B0\u8F93\u5165\u5BC6\u7801\u3002",
   "devicesEmpty": "\u6682\u65E0\uFF08\u7528\u5BC6\u7801\u767B\u5F55\u8FC7\u7684\u8BBE\u5907\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC\uFF09",
   "devicesRevokeOthers": "\u4E0B\u7EBF\u5176\u4ED6\u8BBE\u5907",
@@ -5127,6 +5129,8 @@ var en2 = {
   "unknownError": "unknown error",
   // Authorized devices (this round): per-device identity, rename / revoke one / revoke others
   "devicesTitle": "Authorized devices",
+  // R7 collapsed header: the count badge replaces the title while collapsed
+  "devicesCount": "Visited devices ({n})",
   "devicesIntro": "Devices that signed in with the access PIN. Rename or revoke individually; a revoked device must enter the PIN again.",
   "devicesEmpty": "None yet (devices that sign in with the PIN appear here)",
   "devicesRevokeOthers": "Sign out others",
@@ -5182,7 +5186,7 @@ var en2 = {
   "feedback": "\u{1F64F} Questions? Open an issue on GitHub"
 };
 
-// client/index.jsx
+// index.jsx
 var name = "dsh-pocket";
 var inject = ["slots", "connection", "layout", "locale", "sessionLogDownload"];
 function fmt(t, key, vars) {
@@ -5536,6 +5540,7 @@ function PocketSettingsTab({ rpcCall, t }) {
   const [devEdit, setDevEdit] = (0, import_react.useState)(null);
   const [devConfirm, setDevConfirm] = (0, import_react.useState)(null);
   const [othersConfirm, setOthersConfirm] = (0, import_react.useState)(false);
+  const [devOpen, setDevOpen] = (0, import_react.useState)(false);
   const devLabel = (d) => d.legacy ? t("deviceLegacy") : d.label || d.uaType || t("unknownError");
   const relActive = (ts) => {
     const s = Math.max(0, Math.floor((now - (ts || 0)) / 1e3));
@@ -5589,7 +5594,7 @@ function PocketSettingsTab({ rpcCall, t }) {
   };
   const devRow = (d) => (0, import_react.createElement)(
     "div",
-    { style: { borderTop: "1px solid var(--dsw-alias-border-l2,#e5e7eb)", paddingTop: 9, marginTop: 9 } },
+    { "data-dsh-pocket-device-row": "1", style: { borderTop: "1px solid var(--dsw-alias-border-l2,#e5e7eb)", paddingTop: 9, marginTop: 9 } },
     (0, import_react.createElement)(
       "div",
       { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, flexWrap: "wrap" } },
@@ -6002,21 +6007,53 @@ function PocketSettingsTab({ rpcCall, t }) {
         (0, import_react.createElement)("div", { style: { ...styles.muted, marginTop: 6 } }, t("disclaimerModeHint"))
       )
     ),
-    // 已授权设备（本轮新增）：局域网 / 公网区块之后。旧宿主没有 devices.list → devView 为 null，整块不渲染
+    // 已授权设备（R7 折叠）：局域网 / 公网区块之后。旧宿主没有 devices.list → devView 为 null，整块不渲染。
+    // 标题行整体是折叠头（点击切换 devOpen，aria-expanded 同步）：收起态显示计数徽标
+    // 「已访问设备（N）」，展开态显示原标题；右侧「下线其他设备」两种状态都保留。
+    // 收起态**不渲染设备行列表**（设备多了设置页会被拉得很长）；展开态行为与改动前一致。
     devView ? (0, import_react.createElement)(
       "div",
       { style: styles.block },
       (0, import_react.createElement)(
         "div",
         { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" } },
-        (0, import_react.createElement)("span", { style: { fontWeight: 600, fontSize: 13 } }, t("devicesTitle")),
+        (0, import_react.createElement)(
+          "button",
+          {
+            type: "button",
+            "data-dsh-pocket-devices-toggle": "1",
+            "aria-expanded": devOpen,
+            onClick: () => setDevOpen((v) => !v),
+            style: {
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              flex: "1 1 auto",
+              minWidth: 0,
+              background: "transparent",
+              border: "none",
+              padding: 0,
+              margin: 0,
+              font: "inherit",
+              color: "inherit",
+              cursor: "pointer",
+              textAlign: "left"
+            }
+          },
+          (0, import_react.createElement)("span", { style: { fontSize: 11, lineHeight: 1, color: "var(--dsw-alias-label-tertiary,#8b93a1)" } }, devOpen ? "\u25BE" : "\u25B8"),
+          (0, import_react.createElement)(
+            "span",
+            { style: { fontWeight: 600, fontSize: 13 } },
+            devOpen ? t("devicesTitle") : fmt(t, "devicesCount", { n: (devView.devices || []).length })
+          )
+        ),
         (0, import_react.createElement)("button", {
           style: { ...styles.btn, height: 28, padding: "0 12px", fontSize: 12, color: "var(--dsw-alias-state-error-primary,#dc2626)", flexShrink: 0 },
           onClick: () => setOthersConfirm(true)
         }, t("devicesRevokeOthers"))
       ),
       (0, import_react.createElement)("div", { style: { ...styles.muted, marginTop: 6 } }, t("devicesIntro")),
-      (devView.devices || []).length === 0 ? (0, import_react.createElement)("div", { style: { ...styles.muted, marginTop: 8 } }, t("devicesEmpty")) : (devView.devices || []).map((d) => (0, import_react.createElement)("div", { key: d.id }, devRow(d)))
+      devOpen ? (devView.devices || []).length === 0 ? (0, import_react.createElement)("div", { style: { ...styles.muted, marginTop: 8 } }, t("devicesEmpty")) : (devView.devices || []).map((d) => (0, import_react.createElement)("div", { key: d.id }, devRow(d))) : null
     ) : null,
     // 通知（R3 Web Push）：已授权设备区块之后。旧宿主没有 notify.* → 能力探测照跑，
     // 但任何操作都会失败并给出真实错误；区块本身在 devView 存在时才渲染（同设备区块）。

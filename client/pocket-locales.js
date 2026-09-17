@@ -105,6 +105,8 @@ export const zh = {
   'unknownError': '未知错误',
   // 已授权设备（本轮新增）：每台手机独立身份，可改名 / 单独下线 / 全部下线
   'devicesTitle': '已授权设备',
+  // R7 折叠头：收起态用计数徽标替代标题（设备多了不再把设置页拉长）
+  'devicesCount': '已访问设备（{n}）',
   'devicesIntro': '通过访问密码登录过的设备。可单独改名或下线；被下线的设备需要重新输入密码。',
   'devicesEmpty': '暂无（用密码登录过的设备会出现在这里）',
   'devicesRevokeOthers': '下线其他设备',
@@ -263,6 +265,8 @@ export const en = {
   'unknownError': 'unknown error',
   // Authorized devices (this round): per-device identity, rename / revoke one / revoke others
   'devicesTitle': 'Authorized devices',
+  // R7 collapsed header: the count badge replaces the title while collapsed
+  'devicesCount': 'Visited devices ({n})',
   'devicesIntro': 'Devices that signed in with the access PIN. Rename or revoke individually; a revoked device must enter the PIN again.',
   'devicesEmpty': 'None yet (devices that sign in with the PIN appear here)',
   'devicesRevokeOthers': 'Sign out others',
