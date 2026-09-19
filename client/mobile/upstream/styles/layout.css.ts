@@ -540,6 +540,27 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
     text-overflow: ellipsis;
     white-space: nowrap !important;
   }
+  /* The mode badge seat used to keep flex 1 1 auto, so it split the row evenly
+     with the title cluster: in a 416px row the title got 123px and the crumb
+     collapsed to 16px. Pin the seat to its content and let the cluster take
+     the rest. flex-basis 0 on the nav is the second half of the bug, since it
+     let the nav shrink below its own text. */
+  [data-mobile-nav="frame"] [data-phase] header [class*="_headerLeading"] {
+    flex: 0 0 auto !important;
+  }
+  [data-mobile-nav="frame"] [data-phase] header [class*="_titleCluster"] {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+  }
+  [data-mobile-nav="frame"] [data-phase] header [class*="_crumbs"] {
+    flex: 1 1 auto !important;
+    max-width: none !important;
+  }
+  [data-mobile-nav="frame"] [data-phase] header button[class*="_crumb"] {
+    flex: 0 1 auto !important;
+    max-width: none !important;
+    padding: 4px 8px !important;
+  }
   /* Mode label: preserve its icon and scale with the viewport — it yields
      space to the title and subagent status first, but can use more width on
      wider screens up to 220px before ellipsizing. */
