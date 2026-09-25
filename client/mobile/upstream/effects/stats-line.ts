@@ -67,13 +67,8 @@ export function createStatsLineTask(): ReconcilerTask {
       // their text, so never mistake it (or any interactive dock panel)
       // for the stats strip.
       if (root.matches('[data-testid="todo-panel"]')) continue
-      if (root.querySelector('button') !== null) continue
-      const text = root.textContent ?? ''
-      if (!/(turns|steps|\bLLM\b|轮|步)/.test(text)) continue
-      // Composer card must never be mistaken for the status strip; exclude
-      // its input region across both composer DOMs (textarea / Lexical
-      // contentEditable marked data-composer-input).
       if (root.querySelector('textarea, [data-composer-input]') !== null) continue
+      if (!root.hasAttribute('data-composer-stats') && root.querySelector('button:not([class*="_pill"])') !== null) continue
       root.setAttribute('data-mobile-nav', 'stats')
       moveTps(root)
       return

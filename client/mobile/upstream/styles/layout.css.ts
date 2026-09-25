@@ -3,7 +3,7 @@
 
 export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND touch-primary pointer) ---------- */
 
-@media (max-width: 1023px) and (pointer: coarse) {
+@media (max-width: 768px), (max-width: 1023px) and (pointer: coarse) {
   /* --- Phone chrome ---
      The system status bar stays visible (no fullscreen). Three adjustments
      make it behave:
@@ -60,7 +60,8 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
      at-bottom follow scrolls its own scroll body, not the document. With
      border-box the padding is taken out of the 100% height instead, so the
      frame is exactly one viewport tall and the document never scrolls. */
-  [data-mobile-nav="frame"] {
+  [data-mobile-nav="frame"],
+  div[class*="_frame"]:has(> div[class*="_centerCol"]) {
     box-sizing: border-box !important;
     position: relative !important;
     grid-template-columns: minmax(0, 1fr) 0 0 !important;
@@ -77,15 +78,16 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
      before) left 14px of the drawer plus a long 32px-blur shadow gradient
      visible along the left edge of the main UI. No box-shadow at all: the
      dimmed backdrop already separates drawer from content. */
-  [data-mobile-nav="frame"] > :first-child {
+  [data-mobile-nav="frame"] > :first-child,
+  div[class*="_frame"]:has(> div[class*="_centerCol"]) > :first-child {
     position: absolute !important;
     inset: 0 auto 0 0 !important;
     width: max-content;
     max-width: 92vw;
     z-index: 40 !important;
-    transform: translateX(-110%);
-    transition: transform .28s var(--ds-ease-in-out, ease-in-out);
-    background: var(--dsw-alias-bg-base, #ffffff);
+    transform: translateX(-110%) !important;
+    transition: transform .28s var(--ds-ease-in-out, ease-in-out) !important;
+    background: var(--dsw-alias-bg-base, #ffffff) !important;
     /* Keep the drawer's own content below the status bar / notch: the drawer
        spans the full frame height (its absolute containing block is the
        frame's padding box, so the frame's own safe-area padding does NOT
@@ -95,7 +97,8 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
     /* Kill the official sidebarCol right border: with the backdrop the edge
        reads cleanly, and the settings dialog (width:100% of this box) stays
        pixel-flush with the drawer. */
-    border-right: none !important;
+    border-right: 1px solid var(--dsw-alias-border-l2, #e5e7eb) !important;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.18) !important;
   }
 
   /* Expanded state (frame without data-sidebar-collapsed) slides the drawer in.
@@ -107,7 +110,8 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
      overflow:hidden drawer to scrollLeft=102, and every static child (plus the
      fixed overlay) shifts 102px off-screen. With transform:none the overlay is
      viewport-anchored: it dims the full screen and the sheet sits at left:8. */
-  [data-mobile-nav="frame"]:not([data-sidebar-collapsed]) > :first-child {
+  [data-mobile-nav="frame"]:not([data-sidebar-collapsed]) > :first-child,
+  div[class*="_frame"]:has(> div[class*="_centerCol"]):not([data-sidebar-collapsed]) > :first-child {
     transform: none !important;
   }
 
@@ -480,38 +484,45 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
     margin-left: 0;
   }
 
-  /* --- Session header on mobile ---
-     Keep the host-owned metadata in one responsive row. The conversation
-     title and running/subagent status keep their lanes; the mode text is the
-     first to ellipsize when space runs out, while Files keeps its hit area. */
-  [data-mobile-nav="frame"] [data-phase] header {
-    padding-left: 16px;
-    padding-right: 8px;
-  }
-  [data-mobile-nav="frame"] [data-phase] header > :first-child {
+  /* --- Session header on mobile --- */
+  [data-mobile-nav="frame"] [data-phase] header,
+  div[class*="_frame"] [data-phase] header,
+  [data-mobile-nav="frame"] header,
+  div[class*="_frame"] header {
     display: flex !important;
-    align-items: center;
-    box-sizing: border-box;
-    width: 100%;
-    min-width: 0;
-    gap: 2px;
-    padding-left: 20px;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    position: relative !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 44px !important;
+    padding: 6px 12px 6px 46px !important;
+    gap: 4px !important;
   }
-  [data-mobile-nav="frame"] [data-phase] header > :first-child > :first-child {
-    display: flex !important;
-    align-items: center;
-    flex: 1 1 auto;
-    min-width: 0;
-    gap: 2px;
+
+  /* 隐藏桌面端头部左侧占位/折叠列，由绝对定位的 mobile toggle 负责抽屉开关 */
+  [data-mobile-nav="frame"] header [class*="_headerLeading"],
+  div[class*="_frame"] header [class*="_headerLeading"] {
+    display: none !important;
   }
-  /* The directory toggle stays at the far left of the header. */
+
+  /* 抽屉开关按钮定位在左侧 6px，居中于顶行，不占流内空间且不遮挡标题 */
   [data-mobile-nav="toggle"] {
     position: absolute !important;
-    left: 8px !important;
-    top: 12px !important;
-    z-index: 2 !important;
+    left: 6px !important;
+    top: 6px !important;
+    z-index: 10 !important;
+    width: 34px !important;
+    height: 34px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 !important;
+    border-radius: 8px !important;
   }
-  /* Files remains in flow and is ordered as the rightmost plugin action. */
+
+  /* Files 按钮紧跟其后或隐藏 */
   [data-mobile-nav="files"] {
     position: static !important;
     left: auto !important;
@@ -519,107 +530,214 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
     top: auto !important;
     z-index: auto !important;
   }
-  [data-mobile-nav="frame"] [data-phase] header [class*="_headerActions"] {
+
+  /* 标题行与标题群落全宽弹性排列 */
+  [data-mobile-nav="frame"] header [class*="_titleRow"],
+  div[class*="_frame"] header [class*="_titleRow"] {
     display: flex !important;
-    align-items: center;
-    box-sizing: border-box;
-    flex: 0 1 auto;
-    min-width: 0;
-    max-width: calc(100% - 32px);
-    margin-left: auto;
-    justify-content: flex-end;
-    gap: 2px;
+    flex: 1 1 auto !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 32px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    gap: 6px !important;
   }
-  /* The title takes the remaining width and never paints outside it; the
-     metadata lane's mode text is what shrinks first. */
-  [data-mobile-nav="frame"] [data-phase] header [class*="_crumbs"] {
-    flex: 1 1 0;
-    min-width: 0;
-    max-width: none;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap !important;
+  [data-mobile-nav="frame"] header [class*="_titleCluster"],
+  div[class*="_frame"] header [class*="_titleCluster"] {
+    display: flex !important;
+    flex: 1 1 auto !important;
+    align-items: center !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    gap: 6px !important;
   }
-  /* The mode badge seat used to keep flex 1 1 auto, so it split the row evenly
-     with the title cluster: in a 416px row the title got 123px and the crumb
-     collapsed to 16px. Pin the seat to its content and let the cluster take
-     the rest. flex-basis 0 on the nav is the second half of the bug, since it
-     let the nav shrink below its own text. */
-  [data-mobile-nav="frame"] [data-phase] header [class*="_headerLeading"] {
-    flex: 0 0 auto !important;
-  }
-  [data-mobile-nav="frame"] [data-phase] header [class*="_titleCluster"] {
+
+  /* 标题面包屑文字：允许弹性伸缩，超出单行省略，左侧绝不切字 */
+  [data-mobile-nav="frame"] header [class*="_crumbs"],
+  div[class*="_frame"] header [class*="_crumbs"] {
+    display: flex !important;
+    align-items: center !important;
     flex: 1 1 auto !important;
     min-width: 0 !important;
-  }
-  [data-mobile-nav="frame"] [data-phase] header [class*="_crumbs"] {
-    flex: 1 1 auto !important;
-    max-width: none !important;
-  }
-  [data-mobile-nav="frame"] [data-phase] header button[class*="_crumb"] {
-    flex: 0 1 auto !important;
-    max-width: none !important;
-    padding: 4px 8px !important;
-  }
-  /* Mode label: preserve its icon and scale with the viewport — it yields
-     space to the title and subagent status first, but can use more width on
-     wider screens up to 220px before ellipsizing. */
-  [data-mobile-nav="frame"] [data-phase] header [class*="_label"]:has(> svg) {
-    order: 1;
-    flex: 0 1 auto;
-    min-width: 0;
-    max-width: min(22vw, 220px);
-    display: block;
-    position: relative;
-    box-sizing: border-box;
-    padding-left: 18px;
-    padding-right: 2px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow: hidden !important;
     white-space: nowrap !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
-  [data-mobile-nav="frame"] [data-phase] header [class*="_label"]:has(> svg) > svg {
-    position: absolute !important;
-    left: 0 !important;
-    top: 50% !important;
-    transform: translateY(-50%) !important;
-  }
-  /* Running/subagent controls keep their full status text and hit area; they
-     do not give up width to the mode label. NOTE: the real subagent lineage
-     root has class="ZKlsPq_root " — a TRAILING SPACE from the plugin's
-     template-literal className — so [class*="_root"] never matches it. Use
-     [class*="_root"] and exclude the switcher root ([class*="_switcherRoot"])
-     so only the count/job roots get pinned (the switcher must stay shrinkable
-     so its own title can ellipsize). */
-  [data-mobile-nav="frame"] [data-phase] header [class*="_root"]:not([class*="_switcherRoot"]):has(> button[class*="_trigger"]) {
-    order: 2;
-    flex: 0 0 auto;
-    min-width: max-content;
-    max-width: max-content;
+  [data-mobile-nav="frame"] header [class*="_crumb"],
+  div[class*="_frame"] header [class*="_crumb"] {
+    display: inline-block !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
     white-space: nowrap !important;
-    position: static;
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    color: var(--dsw-alias-label-primary) !important;
+    padding: 2px 0 !important;
   }
-  [data-mobile-nav="frame"] [data-phase] header [class*="_root"]:not([class*="_switcherRoot"]):has(> button[class*="_trigger"]) > button,
-  [data-mobile-nav="frame"] [data-phase] header [class*="_root"]:not([class*="_switcherRoot"]):has(> button[class*="_trigger"]) > button * {
-    white-space: nowrap !important;
+
+  /* 顶栏操作区与状态胶囊：紧凑排列在右侧 */
+  [data-mobile-nav="frame"] header [class*="_headerActions"],
+  div[class*="_frame"] header [class*="_headerActions"] {
+    display: flex !important;
+    flex: 0 0 auto !important;
+    align-items: center !important;
+    gap: 4px !important;
+    margin-left: auto !important;
+    justify-content: flex-end !important;
   }
-  /* The lineage count's leading "/" (ZKlsPq_separator — official desktop
-     chrome rendered only for a root session inside the crumbs) looks like a
-     stray extra breadcrumb level on small screens; hide it. The crumbSep "/"
-     between ancestry segments (subagent sessions) is a real separator and
-     stays. */
-  [data-mobile-nav="frame"] [data-phase] header [class*="_crumbs"] [class*="_separator"] {
+
+  /* 预设模式胶囊（标准模式等）：窄屏隐藏文字仅保留图标，避免挤爆标题 */
+  [data-mobile-nav="frame"] header [class*="_headerActions"] [class*="_label"]:has(> svg),
+  div[class*="_frame"] header [class*="_headerActions"] [class*="_label"]:has(> svg) {
+    font-size: 0 !important;
+    padding: 4px !important;
+    width: 24px !important;
+    height: 24px !important;
+    min-width: 24px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-sizing: border-box !important;
+  }
+  [data-mobile-nav="frame"] header [class*="_headerActions"] [class*="_label"] > svg,
+  div[class*="_frame"] header [class*="_headerActions"] [class*="_label"] > svg {
+    position: static !important;
+    transform: none !important;
+    width: 14px !important;
+    height: 14px !important;
+  }
+
+  /* 手机上精简后台任务胶囊：隐藏长文字，仅保留转圈状态与下拉箭头，释放150px空间 */
+  [data-mobile-nav="frame"] header [class*="_headerActions"] [class*="_count"],
+  div[class*="_frame"] header [class*="_headerActions"] [class*="_count"] {
     display: none !important;
   }
-  [data-mobile-nav="frame"] [data-phase] header [data-mobile-nav="files"] {
-    order: 3;
-    flex: 0 0 28px;
-    width: 28px;
+  [data-mobile-nav="frame"] header [class*="_headerActions"] [class*="_root"]:has(> button[class*="_trigger"]) {
+    min-width: 0 !important;
   }
-  /* Session log download: gone from the header row on mobile (the utilities
-     seat holds only the session-log-export capsule). */
-  [data-mobile-nav="frame"] [data-phase] header > :first-child > :last-child {
+  [data-mobile-nav="frame"] header [class*="_headerActions"] [class*="_trigger"] {
+    padding: 2px 4px !important;
+    min-height: 24px !important;
+    gap: 2px !important;
+  }
+
+  /* 手机端精简 Agent Team 胶囊：隐藏文字仅保留人员图标与队员数字，释放80px空间 */
+  [data-mobile-nav="frame"] header [data-team-action] button > span:not([class*="_count"]),
+  div[class*="_frame"] header [data-team-action] button > span:not([class*="_count"]) {
     display: none !important;
+  }
+  [data-mobile-nav="frame"] header [data-team-action] button,
+  div[class*="_frame"] header [data-team-action] button {
+    padding: 2px 4px !important;
+    min-height: 24px !important;
+    gap: 2px !important;
+  }
+
+  /* 手机上隐藏 Open In App（外部编辑器打开）桌面专用分体按钮，释放330px顶栏空间给标题 */
+  [data-mobile-nav="frame"] header [data-open-target],
+  div[class*="_frame"] header [data-open-target],
+  [data-mobile-nav="frame"] header [class*="_menuAnchor"]:has([data-open-target]),
+  div[class*="_frame"] header [class*="_menuAnchor"]:has([data-open-target]),
+  [data-mobile-nav="frame"] header [class*="_appIcon"],
+  div[class*="_frame"] header [class*="_appIcon"],
+  [data-mobile-nav="frame"] header [class*="_headerActions"] div:has(> button > [class*="_appIcon"]) {
+    display: none !important;
+  }
+
+  /* 插件工具与 Watcher 胶囊：紧凑排列 */
+  [data-mobile-nav="frame"] header [class*="_headerUtilities"],
+  div[class*="_frame"] header [class*="_headerUtilities"] {
+    display: flex !important;
+    flex: 0 0 auto !important;
+    align-items: center !important;
+    gap: 4px !important;
+    margin-left: 2px !important;
+  }
+
+  /* 隐藏桌面端专用的右侧边栏展开图标，手机上无该导轨 */
+  [data-mobile-nav="frame"] header [class*="_headerCorner"],
+  div[class*="_frame"] header [class*="_headerCorner"] {
+    display: none !important;
+  }
+
+  /* 隐藏桌面端遗留的非必要元素 */
+  [data-mobile-nav="frame"] header [class*="_crumbs"] [class*="_separator"],
+  [data-mobile-nav="frame"] header > :first-child > :last-child {
+    display: none !important;
+  }
+
+  /* 标签页条在手机端作为横向滚动的第二行 */
+  [data-mobile-nav="frame"] header [class*="_tabs"],
+  div[class*="_frame"] header [class*="_tabs"],
+  [data-mobile-nav="frame"] header [role="tablist"],
+  div[class*="_frame"] header [role="tablist"] {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    gap: 16px !important;
+    overflow-x: auto !important;
+    margin: 0 !important;
+    padding: 2px 0 0 0 !important;
+    height: 28px !important;
+    scrollbar-width: none !important;
+  }
+
+  /* 移动端彻底隐藏桌宠与悬浮用量药丸，杜绝遮挡发送键与正文 */
+  [data-opencode-usage-host],
+  .AURZ6a_dock,
+  .dsh-pet-root,
+  .dsh-pet-chat,
+  .dsh-pet-menu,
+  .dsh-pet-score,
+  .dsh-pet-bubble {
+    display: none !important;
+  }
+
+  /* 底部安全区与输入框边距：缩小为 5px */
+  [data-mobile-nav="frame"] [class*="_composerSeat"],
+  div[class*="_frame"] [class*="_composerSeat"],
+  [data-mobile-nav="frame"] [data-phase] [class*="_composerSeat"] {
+    padding-bottom: 5px !important;
+    box-sizing: border-box !important;
+  }
+
+  /* 运行指标自适应居中排列与平滑换行，杜绝截断与负坐标 */
+  [data-composer-stats],
+  [data-mobile-nav="stats"] {
+    display: flex !important;
+    flex-flow: row wrap !important;
+    justify-content: center !important;
+    align-items: center !important;
+    gap: 4px 10px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 auto !important;
+    padding: 2px 14px !important;
+    box-sizing: border-box !important;
+    font-size: 11px !important;
+    line-height: 16px !important;
+    white-space: normal !important;
+    overflow: visible !important;
+  }
+  [data-composer-stats] [class*="_anchor"],
+  [data-mobile-nav="stats"] [class*="_anchor"] {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 !important;
+  }
+  [data-composer-stats] [class*="_pill"],
+  [data-mobile-nav="stats"] [class*="_pill"] {
+    white-space: nowrap !important;
+    max-width: 100% !important;
+    padding: 1px 6px !important;
+    font-size: 11px !important;
+    line-height: 16px !important;
   }
   /* View tabs strip (official [role="tablist"] under the crumbs row).
      Desktop ships a single flex row (gap: 36) sized for the two stock tabs

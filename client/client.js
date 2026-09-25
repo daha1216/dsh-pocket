@@ -28,7 +28,7 @@ var __copyProps = (to, from, except, desc) => {
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// index.jsx
+// client/index.jsx
 var index_exports = {};
 __export(index_exports, {
   apply: () => apply2,
@@ -39,7 +39,7 @@ __export(index_exports, {
 module.exports = __toCommonJS(index_exports);
 var import_react = require("react");
 
-// api.js
+// client/api.js
 var POCKET_RPC_CHANNEL = "/dsh-pocket";
 var POCKET_ENDPOINTS = Object.freeze({
   status: "pocket.status",
@@ -122,10 +122,10 @@ function redactStatus(s) {
   };
 }
 
-// mobile/upstream/components/MobileNavToggle.tsx
+// client/mobile/upstream/components/MobileNavToggle.tsx
 var import_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 
-// mobile/upstream/effects/gesture-guard.ts
+// client/mobile/upstream/effects/gesture-guard.ts
 var consumed = /* @__PURE__ */ new Map();
 var strokeLocked = false;
 function markStrokeLocked() {
@@ -177,7 +177,7 @@ function consumeIfGestured(event) {
   return false;
 }
 
-// mobile/upstream/core/reconciler-core.ts
+// client/mobile/upstream/core/reconciler-core.ts
 function createReconcilerCore(options) {
   const onError = options.onError ?? ((taskName, error, phase) => {
     console.error(
@@ -280,7 +280,7 @@ function createReconcilerCore(options) {
   };
 }
 
-// mobile/upstream/effects/aionui-compat.ts
+// client/mobile/upstream/effects/aionui-compat.ts
 function installAionuiCompat(ctx) {
   installMobileEffect(ctx, "dsh-web-mobile: aionui explorer close marker", () => {
     const onChevronClick = (event) => {
@@ -413,7 +413,7 @@ function createSheetRiseTask() {
   };
 }
 
-// mobile/upstream/effects/stats-line.ts
+// client/mobile/upstream/effects/stats-line.ts
 function statsAnchorAlive(el) {
   if (el === null || !el.isConnected) return false;
   if (el.closest("[data-phase]") === null) return false;
@@ -446,10 +446,8 @@ function createStatsLineTask() {
     for (const root of document.querySelectorAll('[data-phase] [class*="_root"]')) {
       if (root.closest('[class*="_composerStack"]') === null) continue;
       if (root.matches('[data-testid="todo-panel"]')) continue;
-      if (root.querySelector("button") !== null) continue;
-      const text = root.textContent ?? "";
-      if (!/(turns|steps|\bLLM\b|轮|步)/.test(text)) continue;
       if (root.querySelector("textarea, [data-composer-input]") !== null) continue;
+      if (!root.hasAttribute("data-composer-stats") && root.querySelector('button:not([class*="_pill"])') !== null) continue;
       root.setAttribute("data-mobile-nav", "stats");
       moveTps(root);
       return;
@@ -479,7 +477,7 @@ function createStatsLineTask() {
   };
 }
 
-// mobile/upstream/effects/preview-fullscreen.ts
+// client/mobile/upstream/effects/preview-fullscreen.ts
 function createPreviewFullscreenTask(t) {
   let button = null;
   const syncLabel = (target) => {
@@ -523,7 +521,7 @@ function createPreviewFullscreenTask(t) {
   };
 }
 
-// mobile/upstream/effects/git-chip-reparent.ts
+// client/mobile/upstream/effects/git-chip-reparent.ts
 function createGitChipTask() {
   return {
     name: "git-chip-reparent",
@@ -543,7 +541,7 @@ function createGitChipTask() {
   };
 }
 
-// mobile/upstream/effects/settings-toolbar-reparent.ts
+// client/mobile/upstream/effects/settings-toolbar-reparent.ts
 function createSettingsToolbarTask() {
   let origin = null;
   return {
@@ -572,7 +570,7 @@ function createSettingsToolbarTask() {
   };
 }
 
-// mobile/upstream/effects/overlay-backdrop-fab.ts
+// client/mobile/upstream/effects/overlay-backdrop-fab.ts
 function fadeOverlayOut() {
   fadeHook?.();
 }
@@ -656,7 +654,7 @@ function createOverlayTask(t, toggleSidebar) {
   };
 }
 
-// mobile/upstream/effects/file-viewer-compat.ts
+// client/mobile/upstream/effects/file-viewer-compat.ts
 function createFileViewerMarkerTask() {
   return {
     name: "file-viewer-open-marker",
@@ -677,7 +675,7 @@ function createFileViewerMarkerTask() {
   };
 }
 
-// mobile/upstream/effects/phone-chrome.ts
+// client/mobile/upstream/effects/phone-chrome.ts
 var NS = "mobileNav";
 var MOBILE_QUERY = "(max-width: 1023px) and (pointer: coarse)";
 var DESKTOP_QUERY = "(min-width: 1024px)";
@@ -979,7 +977,7 @@ function registerReconcileTasks(ctx) {
   };
 }
 
-// mobile/upstream/components/MobileNavToggle.tsx
+// client/mobile/upstream/components/MobileNavToggle.tsx
 function MobileNavToggle({ toggleSidebar, t }) {
   const toggleExplorer = () => {
     const frame = getFrame();
@@ -1014,7 +1012,7 @@ function MobileNavToggle({ toggleSidebar, t }) {
   ));
 }
 
-// mobile/upstream/components/MobileDrawerFooter.tsx
+// client/mobile/upstream/components/MobileDrawerFooter.tsx
 var import_dsh_client_ui_primitives2 = require("@deepseek-ai/dsh-client-ui-primitives");
 function MobileDrawerFooter({ useSessions, downloadSessionLog, toggleSidebar, t }) {
   const sessionId = useSessions((state) => state.current);
@@ -1051,7 +1049,7 @@ function MobileDrawerFooter({ useSessions, downloadSessionLog, toggleSidebar, t 
   ));
 }
 
-// mobile/upstream/styles/base.css.ts
+// client/mobile/upstream/styles/base.css.ts
 var BASE_CSS = `
 /* ---------- base control styles (rendered at any width, hidden where unused) ---------- */
 
@@ -1301,10 +1299,10 @@ var BASE_CSS = `
 
 `;
 
-// mobile/upstream/styles/layout.css.ts
+// client/mobile/upstream/styles/layout.css.ts
 var LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND touch-primary pointer) ---------- */
 
-@media (max-width: 1023px) and (pointer: coarse) {
+@media (max-width: 768px), (max-width: 1023px) and (pointer: coarse) {
   /* --- Phone chrome ---
      The system status bar stays visible (no fullscreen). Three adjustments
      make it behave:
@@ -1361,7 +1359,8 @@ var LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND touch-pr
      at-bottom follow scrolls its own scroll body, not the document. With
      border-box the padding is taken out of the 100% height instead, so the
      frame is exactly one viewport tall and the document never scrolls. */
-  [data-mobile-nav="frame"] {
+  [data-mobile-nav="frame"],
+  div[class*="_frame"]:has(> div[class*="_centerCol"]) {
     box-sizing: border-box !important;
     position: relative !important;
     grid-template-columns: minmax(0, 1fr) 0 0 !important;
@@ -1378,15 +1377,16 @@ var LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND touch-pr
      before) left 14px of the drawer plus a long 32px-blur shadow gradient
      visible along the left edge of the main UI. No box-shadow at all: the
      dimmed backdrop already separates drawer from content. */
-  [data-mobile-nav="frame"] > :first-child {
+  [data-mobile-nav="frame"] > :first-child,
+  div[class*="_frame"]:has(> div[class*="_centerCol"]) > :first-child {
     position: absolute !important;
     inset: 0 auto 0 0 !important;
     width: max-content;
     max-width: 92vw;
     z-index: 40 !important;
-    transform: translateX(-110%);
-    transition: transform .28s var(--ds-ease-in-out, ease-in-out);
-    background: var(--dsw-alias-bg-base, #ffffff);
+    transform: translateX(-110%) !important;
+    transition: transform .28s var(--ds-ease-in-out, ease-in-out) !important;
+    background: var(--dsw-alias-bg-base, #ffffff) !important;
     /* Keep the drawer's own content below the status bar / notch: the drawer
        spans the full frame height (its absolute containing block is the
        frame's padding box, so the frame's own safe-area padding does NOT
@@ -1396,7 +1396,8 @@ var LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND touch-pr
     /* Kill the official sidebarCol right border: with the backdrop the edge
        reads cleanly, and the settings dialog (width:100% of this box) stays
        pixel-flush with the drawer. */
-    border-right: none !important;
+    border-right: 1px solid var(--dsw-alias-border-l2, #e5e7eb) !important;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.18) !important;
   }
 
   /* Expanded state (frame without data-sidebar-collapsed) slides the drawer in.
@@ -1408,7 +1409,8 @@ var LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND touch-pr
      overflow:hidden drawer to scrollLeft=102, and every static child (plus the
      fixed overlay) shifts 102px off-screen. With transform:none the overlay is
      viewport-anchored: it dims the full screen and the sheet sits at left:8. */
-  [data-mobile-nav="frame"]:not([data-sidebar-collapsed]) > :first-child {
+  [data-mobile-nav="frame"]:not([data-sidebar-collapsed]) > :first-child,
+  div[class*="_frame"]:has(> div[class*="_centerCol"]):not([data-sidebar-collapsed]) > :first-child {
     transform: none !important;
   }
 
@@ -1781,38 +1783,45 @@ var LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND touch-pr
     margin-left: 0;
   }
 
-  /* --- Session header on mobile ---
-     Keep the host-owned metadata in one responsive row. The conversation
-     title and running/subagent status keep their lanes; the mode text is the
-     first to ellipsize when space runs out, while Files keeps its hit area. */
-  [data-mobile-nav="frame"] [data-phase] header {
-    padding-left: 16px;
-    padding-right: 8px;
-  }
-  [data-mobile-nav="frame"] [data-phase] header > :first-child {
+  /* --- Session header on mobile --- */
+  [data-mobile-nav="frame"] [data-phase] header,
+  div[class*="_frame"] [data-phase] header,
+  [data-mobile-nav="frame"] header,
+  div[class*="_frame"] header {
     display: flex !important;
-    align-items: center;
-    box-sizing: border-box;
-    width: 100%;
-    min-width: 0;
-    gap: 2px;
-    padding-left: 20px;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    position: relative !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 44px !important;
+    padding: 6px 12px 6px 46px !important;
+    gap: 4px !important;
   }
-  [data-mobile-nav="frame"] [data-phase] header > :first-child > :first-child {
-    display: flex !important;
-    align-items: center;
-    flex: 1 1 auto;
-    min-width: 0;
-    gap: 2px;
+
+  /* \u9690\u85CF\u684C\u9762\u7AEF\u5934\u90E8\u5DE6\u4FA7\u5360\u4F4D/\u6298\u53E0\u5217\uFF0C\u7531\u7EDD\u5BF9\u5B9A\u4F4D\u7684 mobile toggle \u8D1F\u8D23\u62BD\u5C49\u5F00\u5173 */
+  [data-mobile-nav="frame"] header [class*="_headerLeading"],
+  div[class*="_frame"] header [class*="_headerLeading"] {
+    display: none !important;
   }
-  /* The directory toggle stays at the far left of the header. */
+
+  /* \u62BD\u5C49\u5F00\u5173\u6309\u94AE\u5B9A\u4F4D\u5728\u5DE6\u4FA7 6px\uFF0C\u5C45\u4E2D\u4E8E\u9876\u884C\uFF0C\u4E0D\u5360\u6D41\u5185\u7A7A\u95F4\u4E14\u4E0D\u906E\u6321\u6807\u9898 */
   [data-mobile-nav="toggle"] {
     position: absolute !important;
-    left: 8px !important;
-    top: 12px !important;
-    z-index: 2 !important;
+    left: 6px !important;
+    top: 6px !important;
+    z-index: 10 !important;
+    width: 34px !important;
+    height: 34px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 !important;
+    border-radius: 8px !important;
   }
-  /* Files remains in flow and is ordered as the rightmost plugin action. */
+
+  /* Files \u6309\u94AE\u7D27\u8DDF\u5176\u540E\u6216\u9690\u85CF */
   [data-mobile-nav="files"] {
     position: static !important;
     left: auto !important;
@@ -1820,107 +1829,214 @@ var LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND touch-pr
     top: auto !important;
     z-index: auto !important;
   }
-  [data-mobile-nav="frame"] [data-phase] header [class*="_headerActions"] {
+
+  /* \u6807\u9898\u884C\u4E0E\u6807\u9898\u7FA4\u843D\u5168\u5BBD\u5F39\u6027\u6392\u5217 */
+  [data-mobile-nav="frame"] header [class*="_titleRow"],
+  div[class*="_frame"] header [class*="_titleRow"] {
     display: flex !important;
-    align-items: center;
-    box-sizing: border-box;
-    flex: 0 1 auto;
-    min-width: 0;
-    max-width: calc(100% - 32px);
-    margin-left: auto;
-    justify-content: flex-end;
-    gap: 2px;
+    flex: 1 1 auto !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 32px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    gap: 6px !important;
   }
-  /* The title takes the remaining width and never paints outside it; the
-     metadata lane's mode text is what shrinks first. */
-  [data-mobile-nav="frame"] [data-phase] header [class*="_crumbs"] {
-    flex: 1 1 0;
-    min-width: 0;
-    max-width: none;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap !important;
+  [data-mobile-nav="frame"] header [class*="_titleCluster"],
+  div[class*="_frame"] header [class*="_titleCluster"] {
+    display: flex !important;
+    flex: 1 1 auto !important;
+    align-items: center !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    gap: 6px !important;
   }
-  /* The mode badge seat used to keep flex 1 1 auto, so it split the row evenly
-     with the title cluster: in a 416px row the title got 123px and the crumb
-     collapsed to 16px. Pin the seat to its content and let the cluster take
-     the rest. flex-basis 0 on the nav is the second half of the bug, since it
-     let the nav shrink below its own text. */
-  [data-mobile-nav="frame"] [data-phase] header [class*="_headerLeading"] {
-    flex: 0 0 auto !important;
-  }
-  [data-mobile-nav="frame"] [data-phase] header [class*="_titleCluster"] {
+
+  /* \u6807\u9898\u9762\u5305\u5C51\u6587\u5B57\uFF1A\u5141\u8BB8\u5F39\u6027\u4F38\u7F29\uFF0C\u8D85\u51FA\u5355\u884C\u7701\u7565\uFF0C\u5DE6\u4FA7\u7EDD\u4E0D\u5207\u5B57 */
+  [data-mobile-nav="frame"] header [class*="_crumbs"],
+  div[class*="_frame"] header [class*="_crumbs"] {
+    display: flex !important;
+    align-items: center !important;
     flex: 1 1 auto !important;
     min-width: 0 !important;
-  }
-  [data-mobile-nav="frame"] [data-phase] header [class*="_crumbs"] {
-    flex: 1 1 auto !important;
-    max-width: none !important;
-  }
-  [data-mobile-nav="frame"] [data-phase] header button[class*="_crumb"] {
-    flex: 0 1 auto !important;
-    max-width: none !important;
-    padding: 4px 8px !important;
-  }
-  /* Mode label: preserve its icon and scale with the viewport \u2014 it yields
-     space to the title and subagent status first, but can use more width on
-     wider screens up to 220px before ellipsizing. */
-  [data-mobile-nav="frame"] [data-phase] header [class*="_label"]:has(> svg) {
-    order: 1;
-    flex: 0 1 auto;
-    min-width: 0;
-    max-width: min(22vw, 220px);
-    display: block;
-    position: relative;
-    box-sizing: border-box;
-    padding-left: 18px;
-    padding-right: 2px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow: hidden !important;
     white-space: nowrap !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
-  [data-mobile-nav="frame"] [data-phase] header [class*="_label"]:has(> svg) > svg {
-    position: absolute !important;
-    left: 0 !important;
-    top: 50% !important;
-    transform: translateY(-50%) !important;
-  }
-  /* Running/subagent controls keep their full status text and hit area; they
-     do not give up width to the mode label. NOTE: the real subagent lineage
-     root has class="ZKlsPq_root " \u2014 a TRAILING SPACE from the plugin's
-     template-literal className \u2014 so [class*="_root"] never matches it. Use
-     [class*="_root"] and exclude the switcher root ([class*="_switcherRoot"])
-     so only the count/job roots get pinned (the switcher must stay shrinkable
-     so its own title can ellipsize). */
-  [data-mobile-nav="frame"] [data-phase] header [class*="_root"]:not([class*="_switcherRoot"]):has(> button[class*="_trigger"]) {
-    order: 2;
-    flex: 0 0 auto;
-    min-width: max-content;
-    max-width: max-content;
+  [data-mobile-nav="frame"] header [class*="_crumb"],
+  div[class*="_frame"] header [class*="_crumb"] {
+    display: inline-block !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
     white-space: nowrap !important;
-    position: static;
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    color: var(--dsw-alias-label-primary) !important;
+    padding: 2px 0 !important;
   }
-  [data-mobile-nav="frame"] [data-phase] header [class*="_root"]:not([class*="_switcherRoot"]):has(> button[class*="_trigger"]) > button,
-  [data-mobile-nav="frame"] [data-phase] header [class*="_root"]:not([class*="_switcherRoot"]):has(> button[class*="_trigger"]) > button * {
-    white-space: nowrap !important;
+
+  /* \u9876\u680F\u64CD\u4F5C\u533A\u4E0E\u72B6\u6001\u80F6\u56CA\uFF1A\u7D27\u51D1\u6392\u5217\u5728\u53F3\u4FA7 */
+  [data-mobile-nav="frame"] header [class*="_headerActions"],
+  div[class*="_frame"] header [class*="_headerActions"] {
+    display: flex !important;
+    flex: 0 0 auto !important;
+    align-items: center !important;
+    gap: 4px !important;
+    margin-left: auto !important;
+    justify-content: flex-end !important;
   }
-  /* The lineage count's leading "/" (ZKlsPq_separator \u2014 official desktop
-     chrome rendered only for a root session inside the crumbs) looks like a
-     stray extra breadcrumb level on small screens; hide it. The crumbSep "/"
-     between ancestry segments (subagent sessions) is a real separator and
-     stays. */
-  [data-mobile-nav="frame"] [data-phase] header [class*="_crumbs"] [class*="_separator"] {
+
+  /* \u9884\u8BBE\u6A21\u5F0F\u80F6\u56CA\uFF08\u6807\u51C6\u6A21\u5F0F\u7B49\uFF09\uFF1A\u7A84\u5C4F\u9690\u85CF\u6587\u5B57\u4EC5\u4FDD\u7559\u56FE\u6807\uFF0C\u907F\u514D\u6324\u7206\u6807\u9898 */
+  [data-mobile-nav="frame"] header [class*="_headerActions"] [class*="_label"]:has(> svg),
+  div[class*="_frame"] header [class*="_headerActions"] [class*="_label"]:has(> svg) {
+    font-size: 0 !important;
+    padding: 4px !important;
+    width: 24px !important;
+    height: 24px !important;
+    min-width: 24px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-sizing: border-box !important;
+  }
+  [data-mobile-nav="frame"] header [class*="_headerActions"] [class*="_label"] > svg,
+  div[class*="_frame"] header [class*="_headerActions"] [class*="_label"] > svg {
+    position: static !important;
+    transform: none !important;
+    width: 14px !important;
+    height: 14px !important;
+  }
+
+  /* \u624B\u673A\u4E0A\u7CBE\u7B80\u540E\u53F0\u4EFB\u52A1\u80F6\u56CA\uFF1A\u9690\u85CF\u957F\u6587\u5B57\uFF0C\u4EC5\u4FDD\u7559\u8F6C\u5708\u72B6\u6001\u4E0E\u4E0B\u62C9\u7BAD\u5934\uFF0C\u91CA\u653E150px\u7A7A\u95F4 */
+  [data-mobile-nav="frame"] header [class*="_headerActions"] [class*="_count"],
+  div[class*="_frame"] header [class*="_headerActions"] [class*="_count"] {
     display: none !important;
   }
-  [data-mobile-nav="frame"] [data-phase] header [data-mobile-nav="files"] {
-    order: 3;
-    flex: 0 0 28px;
-    width: 28px;
+  [data-mobile-nav="frame"] header [class*="_headerActions"] [class*="_root"]:has(> button[class*="_trigger"]) {
+    min-width: 0 !important;
   }
-  /* Session log download: gone from the header row on mobile (the utilities
-     seat holds only the session-log-export capsule). */
-  [data-mobile-nav="frame"] [data-phase] header > :first-child > :last-child {
+  [data-mobile-nav="frame"] header [class*="_headerActions"] [class*="_trigger"] {
+    padding: 2px 4px !important;
+    min-height: 24px !important;
+    gap: 2px !important;
+  }
+
+  /* \u624B\u673A\u7AEF\u7CBE\u7B80 Agent Team \u80F6\u56CA\uFF1A\u9690\u85CF\u6587\u5B57\u4EC5\u4FDD\u7559\u4EBA\u5458\u56FE\u6807\u4E0E\u961F\u5458\u6570\u5B57\uFF0C\u91CA\u653E80px\u7A7A\u95F4 */
+  [data-mobile-nav="frame"] header [data-team-action] button > span:not([class*="_count"]),
+  div[class*="_frame"] header [data-team-action] button > span:not([class*="_count"]) {
     display: none !important;
+  }
+  [data-mobile-nav="frame"] header [data-team-action] button,
+  div[class*="_frame"] header [data-team-action] button {
+    padding: 2px 4px !important;
+    min-height: 24px !important;
+    gap: 2px !important;
+  }
+
+  /* \u624B\u673A\u4E0A\u9690\u85CF Open In App\uFF08\u5916\u90E8\u7F16\u8F91\u5668\u6253\u5F00\uFF09\u684C\u9762\u4E13\u7528\u5206\u4F53\u6309\u94AE\uFF0C\u91CA\u653E330px\u9876\u680F\u7A7A\u95F4\u7ED9\u6807\u9898 */
+  [data-mobile-nav="frame"] header [data-open-target],
+  div[class*="_frame"] header [data-open-target],
+  [data-mobile-nav="frame"] header [class*="_menuAnchor"]:has([data-open-target]),
+  div[class*="_frame"] header [class*="_menuAnchor"]:has([data-open-target]),
+  [data-mobile-nav="frame"] header [class*="_appIcon"],
+  div[class*="_frame"] header [class*="_appIcon"],
+  [data-mobile-nav="frame"] header [class*="_headerActions"] div:has(> button > [class*="_appIcon"]) {
+    display: none !important;
+  }
+
+  /* \u63D2\u4EF6\u5DE5\u5177\u4E0E Watcher \u80F6\u56CA\uFF1A\u7D27\u51D1\u6392\u5217 */
+  [data-mobile-nav="frame"] header [class*="_headerUtilities"],
+  div[class*="_frame"] header [class*="_headerUtilities"] {
+    display: flex !important;
+    flex: 0 0 auto !important;
+    align-items: center !important;
+    gap: 4px !important;
+    margin-left: 2px !important;
+  }
+
+  /* \u9690\u85CF\u684C\u9762\u7AEF\u4E13\u7528\u7684\u53F3\u4FA7\u8FB9\u680F\u5C55\u5F00\u56FE\u6807\uFF0C\u624B\u673A\u4E0A\u65E0\u8BE5\u5BFC\u8F68 */
+  [data-mobile-nav="frame"] header [class*="_headerCorner"],
+  div[class*="_frame"] header [class*="_headerCorner"] {
+    display: none !important;
+  }
+
+  /* \u9690\u85CF\u684C\u9762\u7AEF\u9057\u7559\u7684\u975E\u5FC5\u8981\u5143\u7D20 */
+  [data-mobile-nav="frame"] header [class*="_crumbs"] [class*="_separator"],
+  [data-mobile-nav="frame"] header > :first-child > :last-child {
+    display: none !important;
+  }
+
+  /* \u6807\u7B7E\u9875\u6761\u5728\u624B\u673A\u7AEF\u4F5C\u4E3A\u6A2A\u5411\u6EDA\u52A8\u7684\u7B2C\u4E8C\u884C */
+  [data-mobile-nav="frame"] header [class*="_tabs"],
+  div[class*="_frame"] header [class*="_tabs"],
+  [data-mobile-nav="frame"] header [role="tablist"],
+  div[class*="_frame"] header [role="tablist"] {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    gap: 16px !important;
+    overflow-x: auto !important;
+    margin: 0 !important;
+    padding: 2px 0 0 0 !important;
+    height: 28px !important;
+    scrollbar-width: none !important;
+  }
+
+  /* \u79FB\u52A8\u7AEF\u5F7B\u5E95\u9690\u85CF\u684C\u5BA0\u4E0E\u60AC\u6D6E\u7528\u91CF\u836F\u4E38\uFF0C\u675C\u7EDD\u906E\u6321\u53D1\u9001\u952E\u4E0E\u6B63\u6587 */
+  [data-opencode-usage-host],
+  .AURZ6a_dock,
+  .dsh-pet-root,
+  .dsh-pet-chat,
+  .dsh-pet-menu,
+  .dsh-pet-score,
+  .dsh-pet-bubble {
+    display: none !important;
+  }
+
+  /* \u5E95\u90E8\u5B89\u5168\u533A\u4E0E\u8F93\u5165\u6846\u8FB9\u8DDD\uFF1A\u7F29\u5C0F\u4E3A 5px */
+  [data-mobile-nav="frame"] [class*="_composerSeat"],
+  div[class*="_frame"] [class*="_composerSeat"],
+  [data-mobile-nav="frame"] [data-phase] [class*="_composerSeat"] {
+    padding-bottom: 5px !important;
+    box-sizing: border-box !important;
+  }
+
+  /* \u8FD0\u884C\u6307\u6807\u81EA\u9002\u5E94\u5C45\u4E2D\u6392\u5217\u4E0E\u5E73\u6ED1\u6362\u884C\uFF0C\u675C\u7EDD\u622A\u65AD\u4E0E\u8D1F\u5750\u6807 */
+  [data-composer-stats],
+  [data-mobile-nav="stats"] {
+    display: flex !important;
+    flex-flow: row wrap !important;
+    justify-content: center !important;
+    align-items: center !important;
+    gap: 4px 10px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 auto !important;
+    padding: 2px 14px !important;
+    box-sizing: border-box !important;
+    font-size: 11px !important;
+    line-height: 16px !important;
+    white-space: normal !important;
+    overflow: visible !important;
+  }
+  [data-composer-stats] [class*="_anchor"],
+  [data-mobile-nav="stats"] [class*="_anchor"] {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 !important;
+  }
+  [data-composer-stats] [class*="_pill"],
+  [data-mobile-nav="stats"] [class*="_pill"] {
+    white-space: nowrap !important;
+    max-width: 100% !important;
+    padding: 1px 6px !important;
+    font-size: 11px !important;
+    line-height: 16px !important;
   }
   /* View tabs strip (official [role="tablist"] under the crumbs row).
      Desktop ships a single flex row (gap: 36) sized for the two stock tabs
@@ -2175,8 +2291,8 @@ var LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND touch-pr
 }
 `;
 
-// mobile/upstream/styles/compat.css.ts
-var COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
+// client/mobile/upstream/styles/compat.css.ts
+var COMPAT_CSS = `@media (max-width: 768px), (max-width: 1023px) and (pointer: coarse) {
   /* ---------- dsh-web-ui family compatibility ----------
      The linxin666 plugin suite extends the shell frame directly:
        - aionui-panel appends two trailing grid columns (explorer / preview)
@@ -2933,7 +3049,7 @@ var COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
   max-width: 100% !important;
 }
 /* ===== \u5DF2\u5B89\u88C5\u5217\u8868\uFF1A\u624B\u673A\u7AEF\u7EB5\u5411\u91CD\u6392 ===== */
-@media (max-width: 1023px) and (pointer: coarse) {
+@media (max-width: 768px), (max-width: 1023px) and (pointer: coarse) {
   [class*="irow"]:not([class*="irowActions"]):not([class*="irowTrailing"]) {
     flex-wrap: wrap !important;
     align-items: center !important;
@@ -3102,8 +3218,8 @@ var COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
 
 `;
 
-// mobile/upstream/styles/misc.css.ts
-var MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
+// client/mobile/upstream/styles/misc.css.ts
+var MISC_CSS = `@media (max-width: 768px), (max-width: 1023px) and (pointer: coarse) {
   /* ---------- hero composer on mobile ----------
      The official hero card carries a 2-line textarea plus a tall tool row,
      which reads oversized on a phone. Tighten the empty-state rhythm: keep
@@ -3396,72 +3512,12 @@ var MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
     display: none !important;
   }
 }
-
-/* --- Touch targets -------------------------------------------------------
-   Apple asks for 44x44pt; measured on an iPhone-sized viewport these controls
-   are 21-34px on the short axis and most were a near-miss to tap. The hit area
-   grows through an ::after overlay, not through padding: padding on a header
-   button widens the title row and the tabs row, and both the 77px header and
-   the tab strip depend on that geometry.
-   Vertical only, deliberately. Neighbours in these rows sit 0-8px apart, so
-   growing sideways turns a near-miss into a tap on the control next door,
-   which is a worse failure than a small target. The overlay hangs from the
-   element's top edge and grows downward, so the added region lands under the
-   control, where nothing else competes for the tap.
-   This block sits OUTSIDE the pointer: coarse query on purpose: the phone
-   layout is armed by viewport width, and gating the fix on pointer type left
-   the narrow-window desktop case with the small targets.
-   Every height below is bounded by a measured neighbour or by the row below.
-   Keep this rule text free of backticks and of the interpolation opener: the
-   whole block is embedded in a JavaScript template literal in client.js, so
-   either one ends the literal early and breaks the module. Quotes and
-   apostrophes are safe here and are not what breaks it. */
-[data-mobile-nav="frame"] button::after,
-[data-phase] button::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: auto;
-  left: 0;
-  right: 0;
-  height: 44px;
-}
-/* The overlay needs a positioning context. No !important here: pocket pins the
-   drawer toggle to absolute and this must not override that. */
-[data-mobile-nav="frame"] button,
-[data-phase] button {
-  position: relative;
-}
-/* The message action row ends 16px above the next turn, whose first 12px are
-   padding: a 44px band starting at y=783 would cover that turn's text, so the
-   row is capped at 42px and reaches only into the margin. */
-[data-mobile-nav="frame"] [data-actions-reveal] button::after,
-[data-phase] [data-actions-reveal] button::after {
-  height: 42px;
-}
-/* Bounded by the tabs row: the title row ends at y=42 and the tabs start at
-   y=52, so past 40px this band would start covering the tabs. */
-[data-mobile-nav="frame"] [data-phase] header [class*="_titleRow"] button::after,
-[data-phase] header [class*="_titleRow"] button::after {
-  height: 40px;
-}
-/* Bounded by the sidebar button at x=384 in this row. */
-[data-mobile-nav="frame"] [data-phase] header button[aria-label*="\u4FA7\u8FB9\u680F"]::after,
-[data-phase] header button[aria-label*="\u4FA7\u8FB9\u680F"]::after {
-  height: 36px;
-}
-/* Bounded by the session pills at y=930: a 28px control starting at y=889
-   would reach y=933 and cover the first 3px of the row below it. */
-[data-mobile-nav="frame"] [data-composer-card] button::after,
-[data-phase] [data-composer-card] button::after {
-  height: 38px;
-}
 `;
 
-// mobile/upstream/styles/index.ts
+// client/mobile/upstream/styles/index.ts
 var MOBILE_CSS = [BASE_CSS, LAYOUT_CSS, COMPAT_CSS, MISC_CSS].join("\n");
 
-// mobile/upstream/effects/sidebar-swipe.ts
+// client/mobile/upstream/effects/sidebar-swipe.ts
 var START_ZONE_RATIO = 0.45;
 function startZonePxFor(viewportWidthPx, ratio = START_ZONE_RATIO) {
   return Math.round(viewportWidthPx * ratio);
@@ -3970,7 +4026,7 @@ function installSidebarSwipe(ctx) {
   });
 }
 
-// mobile/upstream/effects/subagent-chip-touch.ts
+// client/mobile/upstream/effects/subagent-chip-touch.ts
 var CHIP_TRIGGER_SELECTOR = '[data-mobile-nav="frame"] button[class*="_trigger"][aria-haspopup="tree"][aria-expanded]:not([class*="_switcherTrigger"])';
 var HOVER_SUBTREE_SELECTOR = '[class*="ZKlsPq_root"], [class*="ZKlsPq_menu"], [class*="h8S2Va_root"], [class*="h8S2Va_menu"]';
 var SWALLOW_WINDOW_MS = 800;
@@ -4045,7 +4101,7 @@ function installSubagentChipTouch(ctx) {
   });
 }
 
-// mobile/upstream/effects/session-menu.ts
+// client/mobile/upstream/effects/session-menu.ts
 var NS2 = "mobileNav";
 var WORKSPACE_NS = "workspace";
 var DELETE_ITEM_MARKER = 'data-mobile-nav="session-delete"';
@@ -4305,7 +4361,7 @@ function installSessionMenuDelete(ctx) {
   }, TOUCH_QUERY);
 }
 
-// mobile/upstream/effects/composer-keyboard-guard.ts
+// client/mobile/upstream/effects/composer-keyboard-guard.ts
 var COMPOSER_CARD_SELECTOR = "[data-composer-card]";
 var COMPOSER_INPUT_SELECTOR = "[data-composer-input]";
 var SHADOW_MARKER = "data-mobile-nav-focus-shadow";
@@ -4347,7 +4403,7 @@ function installComposerKeyboardGuard(ctx) {
   });
 }
 
-// mobile/upstream/core/raf-scheduler.ts
+// client/mobile/upstream/core/raf-scheduler.ts
 function createRafScheduler(raf, caf) {
   let pending = 0;
   let queued = false;
@@ -4368,7 +4424,7 @@ function createRafScheduler(raf, caf) {
   };
 }
 
-// mobile/upstream/debug.ts
+// client/mobile/upstream/debug.ts
 function installDebugBadge(ctx) {
   ctx.effect(() => {
     if (!new URLSearchParams(location.search).has("mobile-nav-debug")) return () => {
@@ -4440,7 +4496,7 @@ function installDebugBadge(ctx) {
   }, "dsh-web-mobile: debug badge");
 }
 
-// mobile/upstream/i18n/locales.ts
+// client/mobile/upstream/i18n/locales.ts
 var NS3 = "mobileNav";
 var zh = {
   "open": "\u6253\u5F00\u76EE\u5F55",
@@ -4481,7 +4537,7 @@ var en = {
   "deleteErrorGeneric": "Delete failed: {message}"
 };
 
-// mobile/upstream/index.tsx
+// client/mobile/upstream/index.tsx
 function apply(ctx) {
   ctx.effect(() => ctx.locale.register(NS3, { zh, en }), "dsh-web-mobile: dictionaries");
   ctx.effect(() => {
@@ -4626,7 +4682,7 @@ function apply(ctx) {
   }, MobileDrawerFooter));
 }
 
-// mobile/fileGuard.ts
+// client/mobile/fileGuard.ts
 var GUARD_MSG = "\u624B\u673A\u4E0A\u65E0\u6CD5\u76F4\u63A5\u6253\u5F00\u7535\u8111\u4E0A\u7684\u6587\u4EF6";
 var WS_LABELS = ["\u6DFB\u52A0\u5DE5\u4F5C\u533A", "\u6DFB\u52A0\u5DE5\u4F5C\u533A\u2026", "Add workspace", "Add workspace\u2026"];
 var COPY_LABEL = "\u590D\u5236";
@@ -4789,7 +4845,7 @@ function startFileGuard(readFile) {
   };
 }
 
-// mobile/layout-mode.mjs
+// client/mobile/layout-mode.mjs
 function resolveLayout({ urlValue, stored, narrowMatch }) {
   const url = String(urlValue ?? "").trim();
   if (url === "desktop") return "desktop";
@@ -4823,7 +4879,7 @@ function readStoredLayout() {
   }
 }
 
-// mobile/mobile-apply.tsx
+// client/mobile/mobile-apply.tsx
 var POCKET_EXTRA_CSS = `@media (max-width: 1023px) {
   /* ---------- \u5BBF\u4E3B\u6CA1\u6709 aionui explorer \u5217\u65F6\u9690\u85CF\u300C\u6587\u4EF6\u6D4F\u89C8\u300D\u5165\u53E3\uFF08issue #48\uFF09 ----------
      \u5B98\u65B9 DeepSeek Harness \u4E0D\u5E26 dsh-web-ui\uFF1Bexplorer \u5217\u5B58\u5728\u4E0E\u5426\u7531\u4E0B\u65B9\u63A2\u6D4B effect
@@ -4970,7 +5026,7 @@ function mobileApply(ctx) {
   }, "dsh-pocket: file open guard + copy button + hide add-workspace (issue #17)");
 }
 
-// pocket-locales.js
+// client/pocket-locales.js
 var NS4 = "pocket";
 var zh2 = {
   "section": "\u624B\u673A\u8BBF\u95EE",
@@ -5289,7 +5345,7 @@ var en2 = {
   "feedback": "\u{1F64F} Questions? Open an issue on GitHub"
 };
 
-// index.jsx
+// client/index.jsx
 var name = "dsh-pocket";
 var inject = ["slots", "connection", "layout", "locale", "sessionLogDownload"];
 function fmt(t, key, vars) {

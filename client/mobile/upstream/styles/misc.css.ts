@@ -2,7 +2,7 @@
 // Self-contained: each section (composer / tablet / desktop) carries its own
 // media query.
 
-export const MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
+export const MISC_CSS = `@media (max-width: 768px), (max-width: 1023px) and (pointer: coarse) {
   /* ---------- hero composer on mobile ----------
      The official hero card carries a 2-line textarea plus a tall tool row,
      which reads oversized on a phone. Tighten the empty-state rhythm: keep
@@ -294,65 +294,5 @@ export const MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
   [data-mobile-nav="delete-dialog"] {
     display: none !important;
   }
-}
-
-/* --- Touch targets -------------------------------------------------------
-   Apple asks for 44x44pt; measured on an iPhone-sized viewport these controls
-   are 21-34px on the short axis and most were a near-miss to tap. The hit area
-   grows through an ::after overlay, not through padding: padding on a header
-   button widens the title row and the tabs row, and both the 77px header and
-   the tab strip depend on that geometry.
-   Vertical only, deliberately. Neighbours in these rows sit 0-8px apart, so
-   growing sideways turns a near-miss into a tap on the control next door,
-   which is a worse failure than a small target. The overlay hangs from the
-   element's top edge and grows downward, so the added region lands under the
-   control, where nothing else competes for the tap.
-   This block sits OUTSIDE the pointer: coarse query on purpose: the phone
-   layout is armed by viewport width, and gating the fix on pointer type left
-   the narrow-window desktop case with the small targets.
-   Every height below is bounded by a measured neighbour or by the row below.
-   Keep this rule text free of backticks and of the interpolation opener: the
-   whole block is embedded in a JavaScript template literal in client.js, so
-   either one ends the literal early and breaks the module. Quotes and
-   apostrophes are safe here and are not what breaks it. */
-[data-mobile-nav="frame"] button::after,
-[data-phase] button::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: auto;
-  left: 0;
-  right: 0;
-  height: 44px;
-}
-/* The overlay needs a positioning context. No !important here: pocket pins the
-   drawer toggle to absolute and this must not override that. */
-[data-mobile-nav="frame"] button,
-[data-phase] button {
-  position: relative;
-}
-/* The message action row ends 16px above the next turn, whose first 12px are
-   padding: a 44px band starting at y=783 would cover that turn's text, so the
-   row is capped at 42px and reaches only into the margin. */
-[data-mobile-nav="frame"] [data-actions-reveal] button::after,
-[data-phase] [data-actions-reveal] button::after {
-  height: 42px;
-}
-/* Bounded by the tabs row: the title row ends at y=42 and the tabs start at
-   y=52, so past 40px this band would start covering the tabs. */
-[data-mobile-nav="frame"] [data-phase] header [class*="_titleRow"] button::after,
-[data-phase] header [class*="_titleRow"] button::after {
-  height: 40px;
-}
-/* Bounded by the sidebar button at x=384 in this row. */
-[data-mobile-nav="frame"] [data-phase] header button[aria-label*="侧边栏"]::after,
-[data-phase] header button[aria-label*="侧边栏"]::after {
-  height: 36px;
-}
-/* Bounded by the session pills at y=930: a 28px control starting at y=889
-   would reach y=933 and cover the first 3px of the row below it. */
-[data-mobile-nav="frame"] [data-composer-card] button::after,
-[data-phase] [data-composer-card] button::after {
-  height: 38px;
 }
 `
