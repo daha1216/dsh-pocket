@@ -449,10 +449,13 @@ export const MOBILE_CSS = `
     top: 12px !important;
     z-index: 2 !important;
   }
-  /* Session log download: gone from the header row on mobile (the utilities
-     seat holds only the session-log-export capsule). */
-  [data-phase] header > :first-child > :last-child {
+  /* The native rightbar entry is visible by default. Users who prefer the
+     compact header can turn it off in Pocket settings. */
+  body[data-dsh-pocket-mobile-rightbar="off"] [data-conversation-header-corner] {
     display: none !important;
+  }
+  body:not([data-dsh-pocket-mobile-rightbar="off"]) [data-mobile-nav="files"] {
+    right: 44px !important;
   }
 
   /* --- Settings dialog on mobile ---

@@ -659,9 +659,16 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
     margin-left: 2px !important;
   }
 
-  /* 隐藏桌面端专用的右侧边栏展开图标，手机上无该导轨 */
+  /* 手机端右边栏入口（issue #122）：默认显示（修正桌面端 -16px 右外边距以免超出窄屏视口），
+     用户在设置页关闭「手机端右边栏」后隐藏。 */
   [data-mobile-nav="frame"] header [class*="_headerCorner"],
   div[class*="_frame"] header [class*="_headerCorner"] {
+    margin-left: 2px !important;
+    margin-right: 0 !important;
+  }
+  body[data-dsh-pocket-mobile-rightbar="off"] [data-conversation-header-corner],
+  body[data-dsh-pocket-mobile-rightbar="off"] [data-mobile-nav="frame"] header [class*="_headerCorner"],
+  body[data-dsh-pocket-mobile-rightbar="off"] div[class*="_frame"] header [class*="_headerCorner"] {
     display: none !important;
   }
 

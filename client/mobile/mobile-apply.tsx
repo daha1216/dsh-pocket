@@ -14,7 +14,7 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import { apply as upstreamApply } from './upstream/index.tsx'
 import { startFileGuard } from './fileGuard.ts'
 import { resolveLayout, persistLayoutFromUrl } from './layout-mode.mjs'
-import { POCKET_RPC_CHANNEL, POCKET_ENDPOINTS } from '../api.js'
+import { POCKET_RPC_CHANNEL, POCKET_ENDPOINTS, MOBILE_RIGHTBAR_ATTRIBUTE, MOBILE_RIGHTBAR_EVENT } from '../api.js'
 
 /** Pocket 专属样式补充——上游样式表无法携带的宿主事实（官方 DSH 无 aionui 套件等）。
  * 规则内容与旧 mobile.css.ts 中 issue #17 / #48 段落一致，从 v1.0.0 时代移植件继承。 */
@@ -98,6 +98,34 @@ export function mobileApply(ctx: ClientContext): void {
   upstreamApply(ctx)
 
   // ---- pocket 附加层 ----
+
+  ctx.effect(() => {
+    let active = true
+    const applyEnabled = (enabled: boolean): void => {
+      document.body?.setAttribute(MOBILE_RIGHTBAR_ATTRIBUTE, enabled ? 'on' : 'off')
+    }
+    const onChange = (event: Event): void => {
+      applyEnabled((event as CustomEvent<{ enabled?: boolean }>).detail?.enabled === true)
+    }
+    const load = async (): Promise<void> => {
+      try {
+        const result = await ctx.connection.rpc.call(POCKET_RPC_CHANNEL, POCKET_ENDPOINTS.status, {}) as {
+          ok?: boolean
+          value?: { mobileRightbarEnabled?: boolean }
+        }
+        if (active) applyEnabled(result?.ok === true ? result.value?.mobileRightbarEnabled !== false : true)
+      } catch {
+        if (active) applyEnabled(true)
+      }
+    }
+    window.addEventListener(MOBILE_RIGHTBAR_EVENT, onChange)
+    void load()
+    return () => {
+      active = false
+      window.removeEventListener(MOBILE_RIGHTBAR_EVENT, onChange)
+      document.body?.removeAttribute(MOBILE_RIGHTBAR_ATTRIBUTE)
+    }
+  }, 'dsh-mobile-nav: optional right sidebar')
 
   // 移动端缩放锁定（2026-09-14 用户要求）：禁双击放大与捏合缩放，保留滑动滚动。
   // iOS Safari ≥10 无视 viewport 的 user-scalable=no，捏合缩放靠拦截 gesturestart/
