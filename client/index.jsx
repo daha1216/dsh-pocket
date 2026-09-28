@@ -658,6 +658,9 @@ export function apply(ctx) {
   // 注：代理注入的 loopback 补丁（proxy.mjs LOOPBACK_ENV_PATCH）已在 #105 移除——
   // 它与 DSH Desktop 2.0.4+ 客户端运行时不兼容，会令 BootHandoff 阶段白屏。
   // #58「远程浏览器开设置页」需上游提供官方信任来源机制才能正经解决；此处仅保留兜底。
+  // 0.2.0-rc.1 起真正的修复在 proxy.mjs 的 TRANSPORT_API_CLIENT_SHIM（transport.ownsHost=true）：
+  // isLoopback = transport?.ownsHost === true || isLoopbackHostname(location.hostname)，
+  // 且 ui-settings 在插件激活前就固化 persistence，本插件 apply 时补来不及——只能注入层抢先。
   if (ctx?.connection) {
     try {
       Object.defineProperty(ctx.connection, 'isLoopback', { value: true, writable: true, configurable: true });

@@ -63,11 +63,50 @@ test('shim（issue #96）：shim 晚于宿主赋值时，已存在的 transport 
   assert.equal(ctx.__DSH_TRANSPORT__.createApiClient(), null, '返回 null');
 });
 
-test('shim（issue #96）：transport 为 undefined / 非对象时不报错', () => {
+test('shim（issue #96）：transport 为 null / 非对象时不报错', () => {
   const ctx = freshContext();
-  assert.equal(ctx.__DSH_TRANSPORT__, undefined, '未赋值时读取为 undefined');
+  // issue #58 修复后，浏览器场景（宿主从不赋值）shim 会主动创建占位 transport：
+  // ownsHost=true 让连接层判 loopback（否则远程浏览器模型设置页 unavailable），
+  // createApiClient 兜底防 issue #96 的 TypeError。
+  const seeded = ctx.__DSH_TRANSPORT__;
+  assert.equal(typeof seeded, 'object', '未赋值时 shim 创建占位 transport');
+  assert.equal(seeded.ownsHost, true, '占位 transport 声明 ownsHost=true');
+  assert.equal(typeof seeded.createApiClient, 'function', '占位 transport 带方法兜底');
+  assert.equal(seeded.createApiClient(), null, '返回 null → 触发 ?? new WebApiClient()');
   runInContext('globalThis.__DSH_TRANSPORT__ = null;', ctx);
   assert.equal(ctx.__DSH_TRANSPORT__, null, 'null 原样透传不抛错');
   runInContext('globalThis.__DSH_TRANSPORT__ = 42;', ctx);
   assert.equal(ctx.__DSH_TRANSPORT__, 42, '非对象不处理');
+});
+
+// issue #58（0.2.0-rc.1 复发）：连接层 isLoopback = transport?.ownsHost === true || …。
+// 远程浏览器（局域网 IP / 隧道域名）location.hostname 非 loopback，若 transport 不声明
+// ownsHost，ui-settings 会在插件激活期把 settings mirror 固化成 memory 模式——模型设置页
+// 报「settings are unavailable in this browser」。shim 在宿主赋值 transport 时补 ownsHost=true，
+// 时机早于一切插件激活。宿主原生声明 true（桌面 Electron 渲染进程）时不得覆盖。
+test('shim（issue #58）：transport.ownsHost 缺失时补 true，宿主已声明 true 时不覆盖', () => {
+  const ctx = freshContext();
+  runInContext('globalThis.__DSH_TRANSPORT__ = { foo: 1 };', ctx);
+  assert.equal(ctx.__DSH_TRANSPORT__.ownsHost, true, '缺失时补 ownsHost=true');
+
+  const ctx2 = freshContext();
+  runInContext('globalThis.__DSH_TRANSPORT__ = { ownsHost: false };', ctx2);
+  assert.equal(ctx2.__DSH_TRANSPORT__.ownsHost, true, 'false 也补成 true（代理场景的浏览器页本就不拥有宿主）');
+
+  const ctx3 = freshContext();
+  runInContext('globalThis.__DSH_TRANSPORT__ = { ownsHost: true };', ctx3);
+  assert.equal(ctx3.__DSH_TRANSPORT__.ownsHost, true, '宿主声明 true 时保持（不重复定义）');
+});
+
+test('shim（issue #58）：宿主 delete __DSH_TRANSPORT__ 后属性仍在（configurable:false）', () => {
+  const ctx = freshContext();
+  // 宿主 web shell 消费后 delete（消费即焚）。configurable:false 下非严格模式 delete
+  // 静默失败，connection 包稍后的 apply() 仍能读到 ownsHost=true 的占位 transport。
+  const result = runInContext('delete globalThis.__DSH_TRANSPORT__', ctx);
+  assert.equal(result, false, 'delete 不可配置属性静默失败返回 false');
+  assert.equal(ctx.__DSH_TRANSPORT__.ownsHost, true, '属性保留，ownsHost 仍为 true');
+  // 宿主真赋值通道不受 configurable 影响（accessor set）
+  runInContext('globalThis.__DSH_TRANSPORT__ = { foo: 9 };', ctx);
+  assert.equal(ctx.__DSH_TRANSPORT__.foo, 9, 'set 通道仍可用');
+  assert.equal(ctx.__DSH_TRANSPORT__.ownsHost, true, '宿主后赋值也被 patch 出 ownsHost');
 });

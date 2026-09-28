@@ -392,7 +392,10 @@ test('会话指纹已移除（2.10.0）：页面与登录页不再注入指纹/a
   }
 });
 
-test('压缩 HTML（gzip）不注入 polyfill——防止损坏压缩流', async () => {
+test('压缩 HTML（gzip）解压后注入 polyfill——真实浏览器必经路径', async () => {
+  // 宿主对声明 accept-encoding 的浏览器（Chrome 等）回 gzip HTML。旧实现跳过压缩响应不注入，
+  // polyfill 与 transport shim 在真实浏览器上全部静默失效（curl 不发 accept-encoding 才注入）。
+  // 现在先解压再注入、以未压缩回传（content-encoding 删除）。
   const zlib = await import('node:zlib');
   const http = await import('node:http');
   const up = createServer((req, res) => {
@@ -412,10 +415,12 @@ test('压缩 HTML（gzip）不注入 polyfill——防止损坏压缩流', async
       req.on('error', reject);
       req.end();
     });
-    assert.equal(raw.headers['content-encoding'], 'gzip', '压缩头原样透传');
-    assert.ok(raw.body[0] === 0x1f && raw.body[1] === 0x8b, '原始字节仍是 gzip（未做文本注入）');
-    assert.ok(!raw.body.toString('utf8').includes('randomUUID'), '压缩流未被注入破坏');
-    assert.ok(zlib.gunzipSync(raw.body).toString('utf8').includes('compressed-page'), '解压后内容完整');
+    assert.equal(raw.headers['content-encoding'], undefined, '压缩头已删除（以未压缩回传）');
+    const text = raw.body.toString('utf8');
+    assert.ok(text.includes('compressed-page'), '解压后内容完整');
+    assert.ok(text.includes('data-dsh-pocket-polyfill'), 'polyfill 已注入解压后的 HTML');
+    assert.ok(text.includes('data-dsh-pocket-transport-shim'), 'transport shim 已注入');
+    assert.equal(raw.headers['cache-control'], 'no-store', '注入文档禁缓存');
   } finally {
     await proxy.close();
     await new Promise((r) => up.close(r));
