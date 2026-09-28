@@ -14,10 +14,18 @@ const result = await build({
   bundle: true,
   format: 'cjs',
   platform: 'browser',
-  target: ['chrome100'],
+  // chrome105：注入样式大量使用 :has()（Chrome 105 起才支持；如 mobile-apply 的
+  // body[data-dsh-pocket-layout] 系列选择器）。构建基线若低于真实运行基线
+  // （原 chrome100），产物会「声称兼容 100、样式实则 105+ 才生效」——基线与
+  // 实际依赖对齐，esbuild 的语法降级决策才有意义。
+  target: ['chrome105'],
   external: ['react', 'react/jsx-runtime', '@deepseek-ai/dsh-client-ui-primitives'],
   write: false,
-  minify: process.env.NODE_ENV === 'production',
+  // 默认压缩；DSH_POCKET_NO_MINIFY=1 显式关闭（package.json 没有任何脚本设置 NODE_ENV）
+  minify: process.env.DSH_POCKET_NO_MINIFY !== '1',
+  // esbuild 默认 ascii 会把非 ASCII 全部转成 \uXXXX——本包 CSS/文案中文密集，
+  // 纯属体积浪费；JS 按规范默认按 UTF-8 解析，加载侧无兼容问题。
+  charset: 'utf8',
   legalComments: 'none',
 });
 

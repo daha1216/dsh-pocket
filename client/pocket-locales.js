@@ -100,6 +100,17 @@ export const zh = {
   'error': '❌ 开启失败：{detail}（可重试；若是代理/VPN 问题见 README 排障）',
   'unknownError': '未知错误',
   'feedback': '有问题？欢迎到 GitHub Issues 反馈 🙏',
+  // 移动端文件守卫（client/mobile/fileGuard.ts，移植 dsh-web-mobile issue #17）：
+  // 手机上打不开电脑本地文件，提供「复制内容」与降级长按选择。
+  'fileGuardMsg': '手机上无法直接打开电脑上的文件',
+  'fileCopy': '复制',
+  'fileCopyDone': '已复制文件内容（{kb} KB）',
+  'fileCopyFailed': '复制失败',
+  'fileCopyFailedFallback': '复制失败，下方可长按选择',
+  'fileFallbackTitle': '复制失败，长按下方文本选择',
+  'fileFallbackClose': '关闭',
+  'fileTooLarge': '文件过大（{size}MB），已跳过复制',
+  'fileTruncated': '…已截断',
 }
 
 /** English dictionary, key-identical to the Chinese source of truth. */
@@ -200,4 +211,15 @@ export const en = {
   'error': '❌ Failed to enable: {detail} (you can retry; for proxy/VPN issues see the README)',
   'unknownError': 'unknown error',
   'feedback': '🙏 Questions? Open an issue on GitHub',
+  // Mobile file guard (client/mobile/fileGuard.ts, ported from dsh-web-mobile issue #17):
+  // files on the computer cannot be opened on the phone — offer copy + long-press fallback.
+  'fileGuardMsg': 'Cannot open a file stored on your computer directly from the phone',
+  'fileCopy': 'Copy',
+  'fileCopyDone': 'File content copied ({kb} KB)',
+  'fileCopyFailed': 'Copy failed',
+  'fileCopyFailedFallback': 'Copy failed — long-press below to select instead',
+  'fileFallbackTitle': 'Copy failed — long-press the text below to select it',
+  'fileFallbackClose': 'Close',
+  'fileTooLarge': 'File too large ({size}MB), copy skipped',
+  'fileTruncated': '… truncated',
 }

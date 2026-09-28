@@ -666,15 +666,17 @@ export function apply(ctx) {
     }
   }
 
+  // 设置页签接入 DSH 本地化：注册 pocket 词典（zh/en），并绑定一个随当前 locale 切换的 t()。
+  // 必须先于 mobileApply(ctx)：mobile-apply 安装的 fileGuard 取词依赖 pocket 词典已
+  // 注册——注册 effect 排在其后的话，理论上 fileGuard 安装期取词会早于词典就位。
+  const translate = ctx.locale.bind(POCKET_NS);
+  ctx.effect(() => ctx.locale.register(POCKET_NS, { zh: POCKET_ZH, en: POCKET_EN }), 'dsh-pocket: pocket locale dictionaries');
+
   // 移动端适配（dsh-web-mobile 移植）：抽屉布局/触控/安全区，仅窄屏生效
   mobileApply(ctx);
 
   const rpcCall = (endpoint, payload, signal) =>
     ctx.connection.rpc.call(POCKET_RPC_CHANNEL, endpoint, payload, signal);
-
-  // 设置页签接入 DSH 本地化：注册 pocket 词典（zh/en），并绑定一个随当前 locale 切换的 t()。
-  const translate = ctx.locale.bind(POCKET_NS);
-  ctx.effect(() => ctx.locale.register(POCKET_NS, { zh: POCKET_ZH, en: POCKET_EN }), 'dsh-pocket: pocket locale dictionaries');
 
   // 设置一级入口（与 通用设置/模型/插件 同级，order 1 = 通用之后、最外层）
   ctx.slots.inject('settings.section', () =>

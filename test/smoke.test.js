@@ -97,30 +97,24 @@ test('client bundle：status 访问必须可选链（回归：1.9.0 白屏——
   // load() 是异步的：首次渲染时 status 为 null。LAN 开关行渲染在 lanUrl 安全分支之外，
   // 1.9.0 在这里裸访问 status.lanAuthEnabled → React 整树崩溃 → 设置页白屏。
   // 修复：全部 status?.lanAuthEnabled。此测试防止再次出现裸访问（esbuild 会原样保留 ?.）。
+  // 产物默认压缩：局部变量名会被改名，正面断言打在源码上；产物只保留负面断言。
   const { readFileSync } = await import('node:fs');
-  const src = readFileSync(new URL('../client/client.js', import.meta.url), 'utf8');
-  assert.ok(!src.includes('status.lanAuthEnabled'), 'bundle 不允许裸 status.lanAuthEnabled（必须可选链）');
-  assert.ok(src.includes('status?.lanAuthEnabled'), 'bundle 存在可选链访问');
+  const src = readFileSync(new URL('../client/index.jsx', import.meta.url), 'utf8');
+  const bundle = readFileSync(new URL('../client/client.js', import.meta.url), 'utf8');
+  assert.ok(src.includes('status?.lanAuthEnabled'), '源码存在可选链访问');
+  assert.ok(!/(?<!\?)status\.lanAuthEnabled/.test(src), '源码不允许裸 status.lanAuthEnabled（必须可选链）');
+  assert.ok(!bundle.includes('status.lanAuthEnabled'), 'bundle 不允许裸 status.lanAuthEnabled');
 });
 
-test('移动导航 backdrop（issue #38）：点击穿透不抢抽屉内点击 + 抽屉外点击关闭保留', async () => {
+test('移动导航 backdrop（issue #38 镜像层）：backdrop 标记存在 + 抽屉层级高于三方插件抬升', async () => {
+  // 镜像层（dsh-web-mobile 移植）的 backdrop 由 overlay-backdrop-fab effect 挂载、
+  // 淡出与 pointer-events 走内联状态（JS 驱动），因此只断言结构标记与层级治理：
+  // 抽屉/菜单层必须高于第三方对 shell overlay 的抬升（500）与 dsh-web-ui-all 的
+  // 移动端层（sidebar 1100、frame 遮罩 1050）——镜像层治理为 1300/1400。
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../client/client.js', import.meta.url), 'utf8');
-  // CSS：backdrop 必须 pointer-events: none（纯压暗层，不接收点击）
-  const css = src.match(/\[data-mobile-nav="backdrop"\][^}]*}/)?.[0] ?? '';
-  assert.ok(css.includes('pointer-events: none'), 'backdrop 点击穿透');
-  // JSX：backdrop 是纯视觉 div（无 role/onClick）
-  assert.ok(src.includes('"data-mobile-nav": "backdrop"'), 'backdrop 纯视觉渲染');
-  // 关闭逻辑：抽屉内导航关闭 + 抽屉外点击关闭（两套 document capture contains 处理）
-  assert.ok((src.match(/contains\(target\)/g) || []).length >= 2, '存在抽屉内外两套点击处理');
-  // 抽屉层级（PR #42 / issue #67）：必须高于第三方插件对 shell overlay 层的
-  // 抬升（500），也要压过 @linxin666/dsh-web-ui-all 的移动端层（sidebar pane
-  // 1100、details pane 1000、frame ::after 全屏遮罩 1050）。
-  // 直接断言 bundle 中抽屉规则的 z-index: 1200（若退回 40/600 则此处失败）
-  assert.ok(
-    src.includes('z-index: 1200 !important'),
-    '抽屉 z-index 1200（高于 overlay 抬升 500 与 web-ui-all 的 1100/1050）',
-  );
+  assert.ok(/\[data-mobile-nav="backdrop"\]/.test(src), 'backdrop CSS 规则存在');
+  assert.ok(src.includes('z-index: 1300 !important'), '抽屉层 z-index 1300（高于 overlay 抬升 500 与 web-ui-all 的 1100/1050）');
   assert.ok(!src.includes('z-index: 40 !important'), '不再用 40（会被第三方抬升的 overlay 盖住）');
   assert.ok(!src.includes('z-index: 600 !important'), '不再用 600（会被 web-ui-all 的 1050 遮罩盖住）');
 });
@@ -128,8 +122,10 @@ test('移动导航 backdrop（issue #38）：点击穿透不抢抽屉内点击 +
 test('公网免责声明（issue #31）：bundle 含弹框与勾选逻辑，RPC 必须带 disclaimer 确认', async () => {
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../client/client.js', import.meta.url), 'utf8');
+  const clientSrc = readFileSync(new URL('../client/index.jsx', import.meta.url), 'utf8');
   assert.ok(src.includes('disclaimer'), 'bundle 含免责声明逻辑');
-  assert.ok(src.includes('disclaimer: true'), '开启公网带免责声明确认参数');
+  // 产物压缩会把 true 改写成 !0，正面断言打在源码上
+  assert.ok(clientSrc.includes('disclaimer: true'), '开启公网带免责声明确认参数');
 });
 
 test('文件浏览（issue #48）：宿主无 aionui explorer 时隐藏入口；点 Files 关抽屉', async () => {

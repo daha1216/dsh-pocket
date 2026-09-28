@@ -1,48 +1,375 @@
-// dsh-web-mobile 移植（MIT，见 LICENSE.dsh-web-mobile）：移动端适配的 client 侧实现。
+// dsh-pocket 移动端适配层：pocket 专属逻辑 + 整目录同步的 dsh-web-mobile 上游移植。
+//
+// 结构（详见 client/mobile/PORTING.md）：
+//   upstream/          ← dsh-web-mobile src/client/** 原样镜像（sync 脚本整目录覆盖，勿手改）
+//   mobile-apply.tsx   ← 本文件：pocket 适配器（布局门控 → 调上游 apply → pocket 附加层）
+//   fileGuard.ts       ← pocket 专属（issue #17 文件链接守卫 + 复制）
+//   layout-mode.mjs    ← pocket 专属（issue #74 ?dsh-layout= 强制布局）
+//
+// 上游负责：样式、词典、phone-chrome、reconciler 基建 + 7 任务（overlay backdrop+FAB、
+// stats-line、git-chip、settings-toolbar、preview、sheet-rise）、侧栏滑动手势（v2.3 #16/#37）、
+// 子代理芯片触控（v2.2）、抽屉点会话自动收起（v2.2 #32）、aionui 兼容、debug 徽章、
+// 两个 slots（会话头 toggle + 抽屉底部 footer）。
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import { MobileNavToggle } from './MobileNavToggle.tsx'
-import { MobileNavOverlay } from './MobileNavOverlay.tsx'
-import { MobileDrawerFooter } from './MobileDrawerFooter.tsx'
+import { apply as upstreamApply } from './upstream/index.tsx'
 import { startFileGuard } from './fileGuard.ts'
-import { MOBILE_CSS } from './mobile.css.ts'
-import { POCKET_RPC_CHANNEL, POCKET_ENDPOINTS, MOBILE_RIGHTBAR_ATTRIBUTE, MOBILE_RIGHTBAR_EVENT } from '../api.js'
-import { NS, en, zh } from './locales.ts'
-import type { MobileNavKey } from './locales.ts'
 import { resolveLayout, persistLayoutFromUrl } from './layout-mode.mjs'
+import { POCKET_RPC_CHANNEL, POCKET_ENDPOINTS, MOBILE_RIGHTBAR_ATTRIBUTE, MOBILE_RIGHTBAR_EVENT } from '../api.js'
+// H4：fileGuard 的用户可见文案迁入词典（client/pocket-locales.js，NS='pocket'）。
+// 这里只导入命名空间 id；词典本体由 client/index.jsx 统一注册（bind 是惰性取词，
+// 注册顺序在 mobileApply 之后也不影响）。
+import { NS as POCKET_NS } from '../pocket-locales.js'
 
-declare module '@deepseek-ai/dsh-client-ui-slots' {
-  interface LocaleNamespaceMap {
-    /** Directory-drawer controls copy. */
-    'mobileNav': MobileNavKey
+/** Pocket 专属样式补充——上游样式表无法携带的宿主事实（官方 DSH 无 aionui 套件等）。
+ * issue #17 / #48 段落从 v1.0.0 时代移植件继承。 */
+const POCKET_EXTRA_CSS = `/* pocket 控件/门控样式：刻意不加媒体查询——mobileApply 启动时写入的
+     body[data-dsh-pocket-layout] 就是门（desktop 布局在写入之后才早退，选择器
+     天然不命中；?dsh-layout=mobile 强制移动的宽桌面也依赖这些规则，宽度媒体
+     反而会漏掉它）。 */
+  /* ---------- 宿主没有 aionui explorer 列时隐藏「文件浏览」入口（issue #48） ----------
+     官方 DeepSeek Harness 不带 dsh-web-ui；explorer 列存在与否由下方探测 effect
+     标到 frame 上（data-mobile-nav-explorer）。没有列时这两个入口点了没反应。 */
+  body[data-dsh-pocket-layout="mobile"] [data-mobile-nav-explorer="0"] [data-mobile-nav="files"],
+  body[data-dsh-pocket-layout="mobile"] [data-mobile-nav-explorer="0"] [data-mobile-nav="explorer"] {
+    display: none !important;
   }
-}
 
-/** Required services (cordis fiber inject — the loader passes all module exports as an object plugin). */
+  /* ---------- 隐藏「添加工作区」入口（issue #17 修正：手机上配工作区无意义） ----------
+     图标按钮的 aria-label 随语言变化，两种都覆盖；下拉菜单里的文本项由
+     fileGuard.ts 的 MutationObserver 按文案兜底隐藏。由布局属性门控：
+     桌面窄窗（auto→desktop）不隐藏，强制 mobile 的宽桌面要隐藏。 */
+  body[data-dsh-pocket-layout="mobile"] button[aria-label="添加工作区"],
+  body[data-dsh-pocket-layout="mobile"] button[aria-label="添加工作区…"],
+  body[data-dsh-pocket-layout="mobile"] button[aria-label="Add workspace"],
+  body[data-dsh-pocket-layout="mobile"] button[aria-label="Add workspace…"] {
+    display: none !important;
+  }
+
+  /* ---------- 文件链接旁的「复制」按钮（issue #17：复制文件内容） ----------
+     由 fileGuard.ts 注入，这里兜底样式。M10：实体 22→30px 高、字号 11→12px
+     （原尺寸在手指下太抠，30px 仍保持行内紧凑视觉）；剩余触距用 ::after 向外
+     扩 6px 补足（Apple HIG 44pt 触控标准的折中：实体紧凑、点区达标，与上游
+     扩点伪元素同款手法），自身 position:relative 提供扩区的定位上下文。 */
+  [data-mobile-nav="copy-file"] {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    margin-left: 6px !important;
+    vertical-align: baseline !important;
+    position: relative;
+    height: 30px !important;
+    padding: 0 8px !important;
+    border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, .14)) !important;
+    border-radius: 6px !important;
+    background: var(--dsw-alias-bg-layer-1, #fff) !important;
+    color: var(--dsw-alias-label-primary, inherit) !important;
+    font-family: inherit !important;
+    font-size: 12px !important;
+    line-height: 1 !important;
+    cursor: pointer !important;
+    -webkit-tap-highlight-color: transparent !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .12) !important;
+  }
+  [data-mobile-nav="copy-file"]::after {
+    content: "";
+    position: absolute;
+    inset: -6px;
+  }
+  [data-mobile-nav="copy-file"]:active {
+    background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, .06)) !important;
+  }
+  [data-mobile-nav="copy-file"][disabled] {
+    opacity: .55 !important;
+    cursor: default !important;
+  }
+@media (max-width: 1023px) and (pointer: coarse) {
+  /* ---------- 右上角双入口冲突治理（0.1.7-rc.2 实测，2026-09-28 合并时发现） ----------
+     rc.2 宿主把「右侧栏展开」经 dsh-client-ui-sidebar-right 注入
+     conversation.session.header.corner 槽 → header 顶层 div[data-conversation-
+     header-corner]（稳定属性，代际安全）。上游 dsh-web-mobile v3.0.3 的两条 corner
+     规则分别锚 0.1.6-alpha.2（titleRow 内 + wSkVaW_ 哈希前缀）与 0.1.5（:first-child
+     > :last-child）——rc.2 上结构与哈希都已变（D_tfqW_、corner 移到 header 顶层），
+     两条全不命中 → 原生 corner 与插件绝对定位的 files 按钮（right:8px）叠在右上角。
+     解法取自 dsh-pocket 上游（其 mobile.css.ts 用同一稳定属性 + 本开关）：
+     - mobileRightbarEnabled=off → 藏原生 corner，files 独占右上角（web-mobile 的
+       设计几何）；
+     - 开关默认 on → corner 可见，files 左移 44px 让位（数值同上游实测）。
+     特异性：本组覆盖选择器 (0,3,x) 均高于被覆盖的 (0,1,0)/(0,5,1 旧结构规则在
+     rc.2 本就不命中)，不赌标签顺序。两态都带 body[data-dsh-pocket-layout] 门：
+     桌面布局不藏宿主原生入口。 */
+  html body[data-dsh-pocket-layout="mobile"][data-dsh-pocket-mobile-rightbar="off"] [data-conversation-header-corner] {
+    display: none !important;
+  }
+  body[data-dsh-pocket-layout="mobile"]:not([data-dsh-pocket-mobile-rightbar="off"]) [data-conversation-header-corner] {
+    display: flex !important;
+    flex: 0 0 auto !important;
+    margin-left: 4px !important;
+    margin-right: 0 !important;
+  }
+  body[data-dsh-pocket-layout="mobile"]:not([data-dsh-pocket-mobile-rightbar="off"]) [data-conversation-header-corner] button {
+    width: 36px !important;
+    height: 36px !important;
+    min-width: 36px !important;
+    min-height: 36px !important;
+  }
+  body[data-dsh-pocket-layout="mobile"]:not([data-dsh-pocket-mobile-rightbar="off"]) [data-mobile-nav="files"] {
+    right: 44px !important;
+  }
+
+  /* ---------- 会话行悬停卡片 ----------
+     宿主把它挂在 body 下（不在 [data-phase] 内，上游的 tooltip 抑制规则够不着）。
+     触屏点一下会话行会模拟 hover，卡片残留在抽屉右侧并溢出屏幕。
+     选择器刻意不用「body >」直接子匹配：宿主经 portal 容器挂载时会隔一层 div，
+     直接子匹配会漏（卡片类名 _card/_copyable + role=button 组合只属于这类悬停
+     卡，去掉大于号不会误伤消息卡）。 */
+  body [role="button"][class*="_card"][class*="_copyable"] {
+    display: none !important;
+  }
+
+  /* ---------- 新会话页多余的右边栏开关 ----------
+     宿主 headerBlank 的 titleRow 把「打开右侧边栏」塞在左上角（会话页在右上角
+     是对的），紧贴 pocket 的 FAB，看着像多出来的按钮。新会话阶段没有右栏内容，
+     直接隐藏；会话页（phase=active）不受影响。 */
+  [data-phase="hero"] button[data-sidebar-right-expand] {
+    display: none !important;
+  }
+
+  /* ---------- 小触点扩大点击区（粗指针） ----------
+     宿主按钮普遍只有 22–28px：输入栏（加号/访问模式/模型）、会话头部
+     （智能体团队 22×24/更多操作/Watcher/侧边栏开关）、抽屉（搜索/视图选项/
+     收起侧边栏/新建会话/展开其余）、hero 的工作区与模式选择器。
+     用伪元素把可点区向外扩，不改布局；相邻按钮的实体盒在自己的层绘制，
+     不会被邻位的扩区抢走核心点击。分两档（实测间距定值）：
+     - 紧凑档 -5px -2px：hero 工作区行 gap:2、会话头部工具组 gap:4、抽屉图标/
+       列表行紧邻——横向最多 -2px，恰好吃满 2px 缝隙、绝不越界进邻盒；
+     - 输入卡档 -8px：卡内行 gap:12/8，四向扩张都只落在空隙里。
+     两档都加 :not(:disabled)：禁用按钮不派发 click，扩区若越到邻位会变成
+     按不着的死条。三条边界（均实测核对过 computed ::after）：① 会话头部 tabs
+     （对话/轨迹/版本/分叉）自带装饰性 ::after（选中下划线 inset:27px 0 -1），
+     套我们的 inset 会把下划线撑成大色块——绝不扩它们；② 消息流内密集小操作簇
+     （复制/编辑/反馈，间距仅几像素）不扩——互相抢点反而更难点；③ 抽屉整棵树
+     挂在 [data-phase] 之外（实测 inPhase=false），抽屉控件的选择器必须不带
+     [data-phase] 前缀，否则永远匹配不到（这些 aria-label 只属于抽屉，去掉
+     前缀无误伤）。④ v3.0.3 起设置 sheet/快捷键弹层 portal 到 body，无 [data-phase]
+     前缀的 aria-label 选择器一律加 :not([aria-modal] *)，弹层内同文案按钮不扩点
+     （弹层自带足够密度的布局，误扩会盖邻位）。 */
+  [data-phase] [data-composer-card] button:not(:disabled),
+  [data-phase="hero"] button:not([data-mobile-nav]):not(:disabled),
+  button[aria-label*="侧边栏"]:not(:disabled):not([aria-modal] *),
+  button[aria-label*="right sidebar" i]:not(:disabled):not([aria-modal] *),
+  button[aria-label*="搜索会话"]:not(:disabled):not([aria-modal] *),
+  button[aria-label*="视图选项"]:not(:disabled):not([aria-modal] *),
+  button[aria-label*="新建会话"]:not(:disabled):not([aria-modal] *),
+  button[aria-label*="展开其余"]:not(:disabled):not([aria-modal] *),
+  [data-phase] button[aria-label*="智能体团队"]:not(:disabled),
+  [data-phase] button[aria-label*="更多操作"]:not(:disabled),
+  [data-phase] button[aria-label^="Watcher"]:not(:disabled) {
+    position: relative;
+  }
+  /* 紧凑档：横向 -2px 吃满最小缝（gap:2/4），纵向 -5px。 */
+  [data-phase="hero"] button:not([data-mobile-nav]):not(:disabled)::after,
+  button[aria-label*="侧边栏"]:not(:disabled):not([aria-modal] *)::after,
+  button[aria-label*="right sidebar" i]:not(:disabled):not([aria-modal] *)::after,
+  button[aria-label*="搜索会话"]:not(:disabled):not([aria-modal] *)::after,
+  button[aria-label*="视图选项"]:not(:disabled):not([aria-modal] *)::after,
+  button[aria-label*="新建会话"]:not(:disabled):not([aria-modal] *)::after,
+  button[aria-label*="展开其余"]:not(:disabled):not([aria-modal] *)::after,
+  [data-phase] button[aria-label*="智能体团队"]:not(:disabled)::after,
+  [data-phase] button[aria-label*="更多操作"]:not(:disabled)::after,
+  [data-phase] button[aria-label^="Watcher"]:not(:disabled)::after {
+    content: "";
+    position: absolute;
+    inset: -5px -2px;
+  }
+  /* 输入卡档（放最后：与 hero 规则同等特异性，靠后声明让卡内按钮拿到 -8px）。 */
+  [data-phase] [data-composer-card] button:not(:disabled)::after {
+    content: "";
+    position: absolute;
+    inset: -8px;
+  }
+
+  /* ---------- H5 横屏刘海 safe-area 左右缘 ----------
+     全项目（上游 + 本层）此前零处 safe-area-inset-left/right：上游只处理了竖屏的
+     top（状态栏）与 bottom（home indicator）。iPhone 横屏（宽 844-932px，仍
+     <1024，移动布局激活）时刘海落在屏幕左右缘，FAB（上游 base.css.ts left:10px）、
+     抽屉内容、底部 sheet（上游一律 left/right:8px）会被刘海压住。
+     为何放 POCKET_EXTRA_CSS：upstream/ 是整目录同步的上游镜像（sync 脚本覆盖，
+     手改必丢——零手改原则），只能在 pocket 层以同特异性 + 后加载 + !important 压过。
+     为何这一段（与本文件其它段不同）套媒体查询：被覆盖的上游规则本身全部住在
+     (max-width:1023px) and (pointer:coarse) 臂内，覆盖必须与被覆盖同臂——否则
+     断点翻宽后上游已回退桌面布局（aionui 列恢复网格列、delete-dialog 卸载），
+     这里的 left/right !important 却残留，会把桌面网格列拽离原位。竖屏/无刘海
+     设备 env() 恒 0，全部零位移。 */
+  @media (max-width: 1023px) and (pointer: coarse) {
+    /* a) frame 容器：上游同选择器已写 padding-top（layout.css.ts，竖屏让出状态
+       栏），这里补左右两缘——中列（会话头/消息流/输入卡）是 in-flow 子元素，
+       吃 frame 的 padding，直接让出刘海。 */
+    [data-mobile-nav="frame"],
+    div[class*="_frame"]:has(> div[class*="_centerCol"]) {
+      padding-left: env(safe-area-inset-left, 0px) !important;
+      padding-right: env(safe-area-inset-right, 0px) !important;
+    }
+    /* 抽屉：绝对定位子元素（containing block = frame 的 padding box），上一条的
+       frame padding 挪不动它（padding 不影响绝对定位后代的偏移基准），需要自带
+       padding-left 把内容让出左侧刘海；抽屉宽 ≤92vw，右侧到不了屏幕右缘，不需要。 */
+    [data-mobile-nav="frame"] > :first-child,
+    div[class*="_frame"]:has(> div[class*="_centerCol"]) > :first-child {
+      padding-left: env(safe-area-inset-left, 0px) !important;
+    }
+    /* b) FAB（上游 base.css.ts left:10px）：max() 保证无刘海时仍是 10px。 */
+    [data-mobile-nav="fab"] {
+      left: max(10px, env(safe-area-inset-left, 0px)) !important;
+    }
+    /* c) 底部 sheet/面板：上游 base.css.ts 的 delete-dialog 与 compat.css.ts 的
+       explorer/preview 两列 sheet 全是 left/right:8px。全屏预览态（compat.css.ts
+       的三标记 + full 选择器，特异性更高）不受影响。fileGuard 的长按 fallback
+       面板是内联样式，在 fileGuard.ts 里直接写同款 max()。 */
+    /* 回归修复：aionui 两列选择器单独加 html 前缀提特异性——上游 compat.css 对
+       同名选择器写有同特异性 left/right:8px !important，且其 style 标签用
+       setTimeout(0) 把自己重排到 head 末尾（同特异性 + !important 对拼时后加载
+       者胜，纯赌顺序），赌输则本覆盖整条失效。html 前缀加一档特异性后无论谁
+       排在后都稳赢。delete-dialog 不加前缀：上游 base.css 对它没有同值竞争，
+       !important 已稳赢，无需陪绑。 */
+    [data-aionui-explorer-col],
+    html [data-aionui-explorer-col],
+    html [data-aionui-preview-col] {
+      left: max(8px, env(safe-area-inset-left, 0px)) !important;
+      right: max(8px, env(safe-area-inset-right, 0px)) !important;
+    }
+
+    /* ---------- M3 键盘期 overlay 协调 ----------
+       iOS 软键盘弹起只收缩 visual viewport，fixed 元素仍锚 layout viewport。
+       --dshp-kb 由 mobile-apply.tsx 的 effect 监听 visualViewport resize/scroll
+       按帧写入 documentElement；键盘收起或 Android（resize 整个视口，差值 ≈0）时
+       恒 0px，规则退化为无位移。fileGuard 的 toast/fallback 是内联样式，直接在
+       fileGuard.ts 用该变量。FAB 无需处理：它是 frame 内绝对定位、top 锚定，
+       永远在屏幕上部，键盘盖不到。
+       删除确认卡（2026-09-28 v3.0.3 同步后重写）：上游把卡改成 backdrop
+       （fixed inset:0 flex 居中）的 position:static 子元素，bottom/left/right 对它
+       全部无效（旧覆盖已死）。改用 translateY 抬升半键盘高——卡原居屏幕中线，
+       键盘占掉下半屏后抬一半正好让按钮带留在可视区；0px 时零位移。 */
+    [data-mobile-nav="delete-dialog"] {
+      transform: translateY(calc(-0.5 * var(--dshp-kb, 0px))) !important;
+    }
+
+    /* ---------- iOS standalone 布局视口偏矮兜底（2026-09-28 真机反馈：A2HS 底部留白） ----------
+       部分 iOS 版本的 standalone（添加到主屏幕）模式下，100%/dvh 参照的布局视口
+       不含底部一段真实窗口（innerHeight < visualViewport.height，键盘收起且未缩放
+       时仍成立）。视口守卫 effect（本文件下方）检测到该态持续 600ms 后：写
+       --dshp-frame-h（= 可视高度）并给 html 标 data-dsh-pocket-full-height；此处把
+       html/body 高度链顶满真实窗口（frame 是 100% 高度链的后代，自然跟着顶满）。
+       标记与变量任一缺席时规则不命中，行为与旧版逐字节一致——不赌宿主原始
+       html 高度写法是什么。 */
+    html[data-dsh-pocket-full-height],
+    html[data-dsh-pocket-full-height] body {
+      height: var(--dshp-frame-h, 100%) !important;
+    }
+
+    /* ---------- M10 上游小控件触控达标（44pt 触控标准：Apple HIG / WCAG 2.2） ----------
+       上游控件以桌面视觉密度定尺寸（28-38px），手指按压容易 miss。upstream 零手改
+       原则 → 在本层用 min-* 覆盖（min-height/width 会压过上游的固定 height/width）。 */
+    /* 删除确认弹窗两按钮（base.css.ts [data-mobile-nav="delete-confirm-actions"]>button
+       height:30px）→ 44px：破坏性操作的确认键不容 miss。 */
+    [data-mobile-nav="delete-confirm-actions"] > button {
+      min-height: 44px !important;
+    }
+    /* 抽屉 footer 两 pills（base.css.ts session-log/explorer height:34px）→ 40px：
+       44 会把 footer 行撑得过高，40 是密度与触达的折中。 */
+    [data-mobile-nav="session-log"],
+    [data-mobile-nav="explorer"] {
+      min-height: 40px !important;
+    }
+    /* FAB（base.css.ts 38×38）→ 44×44。 */
+    [data-mobile-nav="fab"] {
+      min-width: 44px !important;
+      min-height: 44px !important;
+    }
+  }
+}`
 
 /**
- * Mobile-adaptive shell, browser half: injects the mobile stylesheet, then
- * contributes the directory toggle to the session header and the backdrop +
- * floating button to the shell overlay.
+ * Mobile-adaptive shell, pocket adapter half.
  * @param ctx - client root context.
  */
-export function mobileApply(ctx): void {
+export function mobileApply(ctx: ClientContext): void {
   // 布局模式（issue #74）：URL 参数 > localStorage > auto(=matchMedia)。
   // desktop 模式（宽屏手机/平板强制电脑布局）下整段 mobile 效果都不挂——
   // 不加 styles、不挂 slots、不跑 effects，直接走 DSH 原生桌面 UI。
-  const urlValue = new URL(window.location.href).searchParams.get('dsh-layout') ?? '';
-  const narrowMQ = window.matchMedia('(max-width: 1023px)');
-  const stored = persistLayoutFromUrl(urlValue);
+  // 注：上游 JS 效果（phone-chrome MOBILE_QUERY）与样式主 gate 均为
+  // (max-width: 1023px) and (pointer: coarse)——上游样式原有的裸 (max-width:768px)
+  // 宽度臂已在本地补丁中收窄（见 PORTING.md 补丁清单）。pocket 的 narrowMQ 必须
+  // 与它们同口径：只看宽度会让桌面窄窗误判成 mobile（fileGuard 拦文件链接、
+  // 隐藏「添加工作区」等在桌面浏览器上全数误触发）。
+  const urlRaw = new URL(window.location.href).searchParams.get('dsh-layout')
+  const urlValue = urlRaw ?? ''
+  const narrowMQ = window.matchMedia('(max-width: 1023px) and (pointer: coarse)');
+  // 传原始值（含 null=URL 无此参数）：persistLayoutFromUrl 需要区分「无参数」
+  // （不动 localStorage，issue #74 的持久化承诺）与「显式 dsh-layout=auto」（清除）。
+  const stored = persistLayoutFromUrl(urlRaw);
   const layout = resolveLayout({ urlValue, stored, narrowMatch: narrowMQ.matches });
   document.body?.setAttribute('data-dsh-pocket-layout', layout);
   if (layout === 'desktop') return;
-  // 强制 mobile：narrow 永远 true；宽度变化不再切换（用户已显式选 mobile）
-  // auto 模式：narrow 是真实的 matchMedia，宽度变化会触发 effect 挂载/卸载
-  let narrow: MediaQueryList = narrowMQ;
+  // 强制 mobile：pocket 附加层（fileGuard、explorer 探测）永远挂；auto 模式
+  // 挂载时按真实窄屏判断。M8：附加层效果统一走下方 armOnNarrow（随 narrowMQ
+  // change 动态装卸）；强制态的假 narrow 恒 true 且 change 监听为 no-op，行为不变。
+  let narrow: MediaQueryList = narrowMQ
   if (layout === 'mobile') {
-    narrow = { matches: true, addEventListener: () => {}, removeEventListener: () => {} } as MediaQueryList;
+    narrow = { matches: true, addEventListener: () => {}, removeEventListener: () => {} } as MediaQueryList
   }
 
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-mobile-nav: dictionaries')
+  // ---- 回归修复（低）：auto 模式下布局属性随窄屏断点动态同步 ----
+  // data-dsh-pocket-layout 此前只在启动写一次：auto（无 URL 强制值、无 localStorage
+  // 强制值）下旋转跨 1024px 后，下方 armOnNarrow 会按 narrowMQ 卸载全部附加效果，
+  // 但属性仍是启动时的 mobile——POCKET_EXTRA_CSS 里以
+  // body[data-dsh-pocket-layout="mobile"] 门控的规则（隐藏「添加工作区」等）在
+  // 桌面布局下继续命中，入口被无端藏掉。强制 mobile（假 narrow 恒 true、无 change
+  // 事件）与强制 desktop（上方已早退）都不存在断点翻转，无需同步；语义与
+  // layout-mode.mjs 的 resolveLayout 一致（auto 分支 = 跟随 narrowMatch）。
+  const urlNorm = urlValue.trim().toLowerCase()
+  const layoutForced = urlNorm === 'desktop' || urlNorm === 'mobile' || stored === 'desktop' || stored === 'mobile'
+  if (!layoutForced) {
+    ctx.effect(() => {
+      const syncLayoutAttr = (): void => {
+        document.body?.setAttribute('data-dsh-pocket-layout', narrowMQ.matches ? 'mobile' : 'desktop')
+      }
+      narrowMQ.addEventListener('change', syncLayoutAttr)
+      return () => {
+        narrowMQ.removeEventListener('change', syncLayoutAttr)
+        // 刻意不清属性：门控 CSS 以它为锚，清掉会让卸载/重载间隙的样式失锚；
+        // 下次 mobileApply 启动会按当次断点重写。
+      }
+    }, 'dsh-pocket: auto layout attribute sync on breakpoint change')
+  }
+
+  // ---- M8：pocket 附加层随断点装卸 ----
+  // 此前 narrow 只在启动求值一次，三个附加效果（zoom lock、explorer 标记、
+  // fileGuard）一锤定音——iPad 旋转跨 1024px 后 fileGuard/zoom-lock/explorer
+  // 标记全部残留（旧注释自嘲「旋转后需刷新生效」）。上游 installMobileEffect
+  // （phone-chrome.ts）用 matchMedia change 动态装卸，pocket 对齐同款模式：
+  // change 回调里按 matches 挂/卸子资源（子清理函数保存好，复用各 effect 的
+  // 既有 dispose 逻辑，不留任何监听/注入物/标记残留）。
+  const armOnNarrow = (label: string, install: () => (() => void)): void => {
+    ctx.effect(() => {
+      let dispose: (() => void) | undefined
+      const sync = (): void => {
+        dispose?.()
+        dispose = narrow.matches ? install() : undefined
+      }
+      sync()
+      // 强制 mobile 的假 narrow 没有 change 事件（恒 true、永不翻转）——?. 判空
+      // 让真 MediaQueryList 与假对象共用同一路径（假对象自带的 no-op 监听也安全）。
+      narrow.addEventListener?.('change', sync)
+      return () => {
+        narrow.removeEventListener?.('change', sync)
+        dispose?.()
+      }
+    }, label)
+  }
+
+  // ---- dsh-web-mobile 上游部分（整目录同步，勿手改 upstream/）----
+  upstreamApply(ctx)
+
+  // ---- pocket 附加层 ----
 
   ctx.effect(() => {
     let active = true
@@ -72,229 +399,228 @@ export function mobileApply(ctx): void {
     }
   }, 'dsh-mobile-nav: optional right sidebar')
 
+  // 缩放控制（2026-09-14 用户要求：禁双击放大与捏合缩放），手段分工：
+  //  - 双击放大：上游根样式 html,body{touch-action:pan-y pinch-zoom!important}
+  //    已覆盖（其媒体与 MOBILE_QUERY 同口径），pocket 再注入非 important 的
+  //    touch-action 只会被压死——不再注入，避免认知噪音。
+  //  - **刻意不追加 maximum-scale/user-scalable**：上游 phone-chrome 把 viewport
+  //    meta 视为己有，用 MutationObserver 把 content 锁死为 VIEWPORT_CONTENT
+  //    （phone-chrome.ts assertViewport），任何追加都会在下一拍被还原——追加是
+  //    死代码；且 iOS 10+ 本就忽略 user-scalable，生效手段只有手势事件。
+  //  - 捏合缩放（iOS Safari——本口袋的实际用户端）：H3 改为条件拦截。原实现对
+  //    gesturestart/gesturechange 一律 preventDefault，等于焊死了上游 #45 刻意
+  //    留下的逃生口——iOS 对 <16px 输入框聚焦会自动放大 viewport，放大之后唯一
+  //    的用户侧还原手段就是捏合缩小；standalone（添加到主屏幕）模式没有地址栏、
+  //    没有刷新按钮，放大锁死即死锁。权衡后的语义：**只拦放大、永远放行缩小**——
+  //    gesturestart 记 startScale = visualViewport.scale（手势起点的页面缩放级别），
+  //    gesturechange 里 startScale * event.scale <= startScale（event.scale 是相对
+  //    手势起点的比例，乘积即本次手势的落点缩放；<= 起点即缩小方向）→ 不
+  //    preventDefault 放行，否则 preventDefault。效果：无论页面处于哪个缩放级别
+  //    （含被浏览器自动放大后），捏合缩小永远可用（逃生口保住）；从 1x 出发的
+  //    捏合放大仍被禁（2026-09-14 诉求的本体）。gestureend 清起点。
+  //    visualViewport 缺失（罕见）→ startScale 记 0 → 全拦退回旧行为：宁可过严，
+  //    也不制造还原不了的放大。
+  //  - Android 端上游刻意保留捏合（VIEWPORT_CONTENT 不写 zoom 令牌），遵循其
+  //    决定，不与其 observer 对打。
+  //  M8：随 narrowMQ change 动态装卸，旋转跨断点即时生效。
+  armOnNarrow('dsh-pocket: mobile zoom lock', () => {
+    let startScale = 0
+    const onStart = (): void => {
+      // visualViewport 罕见缺失（极端老 WebKit / 无 UI 环境探针）→ 记 0，走全拦
+      startScale = window.visualViewport?.scale ?? 0
+    }
+    const onChange = (event: Event): void => {
+      const scale = (event as Event & { scale: number }).scale
+      // startScale<=0（vv 缺失）或 scale 为非数（异常事件，NaN 比较为 false）都
+      // 落入 preventDefault——fail closed，等价旧的全拦行为。
+      if (startScale > 0 && startScale * scale <= startScale) return
+      event.preventDefault()
+    }
+    const onEnd = (): void => { startScale = 0 }
+    document.addEventListener('gesturestart', onStart, { passive: false })
+    document.addEventListener('gesturechange', onChange, { passive: false })
+    document.addEventListener('gestureend', onEnd, { passive: false })
+    return () => {
+      document.removeEventListener('gesturestart', onStart)
+      document.removeEventListener('gesturechange', onChange)
+      document.removeEventListener('gestureend', onEnd)
+    }
+  })
+
+  // explorer 可用性标记（issue #48）：上游假定宿主装了 dsh-web-ui（aionui 列），
+  // 官方 DSH 没有。探测列存在与否标到 frame 上，配 POCKET_EXTRA_CSS 隐藏死按钮。
+  // M8：随 narrowMQ change 动态装卸（断点翻宽即撤标记，不再残留）。
+  armOnNarrow('dsh-pocket: explorer availability (issue #48)', () => {
+    const frame = (): HTMLElement | null => document.querySelector('[data-mobile-nav="frame"]')
+    let raf = 0
+    const check = () => {
+      raf = 0
+      const has = document.querySelector('[data-aionui-explorer-col]') !== null ? '1' : '0'
+      const el = frame()
+      if (el !== null && el.getAttribute('data-mobile-nav-explorer') !== has) el.setAttribute('data-mobile-nav-explorer', has)
+    }
+    check()
+    const timer = window.setTimeout(check, 1500) // 宿主懒渲染：稍后再查一次
+    const schedule = (): void => { if (raf === 0) raf = requestAnimationFrame(check) }
+    const observer = new MutationObserver((mutations) => {
+      // 只关心结构变化（explorer 列的出现/消失）。流式输出期间每个 token 都是
+      // 文本节点增删，若不区分，流式全程每帧都要为这个几乎不变的标记跑两次
+      // 全文档 querySelector——纯文本突变直接跳过。
+      for (const m of mutations) {
+        for (const n of m.addedNodes) { if (n.nodeType !== 3) { schedule(); return } }
+        for (const n of m.removedNodes) { if (n.nodeType !== 3) { schedule(); return } }
+      }
+    })
+    observer.observe(document.body, { childList: true, subtree: true })
+    return () => {
+      window.clearTimeout(timer)
+      if (raf !== 0) cancelAnimationFrame(raf)
+      observer.disconnect()
+      // 标记属性随 frame 存活跨插件重载，卸载时不留 pocket 专属残留
+      frame()?.removeAttribute('data-mobile-nav-explorer')
+    }
+  })
+
   ctx.effect(() => {
     const tag = document.createElement('style')
-    tag.dataset.plugin = '@dsh-external/dsh-mobile-nav'
-    tag.dataset.pluginCss = '@dsh-external/dsh-mobile-nav/mobile.css'
-    tag.textContent = MOBILE_CSS
+    tag.dataset.plugin = 'dsh-pocket'
+    tag.dataset.pluginCss = 'dsh-pocket/mobile-extras.css'
+    tag.textContent = POCKET_EXTRA_CSS
     document.head.appendChild(tag)
     return () => {
       tag.remove()
     }
-  }, 'dsh-mobile-nav: styles')
+  }, 'dsh-pocket: mobile extra styles (issue #17/#48)')
 
-  // Phone chrome: KEEP the system status bar (no fullscreen) and make it
-  // blend into the page. On narrow screens:
-  // - The viewport meta gains viewport-fit=cover, so env(safe-area-inset-top)
-  //   is the real status-bar / notch height and the stylesheet can push every
-  //   surface below it (off notched phones, or in a browser tab where the
-  //   layout viewport already sits below the status bar, the inset is 0 and
-  //   nothing shifts).
-  // - A theme-color meta tracks the shell background (the official theme is
-  //   toggled by body[data-ds-dark-theme], which flips --dsw-alias-bg-base):
-  //   Android then paints the status bar / URL bar with the page's own base
-  //   color, so the status bar reads as part of the UI instead of a foreign
-  //   strip. The drawer paints the same strip on iOS / notch displays.
-  // - gesturestart is suppressed as the legacy-iOS fallback for double-tap
-  //   zoom; modern browsers are covered by the stylesheet's
-  //   touch-action: manipulation (which keeps pan and pinch zoom).
-  ctx.effect(() => {
-    const viewport = document.querySelector<HTMLMetaElement>('meta[name="viewport"]')
-    const originalViewport = viewport?.content ?? ''
-    const themeMeta = document.createElement('meta')
-    themeMeta.name = 'theme-color'
-    const bodyBg = (): string => getComputedStyle(document.body).backgroundColor
-
-    const sync = (): void => {
-      if (viewport !== null) viewport.content = 'width=device-width, initial-scale=1, viewport-fit=cover'
-      themeMeta.content = bodyBg()
-      if (themeMeta.parentElement === null) document.head.appendChild(themeMeta)
+  // M3：键盘高度 CSS 变量。iOS 软键盘弹起只收缩 visual viewport（layout viewport
+  // 不动），底部锚定的 fixed 弹层（fileGuard 的 toast/长按 fallback 面板、上游
+  // session-menu 的删除确认弹窗）仍按 layout viewport 定位，全部沉到键盘底下。
+  // 这里把键盘高度写进 documentElement 的 --dshp-kb = max(0px, innerHeight -
+  // visualViewport.height - visualViewport.offsetTop)，供上述弹层的 bottom calc()
+  // 消费（POCKET_EXTRA_CSS 覆盖上游 delete-dialog；fileGuard 内联样式直接用）。
+  // Android 不需要也不受影响：其键盘弹出 resize 整个视口，innerHeight 与
+  // vv.height 同步收缩，差值恒 ≈0。resize/scroll 在键盘动画期间每帧触发，rAF
+  // 合并 + 同值短路，避免每帧写 style 强制重排。visualViewport 缺失（罕见）不挂。
+  armOnNarrow('dsh-pocket: keyboard height css var (--dshp-kb)', () => {
+    const vv = window.visualViewport
+    if (vv === null || vv === undefined) return () => {}
+    const root = document.documentElement
+    let raf = 0
+    let last = ''
+    const write = (): void => {
+      raf = 0
+      const raw = Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
+      // 回归修复（低）：强制 mobile + 桌面浏览器缩放 ≠100% 时，innerHeight 与
+      // vv.height 的换算会出现正值（并无键盘），toast/fallback 被无端抬升。真实
+      // 软键盘高度物理上不会超过视口六成，超出即判为缩放伪差，钳到 60% innerHeight。
+      const kb = Math.min(raw, Math.round(window.innerHeight * 0.6))
+      const value = `${Math.round(kb)}px`
+      if (value === last) return
+      last = value
+      root.style.setProperty('--dshp-kb', value)
     }
-    const restore = (): void => {
-      if (viewport !== null) viewport.content = originalViewport
-      themeMeta.remove()
-    }
-    const onGestureStart = (event: Event) => event.preventDefault()
-    if (narrow.matches) sync()
-    const onChange = (event: MediaQueryListEvent) => (event.matches ? sync() : restore())
-    narrow.addEventListener('change', onChange)
-    const observer = new MutationObserver(() => {
-      if (narrow.matches) themeMeta.content = bodyBg()
-    })
-    observer.observe(document.body, { attributes: true, attributeFilter: ['data-ds-dark-theme'] })
-    document.addEventListener('gesturestart', onGestureStart)
+    const schedule = (): void => { if (raf === 0) raf = requestAnimationFrame(write) }
+    vv.addEventListener('resize', schedule)
+    vv.addEventListener('scroll', schedule)
+    write()
     return () => {
-      narrow.removeEventListener('change', onChange)
-      observer.disconnect()
-      document.removeEventListener('gesturestart', onGestureStart)
-      restore()
+      vv.removeEventListener('resize', schedule)
+      vv.removeEventListener('scroll', schedule)
+      if (raf !== 0) cancelAnimationFrame(raf)
+      root.style.removeProperty('--dshp-kb')
     }
-  }, 'dsh-mobile-nav: status bar theme + viewport + zoom guard')
+  })
 
-  // dsh-web-ui compatibility: the aionui explorer column would render as a
-  // sheet over the whole mobile UI whenever its (persisted) expanded state
-  // is active — including right after a reload, with no way out (the
-  // suite's floating expand button only exists while collapsed). Instead
-  // of fighting the suite's store timing, the mobile stylesheet keeps the
-  // explorer column hidden by default and the header's Files action (plus
-  // the drawer footer entry) opens it via the `data-aionui-explorer-open`
-  // marker on the frame. This effect just clears that marker when the
-  // sheet's own collapse chevron is tapped, so closing is symmetric with
-  // opening.
-  ctx.effect(() => {
-    if (!narrow.matches) return () => {}
-    const onChevronClick = (event: MouseEvent) => {
-      const target = event.target as HTMLElement | null
-      if (target === null || !target.closest('.aionui-collapse-chevron')) return
-      document.querySelector('[data-mobile-nav="frame"]')?.removeAttribute('data-aionui-explorer-open')
-    }
-    document.addEventListener('click', onChevronClick, true)
-    return () => document.removeEventListener('click', onChevronClick, true)
-  }, 'dsh-mobile-nav: aionui explorer close marker')
-
-  // The mobile "Files" entries (header icon + drawer footer) open the
-  // dsh-web-ui **aionui explorer column** — a host-side component that plain
-  // DeepSeek Harness does NOT ship (issue #48). Without it the entries are
-  // dead buttons (they only toggle a frame attribute; nothing ever renders).
-  // Detect whether the host provides the column and mark the frame with
-  // `data-mobile-nav-explorer="1|0"` so the stylesheet can hide the entries
-  // on hosts without it (dsh-web-ui installs keep the feature).
-  ctx.effect(() => {
-    if (!narrow.matches) return () => {}
-    const frame = (): HTMLElement | null => document.querySelector('[data-mobile-nav="frame"]')
-    const check = () => {
-      const has = document.querySelector('[data-aionui-explorer-col]') !== null
-      frame()?.setAttribute('data-mobile-nav-explorer', has ? '1' : '0')
-    }
-    check()
-    const timer = window.setTimeout(check, 1500) // 宿主懒渲染：稍后再查一次
-    const observer = new MutationObserver(check)
-    observer.observe(document.body, { childList: true, subtree: true })
-    return () => {
-      window.clearTimeout(timer)
-      observer.disconnect()
-    }
-  }, 'dsh-mobile-nav: explorer availability (issue #48)')
-
-  // dsh-web-ui compatibility: the aionui preview column persists its open
-  // tabs in localStorage and restores them on load, which would pop the
-  // preview sheet over the fresh UI after a reload. Gate it like the
-  // explorer: the stylesheet keeps the column hidden unless the frame
-  // carries `data-aionui-preview-open`; this effect sets that marker when
-  // the user actually taps a file row in the explorer sheet, and clears it
-  // whenever the suite hides the column again (collapse chevron / tab
-  // close), so a restored-but-unwanted sheet never appears.
-  ctx.effect(() => {
-    if (!narrow.matches) return () => {}
-    const frame = (): HTMLElement | null => document.querySelector('[data-mobile-nav="frame"]')
-    const onTap = (event: MouseEvent) => {
-      const target = event.target as HTMLElement | null
-      if (target === null) return
-      if (target.closest('[data-aionui-explorer-col] [class$="_treeRow"]') === null) return
-      frame()?.setAttribute('data-aionui-preview-open', '')
-    }
-    const sync = (): void => {
-      const pv = document.querySelector('[data-aionui-preview-col]')
-      if (pv === null) return
-      if (getComputedStyle(pv).visibility === 'hidden') frame()?.removeAttribute('data-aionui-preview-open')
-    }
-    document.addEventListener('click', onTap, true)
-    const observer = new MutationObserver(sync)
-    observer.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['style'] })
-    sync()
-    return () => {
-      document.removeEventListener('click', onTap, true)
-      observer.disconnect()
-    }
-  }, 'dsh-mobile-nav: preview sheet open marker')
-
-  // The official conversation status row (turns / steps / LLM time / TTFT /
-  // cache) has a hashed class, so the stylesheet cannot target it directly.
-  // Its stable boundary is the official conversation.composer.dock slot. Mark
-  // only the metrics root inside that slot; never scan every *_root under the
-  // composer because the editor itself is now contenteditable (not textarea)
-  // and its root also contains the dock text.
-  ctx.effect(() => {
-    if (!narrow.matches) return () => {}
-    // The composer root renders the TPS readout ("TPS 89.4 tok/s") as its
-    // own row BELOW the status strip; fold it into the strip so every
-    // metric scrolls together. The suite re-renders its own tree, so this
-    // must be idempotent and re-run on every mutation.
-    const moveTps = (stats: Element): void => {
-      if ([...stats.children].some((c) => /^TPS\s+\d/.test((c.textContent ?? '').trim()))) return
-      const stack = stats.closest('[class$="_composerStack"]')
-      if (stack === null) return
-      for (const el of stack.querySelectorAll('div')) {
-        const text = (el.textContent ?? '').trim()
-        if (!/^TPS\s+\d/.test(text)) continue
-        if (el.children.length > 0) continue
-        stats.appendChild(el)
-        return
+  // iOS standalone 视口守卫（2026-09-28 真机反馈：A2HS 打开底部留白 ~65pt、
+  // composer 抬离底边）。桌面/浏览器不受影响，仅窄屏挂载。病源分三态治理：
+  //  A. 键盘收起后文档残留滚动——iOS standalone 经典陷阱：frame 设计上恰好一
+  //     视口高、文档本不可滚，任何 scrollY>0（或 vv.offsetTop>0）都是键盘交互
+  //     的残留 → scrollTo(0,0) 归位（症状与 layout.css.ts border-box 注释描述的
+  //     「整个 UI 可上滑、composer 抬离底部留空带」一致，但成因不同）。
+  //  B. 布局视口矮于真实窗口——部分 iOS 版本 standalone 下 100%/dvh 参照的布局
+  //     视口不含底部一段（innerHeight < vv.height 且 scale=1、键盘收起）→ 把
+  //     可视高度写进 --dshp-frame-h 并标 data-dsh-pocket-full-height，由
+  //     POCKET_EXTRA_CSS 把 html/body 高度链顶满。600ms 去抖双向生效/解除，
+  //     避开键盘动画与转场瞬态。
+  //  C. 诊断探针：URL 带 ?dshp-diag=1 常显；B 态触发时自动显示 8 秒。顶部小字
+  //     实时输出 ih|vv|off|sc|sy 五元组，真机再截图即可精确定位剩余问题。
+  // 互斥保护：B 生效时文档可能因 frame 变高而可滚，跳过 A 的归位（否则打架）。
+  armOnNarrow('dsh-pocket: standalone viewport guard (scroll residue / short layout viewport)', () => {
+    const vv = window.visualViewport
+    if (vv === null || vv === undefined) return () => {}
+    const root = document.documentElement
+    let raf = 0
+    let shortSince = 0
+    let applied = false
+    let diagEl: HTMLDivElement | null = null
+    let diagTimer = 0
+    const wantDiag = new URLSearchParams(window.location.search).has('dshp-diag')
+    const showDiag = (auto: boolean): void => {
+      if (diagEl === null) {
+        diagEl = document.createElement('div')
+        diagEl.dataset.dshPocketDiag = '1'
+        diagEl.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top, 0px) + 2px);left:2px;z-index:2147483647;font:10px/1.4 ui-monospace,Menlo,Consolas,monospace;background:rgba(0,0,0,.65);color:#4ade80;padding:2px 6px;border-radius:4px;pointer-events:none;white-space:nowrap'
+        document.body.appendChild(diagEl)
       }
-    }
-    const mark = (): void => {
-      const selector = '[data-phase] [data-slot="conversation.composer.dock"] [class$="_root"]'
-      for (const root of document.querySelectorAll(selector)) {
-        const text = root.textContent ?? ''
-        if (!/(turns|steps|\bLLM\b|轮|步)/.test(text)) continue
-        root.setAttribute('data-mobile-nav', 'stats')
-        moveTps(root)
-        return
+      diagEl.textContent = `ih=${window.innerHeight} vv=${Math.round(vv.height)} off=${Math.round(vv.offsetTop)} sc=${vv.scale.toFixed(2)} sy=${window.scrollY}`
+      if (auto) {
+        window.clearTimeout(diagTimer)
+        diagTimer = window.setTimeout(() => { diagEl?.remove(); diagEl = null }, 8000)
       }
-    }
-    const observer = new MutationObserver(mark)
-    observer.observe(document.body, { childList: true, subtree: true })
-    mark()
-    return () => {
-      observer.disconnect()
-    }
-  }, 'dsh-mobile-nav: stats line marker')
-
-  // The dsh-web-ui explorer / preview columns toggle via `visibility`
-  // (their inline style), which never restarts a CSS animation — so the
-  // sheets would only animate on first mount. Replay the rise animation
-  // with the Web Animations API each time a column turns visible, then
-  // leave the resting state to the stylesheet.
-  ctx.effect(() => {
-    if (!narrow.matches) return () => {}
-    const cols = ['[data-aionui-explorer-col]', '[data-aionui-preview-col]']
-    const seen = new Map<string, boolean>()
-    const play = (el: Element): void => {
-      el.animate(
-        [
-          { opacity: 0, transform: 'translateY(28px)' },
-          { opacity: 1, transform: 'none' },
-        ],
-        { duration: 280, easing: 'cubic-bezier(.16, 1, .3, 1)', fill: 'backwards' },
-      )
     }
     const check = (): void => {
-      for (const sel of cols) {
-        const el = document.querySelector(sel)
-        if (el === null) continue
-        const visible = getComputedStyle(el).visibility === 'visible'
-        const prev = seen.get(sel) ?? false
-        if (visible && !prev) play(el)
-        seen.set(sel, visible)
+      raf = 0
+      const kbClosed = vv.height >= window.innerHeight - 8
+      // B：布局视口持续偏矮（scale=1 且非键盘，差值 >8px）→ 高度链顶满真实窗口
+      const short = Math.abs(vv.scale - 1) < 0.01 && vv.height - window.innerHeight > 8
+      if (short) {
+        if (shortSince === 0) shortSince = performance.now()
+        if (!applied && performance.now() - shortSince > 600) {
+          applied = true
+          root.style.setProperty('--dshp-frame-h', `${Math.round(vv.height)}px`)
+          root.setAttribute('data-dsh-pocket-full-height', '')
+          showDiag(true)
+        }
+      } else {
+        shortSince = 0
+        if (applied) {
+          applied = false
+          root.style.removeProperty('--dshp-frame-h')
+          root.removeAttribute('data-dsh-pocket-full-height')
+        }
       }
+      // A：文档滚动残留归位（仅 B 未生效时——B 生效后文档因 frame 变高可滚）
+      if (!applied && kbClosed && (window.scrollY > 1 || vv.offsetTop > 1)) window.scrollTo(0, 0)
+      if (wantDiag) showDiag(false)
     }
-    const observer = new MutationObserver(check)
-    // Visibility flips come through inline style mutations (suite) or the
-    // explorer-open marker on the frame; class changes are watched too.
-    observer.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['style', 'class', 'data-aionui-explorer-open'] })
+    const schedule = (): void => { if (raf === 0) raf = requestAnimationFrame(check) }
+    vv.addEventListener('resize', schedule)
+    vv.addEventListener('scroll', schedule)
+    window.addEventListener('focusout', schedule)
+    window.addEventListener('pageshow', schedule)
     check()
     return () => {
-      observer.disconnect()
+      vv.removeEventListener('resize', schedule)
+      vv.removeEventListener('scroll', schedule)
+      window.removeEventListener('focusout', schedule)
+      window.removeEventListener('pageshow', schedule)
+      if (raf !== 0) cancelAnimationFrame(raf)
+      window.clearTimeout(diagTimer)
+      diagEl?.remove()
+      root.style.removeProperty('--dshp-frame-h')
+      root.removeAttribute('data-dsh-pocket-full-height')
     }
-  }, 'dsh-mobile-nav: sheet rise animation replay')
+  })
 
   // 移动端文件守卫（issue #17 修正）：手机上点 dsh-web 渲染的文件链接会触发桌面
   // 端 workspaces.openPath(open ...) —— 既打不开（路径在电脑上），又会抛
   // "path open failed"。这里在捕获阶段拦截这类点击 / 键盘激活，改为弹一个提示，
   // 并隐藏「添加工作区」入口（手机上配工作区无意义）；同时在文件链接旁注入
-  // 「复制」按钮，点它经主机 RPC 读取文件正文再写入剪贴板。只挂窄屏。
-  ctx.effect(() => {
-    if (!narrow.matches) return () => {}
+  // 「复制」按钮，点它经主机 RPC 读取文件正文再写入剪贴板。M8：随 narrowMQ
+  // change 动态装卸。H4：fileGuard 是非 React 的 DOM 注入层，拿不到设置页 slot
+  // 的 t()——词典键在 pocket-locales.js（NS='pocket'），从 ctx.locale 绑定后经
+  // startFileGuard 入参传入（bind 惰性取词，注册顺序在后也不影响）。
+  armOnNarrow('dsh-pocket: file open guard + copy button + hide add-workspace (issue #17)', () => {
     // 尽量拿到当前工作区 cwd（文件链接文案是相对它的），传给主机 RPC 做精确解析；
     // 拿不到就回退到主机 process.cwd()。dsh-web 的 workspaces 服务暴露当前工作区。
     const getWorkspaceCwd = (): string => {
@@ -324,81 +650,16 @@ export function mobileApply(ctx): void {
         POCKET_ENDPOINTS.fileRead,
         { path: filePath, cwd: getWorkspaceCwd() },
       ) as Promise<{ ok: boolean; value?: { content: string; path: string; size: number }; error?: { message: string } }>
-    return startFileGuard(readFile)
-  }, 'dsh-mobile-nav: file open guard + copy button + hide add-workspace (issue #17)')
-
-  // 手机上模型 / 提供方设置加载失败：上游 dsh-web 会渲染「加载提供方目录失败 /
-  // Settings are unavailable in this browser」。这条文案不是 dsh-pocket 的，但手机侧
-  // 本就不支持改模型设置，原报错只会吓到用户。窄屏下用 MutationObserver 就地把该报错
-  // 文本替换成「去电脑端修改」的引导提示（仅手机，桌面端不受影响）。
-  ctx.effect(() => {
-    if (!narrow.matches) return () => {}
-    const PHRASES = ['加载提供方目录失败', 'Settings are unavailable in this browser']
-    const NOTICE = '手机上不支持模型设置，请去电脑端修改设置'
-    // 取包含报错文案的最深节点，避免把外层大容器整块清掉。
-    const findDeepest = (el: Element): Element => {
-      let deepest = el
-      for (const child of el.querySelectorAll('*')) {
-        if (PHRASES.some((p) => (child.textContent ?? '').includes(p))) deepest = child
-      }
-      return deepest
-    }
-    const patch = (): void => {
-      for (const el of document.querySelectorAll('body *')) {
-        const t = el.textContent ?? ''
-        if (!PHRASES.some((p) => t.includes(p))) continue
-        if ((el as HTMLElement).dataset?.dshpModelNotice === '1') continue
-        const target = findDeepest(el)
-        target.textContent = NOTICE
-        ;(target as HTMLElement).dataset.dshpModelNotice = '1'
-      }
-    }
-    const observer = new MutationObserver(patch)
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true })
-    patch()
-    return () => observer.disconnect()
-  }, 'dsh-mobile-nav: replace model-settings load error with mobile hint')
-
-
-  ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({
-    name: 'conversation.session.header.actions',
-    id: 'mobile-nav-toggle',
-    order: 10,
-    locale: NS,
-    inject: () => ({
-      toggleSidebar: () => ctx.layout.toggleSidebar(),
-    }),
-  }, MobileNavToggle))
-
-  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-    name: 'shell.overlay',
-    id: 'mobile-nav-overlay',
-    order: 10,
-    locale: NS,
-    inject: () => ({
-      toggleSidebar: () => ctx.layout.toggleSidebar(),
-    }),
-  }, MobileNavOverlay))
-
-  // Session log download, relocated from the session header to the drawer
-  // footer on mobile (the header capsule is hidden by CSS); the drawer
-  // footer also hosts the Files action that opens the dsh-web-ui explorer
-  // sheet.
-  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
-    name: 'sidebar.footer.action',
-    id: 'mobile-nav-session-log',
-    order: 10,
-    locale: NS,
-    inject: () => ({
-      downloadSessionLog: (sessionId: string) => ctx.sessionLogDownload.download(sessionId),
-      toggleSidebar: () => ctx.layout.toggleSidebar(),
-    }),
-  }, MobileDrawerFooter))
+    // H4：词典取词——上游 session-menu.ts 同款 ctx.locale.bind 用法；cast 成
+    // 简单签名后交给 startFileGuard。
+    const fileGuardT = ctx.locale.bind(POCKET_NS) as (key: string) => string
+    return startFileGuard(readFile, fileGuardT)
+  })
 }
 
-// Type-only augmentation imports: pull the layout / conversation / sidebar
-// SlotMap merges and the sessionLogDownload service typing into this program
-// without any runtime import.
+// Type-only augmentation imports: pull the layout / conversation / sidebar /
+// settings SlotMap merges and the sessionLogDownload service typing into this
+// program without any runtime import.
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
