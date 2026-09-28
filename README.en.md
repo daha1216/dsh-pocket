@@ -6,21 +6,20 @@
 
 <p align="center"><a href="README.en.md">English</a> | <a href="README.md">中文</a></p>
 
-<p align="center"><a href="https://trendshift.io/repositories/166736?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-166736" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/166736/daily?language=JavaScript" alt="shaobeichen%2Fdsh-pocket | Trendshift" width="250" height="55"/></a></p>
-
 <p align="center">
   <a href="https://www.npmjs.com/package/dsh-pocket"><img alt="npm" src="https://img.shields.io/npm/v/dsh-pocket?color=4d6bfe&label=npm"></a>
   <a href="https://www.npmjs.com/package/dsh-pocket"><img alt="downloads" src="https://img.shields.io/npm/dm/dsh-pocket?color=4d6bfe"></a>
-  <a href="https://github.com/shaobeichen/dsh-pocket/actions"><img alt="CI" src="https://github.com/shaobeichen/dsh-pocket/actions/workflows/npm-publish.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-GPL--2.0-red.svg"></a>
-  <a href="https://github.com/shaobeichen/dsh-pocket/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/shaobeichen/dsh-pocket"></a>
+  <a href="https://github.com/daha1216/dsh-pocket/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/daha1216/dsh-pocket"></a>
   <a href="https://awesome-dsh-plugin.com"><img alt="Awesome DSH Plugin" src="https://awesome-dsh-plugin.com/badge.svg"></a>
 </p>
 
 > Put **DeepSeek Harness in your pocket**: one package, one settings tab — scan a QR code and your phone shows exactly what's on your computer screen, live, from anywhere.
 
+> **This is a personal fork (clean-merge edition)**: a clean merge of the latest [shaobeichen/dsh-pocket](https://github.com/shaobeichen/dsh-pocket) (GPL-2.0) and the mobile-layer upstream [mexiaosqwq/dsh-web-mobile](https://github.com/mexiaosqwq/dsh-web-mobile) (MIT) — no extra self-use features, only upstream syncs and compatibility fixes; maintained by **daha1216 (大哈)**. For upstream features, updates and releases see the [upstream repo](https://github.com/shaobeichen/dsh-pocket).
+
 <p align="center">
-  ⭐ A Star would make the author's day &nbsp;·&nbsp; <a href="https://github.com/shaobeichen/dsh-pocket">Here, take one</a>
+  ⭐ A Star would make daha1216's day &nbsp;·&nbsp; <a href="https://github.com/daha1216/dsh-pocket">Star it on GitHub</a>
 </p>
 
 ## What is this
