@@ -111,6 +111,12 @@ export const zh = {
   'fileFallbackClose': '关闭',
   'fileTooLarge': '文件过大（{size}MB），已跳过复制',
   'fileTruncated': '…已截断',
+  // v2 设置页：复制链接 / 密码遮罩
+  'copyLink': '复制链接',
+  'copied': '✅ 已复制地址',
+  'copyFailed': '复制失败，请长按地址手动复制',
+  'pinShow': '显示',
+  'pinHide': '隐藏',
 }
 
 /** English dictionary, key-identical to the Chinese source of truth. */
@@ -222,4 +228,10 @@ export const en = {
   'fileFallbackClose': 'Close',
   'fileTooLarge': 'File too large ({size}MB), copy skipped',
   'fileTruncated': '… truncated',
+  // v2 settings page: copy link / PIN masking
+  'copyLink': 'Copy link',
+  'copied': '✅ Address copied',
+  'copyFailed': 'Copy failed — long-press the address to copy it manually',
+  'pinShow': 'Show',
+  'pinHide': 'Hide',
 }

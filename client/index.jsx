@@ -1,8 +1,14 @@
 // dsh-pocket 网页客户端：
-//   1. 设置页签「手机访问」（局域网/公网二维码 + 更新/重启提示）
+//   1. 设置页签「手机访问」（局域网/公网通道卡 + 二维码 + 更新/重启提示）
 //   2. 移动端适配（移植自 MIT 项目 dsh-web-mobile，见 client/mobile/LICENSE.dsh-web-mobile）
 //
 // 手机扫码打开的就是电脑上的 dsh web，实时同步；窄屏自动变成抽屉布局。
+//
+// 设置页设计（v2 重设计）：
+//   - 单列三区：连接（局域网/公网两个通道小节）→ 偏好 → 尾部（恢复出厂 + 署名行）；
+//   - 二维码横排卡：左 128px 码 + 右地址/提示/复制，不再整宽堆叠；
+//   - 访问密码默认遮罩（••••••••，不泄露长度），「显示」按需明文；
+//   - 分段控件（公网地址模式）、统一样式的确认弹窗与 Alert 提示条。
 //
 // 注：Web Push 已移除——浏览器推送依赖 Google FCM（Chrome）等境外服务，
 // 国内直连被墙，普通用户用不了。专注扫码同屏这一件事。
@@ -31,23 +37,52 @@ function fmt(t, key, vars) {
 // 官方 DeepSeek Harness 设计系统（dsh-client-ui-theme design-platform.css）：
 // 按钮 md=36px 胶囊形 / sm=28px；品牌色 --dsw-alias-brand-primary；
 // hover 走 --dsw-alias-button-*-hover；间距 4px 栅格；正文 13px。
+// v2 在此基础上收敛：区块之间用留白，行之间用发丝线；提示全部走 12px 三级文字色。
 const styles = {
-  card: { background: 'var(--dsw-alias-bg-layer-1,#fff)', border: '1px solid var(--dsw-alias-border-l2,#e5e7eb)', borderRadius: 12, padding: '16px 20px', maxWidth: 480 },
-  block: { borderTop: '1px solid var(--dsw-alias-border-l2,#e5e7eb)', marginTop: 16, paddingTop: 16 },
+  card: { background: 'var(--dsw-alias-bg-layer-1,#fff)', border: '1px solid var(--dsw-alias-border-l2,#e5e7eb)', borderRadius: 14, padding: '18px 20px', maxWidth: 520 },
   muted: { color: 'var(--dsw-alias-label-tertiary,#8b93a1)', fontSize: 12, lineHeight: 1.5 },
-  code: { fontFamily: 'ui-monospace,Menlo,monospace', fontSize: 12, wordBreak: 'break-all', margin: '6px 0 10px', color: 'var(--dsw-alias-label-primary,inherit)' },
   // 主按钮：官方 md 胶囊形（36px）
   primary: { font: 'inherit', cursor: 'pointer', border: 'none', background: 'var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary,#4f6ef7))', color: 'var(--dsw-alias-label-primary-foreground, #fff)', height: 36, padding: '0 16px', borderRadius: 999, fontSize: 13, fontWeight: 500, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' },
   // 次级按钮：官方 outline/ghost 胶囊形
   btn: { font: 'inherit', cursor: 'pointer', border: '1px solid var(--dsw-alias-button-ghost-active-border, var(--dsw-alias-border-l2,#d1d5db))', background: 'var(--dsw-alias-bg-layer-1,#fff)', color: 'var(--dsw-alias-label-primary,inherit)', height: 36, padding: '0 16px', borderRadius: 999, fontSize: 13, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' },
-  qr: { width: 220, height: 220, borderRadius: 10, border: '1px solid var(--dsw-alias-border-l2,#e5e7eb)', margin: '8px 0' },
+  // 行内小按钮（28px）：密码行的 显示/刷新/自定义、复制链接
+  mini: { font: 'inherit', cursor: 'pointer', border: '1px solid var(--dsw-alias-border-l2,#d1d5db)', background: 'var(--dsw-alias-bg-layer-1,#fff)', color: 'var(--dsw-alias-label-secondary,#6b7280)', height: 26, padding: '0 10px', borderRadius: 999, fontSize: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' },
+  link: { font: 'inherit', cursor: 'pointer', border: 'none', background: 'none', padding: 0, fontSize: 12, color: 'var(--dsw-alias-label-tertiary,#8b93a1)', textDecoration: 'none' },
   warn: { color: 'var(--dsw-alias-state-warn-primary,#b45309)', fontSize: 12, lineHeight: 1.5 },
+  mono: { fontFamily: 'ui-monospace,Menlo,monospace', letterSpacing: 0.5 },
 };
+
+// 状态圆点（通道开启/关闭）：8px，成功色，关闭走灰
+const Dot = (on) => h('span', {
+  style: { display: 'inline-block', width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: on ? 'var(--dsw-alias-state-success-primary,#10b981)' : 'var(--dsw-alias-border-l2,#d1d5db)' },
+}, null);
 
 function applyMobileRightbarSetting(enabled) {
   const on = enabled !== false;
   document.body?.setAttribute(MOBILE_RIGHTBAR_ATTRIBUTE, on ? 'on' : 'off');
   window.dispatchEvent(new CustomEvent(MOBILE_RIGHTBAR_EVENT, { detail: { enabled: on } }));
+}
+
+// 剪贴板：优先 Clipboard API（需安全上下文），LAN http 场景回退 execCommand
+async function copyText(text) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch { /* 回退 */ }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok === true;
+  } catch {
+    return false;
+  }
 }
 
 function PocketSettingsTab({ rpcCall, t }) {
@@ -59,6 +94,7 @@ function PocketSettingsTab({ rpcCall, t }) {
   const [updateInfo, setUpdateInfo] = useState(null); // { current, latest, updating, result, startedAt } | null
   const [isDesktop, setIsDesktop] = useState(false); // DSH Desktop（Electron）环境：更新/重启由桌面版管理
   const [now, setNow] = useState(Date.now()); // 每秒 tick，驱动倒计时
+  const [pinShown, setPinShown] = useState({}); // 密码明文开关 { lan?: true, public?: true }——默认遮罩
 
   // 进行中操作的「已等待 X 秒」倒计时
   useEffect(() => {
@@ -241,6 +277,7 @@ function PocketSettingsTab({ rpcCall, t }) {
       setTunnelCfg(null);
       setCustomPin(null);
       setAdvOpen(false);
+      setPinShown({});
       showToast(t('resetDone'));
     } catch (err) {
       setError(err.message);
@@ -320,25 +357,6 @@ function PocketSettingsTab({ rpcCall, t }) {
       setCustomPin((c) => ({ ...c, err: err.message }));
     }
   };
-  // 渲染自定义输入行（共用）：输入框 + 保存/取消
-  const customPinRow = (which) => h('div', { style: { marginTop: 6, fontSize: 12, color: 'var(--dsw-alias-label-secondary,#6b7280)', lineHeight: 1.5 } },
-    t('customizing'),
-    h('input', {
-      style: { width: 130, margin: '0 6px', padding: '4px 8px', fontSize: 14, letterSpacing: 1, textAlign: 'center', border: '1px solid var(--dsw-alias-border-l2,#d1d5db)', borderRadius: 6, outline: 'none' },
-      type: 'password',
-      minLength: 8,
-      maxLength: 64,
-      value: customPin?.value ?? '',
-      autoFocus: true,
-      onChange: (e) => setCustomPin((c) => ({ ...c, value: e.target.value.replace(/[^a-zA-Z0-9]/g, ''), err: null })),
-      onKeyDown: (e) => { if (e.key === 'Enter') saveCustomPin(which); if (e.key === 'Escape') setCustomPin(null); },
-    }),
-    h('button', { style: { ...styles.btn, height: 26, padding: '0 10px', fontSize: 12, marginLeft: 2 }, onClick: () => saveCustomPin(which) }, t('save')),
-    h('button', { style: { ...styles.btn, height: 26, padding: '0 10px', fontSize: 12 }, onClick: () => setCustomPin(null) }, t('cancel')),
-    customPin?.err ? h('div', { style: { color: 'var(--dsw-alias-state-error-primary,#dc2626)', marginTop: 4 } }, errText(customPin.err)) : null,
-  );
-  // 「自定义」按钮（非输入态显示在密码行末尾）
-  const customBtn = (which) => h('button', { style: { ...styles.btn, height: 26, padding: '0 10px', fontSize: 12, marginLeft: 8 }, onClick: () => setCustomPin({ which, value: '', err: null }) }, t('customize'));
 
   const lanUrl = status?.lanUrl;
   const tunnelUrl = status?.tunnelUrl;
@@ -367,110 +385,176 @@ function PocketSettingsTab({ rpcCall, t }) {
     toastTimer.current = setTimeout(() => setToast(null), 2600);
   };
   useEffect(() => () => clearTimeout(toastTimer.current), []);
-  const modeBtnStyle = (active) => ({
-    ...styles.btn, height: 28, padding: '0 12px', fontSize: 12,
-    fontWeight: active ? 600 : 400,
-    background: active ? 'var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary,#4f6ef7))' : 'var(--dsw-alias-bg-layer-1,#fff)',
-    color: active ? 'var(--dsw-alias-label-primary-foreground, #fff)' : 'var(--dsw-alias-label-primary,inherit)',
-  });
-  // iOS 风格小开关（重排后统一用：局域网总开关 / 局域网密码开关）
-  const Switch = (on, onClick) => h('button', {
-    role: 'switch', 'aria-checked': !!on,
-    style: { flexShrink: 0, width: 40, height: 22, borderRadius: 11, border: 'none', padding: 0, position: 'relative', cursor: 'pointer', font: 'inherit', background: on ? 'var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary,#4f6ef7))' : 'var(--dsw-alias-border-l2,#d1d5db)' },
-    onClick,
-  }, h('span', { style: { position: 'absolute', top: 2, left: on ? 20 : 2, width: 18, height: 18, borderRadius: '50%', background: '#fff' } }));
-  // 卡片内主内容：二维码 + 地址 + 提示
-  const qrArea = (src, url, hint) => h('div', { style: { background: 'var(--dsw-alias-bg-layer-2,#f3f4f6)', borderRadius: 10, padding: '10px 12px', textAlign: 'center', margin: '10px 0' } },
-    h('img', { src, alt: 'QR', style: styles.qr }),
-    h('div', { style: styles.code }, url),
-    h('div', { style: styles.muted }, hint));
-  // 设置行：上分隔线，内部第一行 = 左标签 + 右操作；extra 作为第二段渲染
-  const row = (label, control, extra) => h('div', { style: { borderTop: '1px solid var(--dsw-alias-border-l2,#e5e7eb)', paddingTop: 9, marginTop: 9 } },
-    h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 } },
-      h('span', { style: { fontSize: 13 } }, label), control), extra ?? null);
+
+  // ── v2 视图件 ──────────────────────────────────────────────────────────────
+  // iOS 风格小开关：局域网总开关 / 公网总开关 / 局域网密码开关 / 手机端右边栏；
+  // disabled 态用于操作进行中（如隧道连接），视觉半透明且不可点
+  const Switch = (on, onClick, disabled) => h('button', {
+    role: 'switch', 'aria-checked': !!on, disabled: disabled === true,
+    style: { flexShrink: 0, width: 40, height: 22, borderRadius: 11, border: 'none', padding: 0, position: 'relative', cursor: disabled === true ? 'default' : 'pointer', font: 'inherit', opacity: disabled === true ? 0.55 : 1, background: on ? 'var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary,#4f6ef7))' : 'var(--dsw-alias-border-l2,#d1d5db)', transition: 'background .15s ease' },
+    onClick: disabled === true ? undefined : onClick,
+  }, h('span', { style: { position: 'absolute', top: 2, left: on ? 20 : 2, width: 18, height: 18, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,.18)', transition: 'left .15s ease' } }));
+
+  // 通道小节：标题行（状态点 + 名称 + 右侧控件）+ 内容；小节之间只靠留白，不再画粗边框
+  const Section = (title, right, children, key) => h('section', { style: { marginTop: 20 }, 'data-dshp-section': key ?? '' },
+    h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
+      title ? h('span', { style: { fontWeight: 600, fontSize: 13, flex: 1, minWidth: 0, display: 'inline-flex', alignItems: 'center', gap: 6 } }, title) : h('span', { style: { flex: 1 } }, null),
+      right ?? null),
+    children ?? null);
+
+  // 设置行：发丝线分隔；第一行 = 左标签 + 右控件；extra 追加在下方
+  const row = (label, control, extra) => h('div', { style: { borderTop: '1px solid var(--dsw-alias-border-l2,#eceef2)', paddingTop: 10, marginTop: 10 } },
+    h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' } },
+      h('span', { style: { fontSize: 13 } }, label), control),
+    extra ?? null);
+
+  // 二维码横排卡：左 128px 码（白底衬 quiet zone，深色模式也稳）+ 右侧地址/提示/复制
+  const qrBlock = (src, url, hint) => h('div', { style: { display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', background: 'var(--dsw-alias-bg-layer-2,#f3f4f6)', borderRadius: 12, padding: 12, marginTop: 10 } },
+    h('div', { style: { flexShrink: 0, padding: 6, background: '#fff', borderRadius: 10, border: '1px solid var(--dsw-alias-border-l2,#e5e7eb)' } },
+      h('img', { src, alt: 'QR', style: { width: 128, height: 128, display: 'block', borderRadius: 2 } })),
+    h('div', { style: { flex: '1 1 170px', minWidth: 170 } },
+      h('div', { style: { ...styles.mono, fontSize: 12, wordBreak: 'break-all', color: 'var(--dsw-alias-label-primary,inherit)', lineHeight: 1.6 } }, url),
+      h('div', { style: { ...styles.muted, fontSize: 11, marginTop: 6 } }, hint),
+      h('button', {
+        style: { ...styles.mini, marginTop: 8 },
+        onClick: async () => showToast(await copyText(url) ? t('copied') : t('copyFailed')),
+      }, t('copyLink'))));
+
+  // 紧凑提示条：kind = info(品牌蓝) | warn(琥珀) | error(红)
+  const Alert = (kind, children, extraStyle) => h('div', {
+    style: {
+      display: 'flex', gap: 8, alignItems: 'flex-start',
+      fontSize: 12, lineHeight: 1.6,
+      borderRadius: 10, padding: '8px 10px', marginTop: 10,
+      background: 'var(--dsw-alias-bg-layer-2,#f3f4f6)',
+      borderLeft: `3px solid ${kind === 'error' ? 'var(--dsw-alias-state-error-primary,#dc2626)' : kind === 'info' ? 'var(--dsw-alias-brand-primary,#4f6ef7)' : 'var(--dsw-alias-state-warn-primary,#b45309)'}`,
+      color: kind === 'error' ? 'var(--dsw-alias-state-error-primary,#dc2626)' : kind === 'warn' ? 'var(--dsw-alias-state-warn-primary,#b45309)' : 'var(--dsw-alias-label-secondary,#6b7280)',
+      ...extraStyle,
+    },
+  }, children);
+
+  // 访问密码值行：遮罩（固定 8 个点，不泄露长度）/明文 + 显示/隐藏 + 刷新/自定义（按钮间距放宽）
+  const pinValueRow = (which, value, extraBtns) => h('div', { style: { marginTop: 8, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
+    h('span', { style: { ...styles.mono, fontSize: 13 }, 'data-dshp-pin': which }, pinShown[which] ? value : '••••••••'),
+    h('button', {
+      style: { ...styles.link, padding: '2px 0' },
+      onClick: () => setPinShown((m) => ({ ...m, [which]: !m[which] })),
+    }, pinShown[which] ? t('pinHide') : t('pinShow')),
+    ...(extraBtns ?? []));
+
+  // 渲染自定义输入行（共用）：输入框 + 保存/取消
+  const customPinRow = (which) => h('div', { style: { marginTop: 8, fontSize: 12, color: 'var(--dsw-alias-label-secondary,#6b7280)', lineHeight: 1.5 } },
+    t('customizing'),
+    h('input', {
+      style: { width: 130, margin: '0 6px', padding: '4px 8px', fontSize: 14, letterSpacing: 1, textAlign: 'center', border: '1px solid var(--dsw-alias-border-l2,#d1d5db)', borderRadius: 6, outline: 'none' },
+      type: 'password',
+      minLength: 8,
+      maxLength: 64,
+      value: customPin?.value ?? '',
+      autoFocus: true,
+      onChange: (e) => setCustomPin((c) => ({ ...c, value: e.target.value.replace(/[^a-zA-Z0-9]/g, ''), err: null })),
+      onKeyDown: (e) => { if (e.key === 'Enter') saveCustomPin(which); if (e.key === 'Escape') setCustomPin(null); },
+    }),
+    h('button', { style: styles.mini, onClick: () => saveCustomPin(which) }, t('save')),
+    h('button', { style: styles.mini, onClick: () => setCustomPin(null) }, t('cancel')),
+    customPin?.err ? h('div', { style: { color: 'var(--dsw-alias-state-error-primary,#dc2626)', marginTop: 4 } }, errText(customPin.err)) : null);
+  // 「自定义」按钮（非输入态显示在密码行末尾）
+  const customBtn = (which) => h('button', { style: styles.mini, onClick: () => setCustomPin({ which, value: '', err: null }) }, t('customize'));
+
+  // 公网地址模式分段控件（随机/固定域名）
+  const modeSeg = h('div', { style: { display: 'inline-flex', background: 'var(--dsw-alias-bg-layer-2,#eef0f4)', borderRadius: 9, padding: 2, gap: 2 } },
+    h('button', {
+      style: { font: 'inherit', cursor: 'pointer', border: 'none', height: 26, padding: '0 12px', borderRadius: 7, fontSize: 12, background: !namedActive ? 'var(--dsw-alias-bg-layer-1,#fff)' : 'transparent', color: !namedActive ? 'var(--dsw-alias-label-primary,inherit)' : 'var(--dsw-alias-label-tertiary,#8b93a1)', fontWeight: !namedActive ? 600 : 400, boxShadow: !namedActive ? '0 1px 3px rgba(0,0,0,.10)' : 'none' },
+      onClick: namedMode ? switchToQuick : (tunnelCfg ? () => setTunnelCfg(null) : undefined),
+    }, t('modeQuick')),
+    h('button', {
+      style: { font: 'inherit', cursor: 'pointer', border: 'none', height: 26, padding: '0 12px', borderRadius: 7, fontSize: 12, background: namedActive ? 'var(--dsw-alias-bg-layer-1,#fff)' : 'transparent', color: namedActive ? 'var(--dsw-alias-label-primary,inherit)' : 'var(--dsw-alias-label-tertiary,#8b93a1)', fontWeight: namedActive ? 600 : 400, boxShadow: namedActive ? '0 1px 3px rgba(0,0,0,.10)' : 'none' },
+      onClick: () => setTunnelCfg(tunnelCfg ? null : { hostname: tunnelModeView.hostname ?? '', token: '', err: null }),
+    }, t('modeNamed')));
+
+  // 统一确认弹窗：遮罩 + 面板（标题色随语义）+ 内容 + 右对齐操作
+  const Modal = ({ title, tone = 'warn', children, actions }) => h('div', {
+    style: { position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(15,17,21,.45)', backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  },
+  h('div', { style: { background: 'var(--dsw-alias-bg-layer-1,#fff)', borderRadius: 14, maxWidth: 420, width: '100%', padding: '20px 22px', boxShadow: '0 12px 40px rgba(0,0,0,.22)' } },
+    h('div', { style: { fontWeight: 600, fontSize: 15, marginBottom: 10, color: tone === 'danger' ? 'var(--dsw-alias-state-error-primary,#dc2626)' : tone === 'brand' ? 'var(--dsw-alias-brand-primary,#4f6ef7)' : 'var(--dsw-alias-state-warn-primary,#b45309)' } }, title),
+    children,
+    h('div', { style: { display: 'flex', gap: 8, marginTop: 18, justifyContent: 'flex-end' } }, actions)));
+
   // 高级（手动选地址）展开态
   const [advOpen, setAdvOpen] = useState(false);
 
-  return h('div', { style: styles.card },
-    h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 } },
-      h('div', null,
-        h('strong', null, t('title')),
-        h('div', { style: styles.muted }, t('subtitle')),
-      ),
-      h('div', { style: { fontSize: 12, color: 'var(--dsw-alias-label-tertiary,#8b93a1)', textAlign: 'right' } },
-        h('div', { style: { whiteSpace: 'nowrap' } }, t('developer')),
-        h('div', { style: { whiteSpace: 'nowrap' } }, t('starAsk')),
-        h('a', { href: 'https://github.com/daha1216/dsh-pocket', target: '_blank', rel: 'noreferrer', style: { color: 'var(--dsw-alias-brand-primary,#4f6ef7)', fontSize: 12, lineHeight: 1.6, textDecoration: 'underline' } },
-          t('starCta')),
-      ),
+  return h('div', { style: styles.card, 'data-dshp-ui': 'v2' },
+    // 页头：一行标题 + 一行副题（署名挪到页脚，不再挤在右上角）
+    h('div', null,
+      h('div', { style: { fontWeight: 600, fontSize: 14 } }, t('title')),
+      h('div', { style: { ...styles.muted, marginTop: 2 } }, t('subtitle')),
     ),
 
+    // 重启后提示（进程在后台运行，停止方法）——蓝色提示条（桌面端不会触发本插件的自重启）
     // 桌面端不显示更新/重启横幅（更新由 DSH Desktop 管理），也不需要额外提示
+    !isDesktop && restartNotice ? Alert('info',
+      h('div', { style: { flex: 1, minWidth: 0 } },
+        h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 } },
+          h('span', { style: { fontWeight: 600 } }, t('restarted')),
+          h('button', { style: styles.mini, onClick: () => setRestartNotice(false) }, t('ok'))),
+        h('div', { style: { color: 'var(--dsw-alias-label-tertiary,#8b93a1)', wordBreak: 'break-all' } },
+          fmt(t, 'bgHint', { cmd: status?.killHint ?? `lsof -ti :${status?.dshPort ?? 3080} | xargs kill -9` }))),
+      { marginTop: 14 }) : null,
 
-    // 重启后提示（进程在后台运行，停止方法）——左侧蓝色色条（桌面端不会触发本插件的自重启）
-    !isDesktop && restartNotice ? h('div', { style: { ...styles.block, borderLeft: '4px solid var(--dsw-alias-brand-primary,#4f6ef7)', borderRadius: 8, background: 'var(--dsw-alias-bg-layer-2,#f3f4f6)', padding: '10px 12px' } },
-      h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 } },
-        h('div', { style: { fontWeight: 600, fontSize: 13 } }, t('restarted')),
-        h('button', { style: styles.btn, onClick: () => setRestartNotice(false) }, t('ok')),
-      ),
-      h('div', { style: styles.muted, marginTop: 4, wordBreak: 'break-all' }, fmt(t, 'bgHint', { cmd: status?.killHint ?? `lsof -ti :${status?.dshPort ?? 3080} | xargs kill -9` })),
-    ) : null,
-
-    // 更新提示——左侧黄色色条（提示有新版本）；单状态：有更新/更新中/已更新自动重启，不并存
+    // 更新提示——琥珀色提示条（有新版本/更新中/已更新待重启，单状态不并存）
     // 桌面端不渲染（更新由 DSH Desktop 管理）
-    !isDesktop && updateInfo ? h('div', { style: { ...styles.block, borderLeft: '4px solid var(--dsw-alias-state-warn-primary,#b45309)', borderRadius: 8, background: 'var(--dsw-alias-bg-layer-2,#f3f4f6)', padding: '10px 12px' } },
-      h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 } },
-        h('div', { style: { fontWeight: 600, fontSize: 13 } },
-          updateInfo.updated
-            ? fmt(t, 'updatedRestart', { ver: updateInfo.current })
-            : updateInfo.result === 'ok'
-              ? (updateInfo.autoRestart ? fmt(t, 'updateAutoRestarting', { ver: updateInfo.latest }) : fmt(t, 'updatedOk', { ver: updateInfo.latest }))
-              : fmt(t, 'updateAvailable', { ver: updateInfo.latest })),
-        updateInfo.result !== 'ok'
-          ? h('button', { style: styles.primary, onClick: runUpdate, disabled: updateInfo.updating }, updateInfo.updating ? t('updating') : fmt(t, 'updateTo', { ver: updateInfo.latest }))
-          : updateInfo.autoRestart
-            ? h('button', { style: styles.btn, disabled: true }, t('restartingNow'))
-            : h('button', { style: styles.primary, onClick: restartPocket, disabled: updateInfo.restarting }, updateInfo.restarting ? t('restarting') : t('restartNow')),
-      ),
-      h('div', { style: styles.muted, marginTop: 4 },
-        updateInfo.updating
-          ? fmt(t, 'updatingDetail', { s: elapsed(updateInfo.startedAt) })
-        : updateInfo.restarting
-          ? fmt(t, 'restartingDetail', { s: elapsed(updateInfo.startedAt) })
-        : updateInfo.result === 'ok'
-          ? (updateInfo.autoRestart ? t('updatedAutoDetail')
-            : t('updatedRestartDetail'))
-        : updateInfo.result === 'fail' ? fmt(t, 'updateFailed', { err: errText(updateInfo.output) || t('unknownError') })
-        : fmt(t, 'versionRange', { cur: updateInfo.current, latest: updateInfo.latest })),
-    ) : null,
+    !isDesktop && updateInfo ? Alert('warn',
+      h('div', { style: { flex: 1, minWidth: 0 } },
+        h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' } },
+          h('span', { style: { fontWeight: 600 } },
+            updateInfo.updated
+              ? fmt(t, 'updatedRestart', { ver: updateInfo.current })
+              : updateInfo.result === 'ok'
+                ? (updateInfo.autoRestart ? fmt(t, 'updateAutoRestarting', { ver: updateInfo.latest }) : fmt(t, 'updatedOk', { ver: updateInfo.latest }))
+                : fmt(t, 'updateAvailable', { ver: updateInfo.latest })),
+          updateInfo.result !== 'ok'
+            ? h('button', { style: styles.primary, onClick: runUpdate, disabled: updateInfo.updating }, updateInfo.updating ? t('updating') : fmt(t, 'updateTo', { ver: updateInfo.latest }))
+            : updateInfo.autoRestart
+              ? h('button', { style: styles.btn, disabled: true }, t('restartingNow'))
+              : h('button', { style: styles.primary, onClick: restartPocket, disabled: updateInfo.restarting }, updateInfo.restarting ? t('restarting') : t('restartNow'))),
+        h('div', { style: { color: 'var(--dsw-alias-label-tertiary,#8b93a1)' } },
+          updateInfo.updating
+            ? fmt(t, 'updatingDetail', { s: elapsed(updateInfo.startedAt) })
+          : updateInfo.restarting
+            ? fmt(t, 'restartingDetail', { s: elapsed(updateInfo.startedAt) })
+          : updateInfo.result === 'ok'
+            ? (updateInfo.autoRestart ? t('updatedAutoDetail') : t('updatedRestartDetail'))
+          : updateInfo.result === 'fail' ? fmt(t, 'updateFailed', { err: errText(updateInfo.output) || t('unknownError') })
+          : fmt(t, 'versionRange', { cur: updateInfo.current, latest: updateInfo.latest }))),
+      { marginTop: 14 }) : null,
 
-    // 局域网：标题行自带总开关 → 二维码+地址 → 设置行（访问密码 / 高级·手动选地址）
-    h('div', { style: styles.block },
-      h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } },
-        h('span', { style: { fontWeight: 600, fontSize: 13 } }, t('lanAccess')),
-        Switch(status?.lanEnabled !== false, () => requestLanToggle(status?.lanEnabled === false)),
-      ),
+    // ── 局域网 ────────────────────────────────────────────────────────────────
+    // 标题行自带总开关 → 二维码横排卡 → 访问密码行（开关 + 遮罩值）→ 高级·手动选地址
+    Section(h('span', null, Dot(status?.lanEnabled !== false), t('lanAccess')), Switch(status?.lanEnabled !== false, () => requestLanToggle(status?.lanEnabled === false)),
       status?.lanEnabled === false
-        ? h('div', { style: { marginTop: 8, fontSize: 12, color: 'var(--dsw-alias-state-warn-primary,#b45309)', lineHeight: 1.5 } }, t('lanDisabledHint'))
+        ? Alert('warn', t('lanDisabledHint'))
         : (lanUrl
           ? h('div', null,
-            qrArea(status.lanQr, lanUrl, t('lanHint')),
+            qrBlock(status.lanQr, lanUrl, t('lanHint')),
             // 访问密码行：开关 + 值（关闭时提示直连）
             row(t('lanPin'), Switch(status?.lanAuthEnabled !== false, () => setLanAuth(status?.lanAuthEnabled === false)),
               status?.lanAuthEnabled === false
                 ? h('div', { style: { ...styles.muted, marginTop: 6 } }, t('lanPinOff'))
                 : (customPin?.which === 'lan'
                   ? customPinRow('lan')
-                  : h('div', { style: { marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
-                    h('span', { style: { fontFamily: 'ui-monospace,Menlo,monospace', fontSize: 13, letterSpacing: 1 } }, status.lanToken),
-                    h('button', { style: { ...styles.btn, height: 26, padding: '0 10px', fontSize: 12 }, onClick: refreshLanPin }, t('refresh')),
-                    customBtn('lan'),
-                    status?.lanPinCustom ? h('span', { style: { fontSize: 11, color: 'var(--dsw-alias-state-warn-primary,#b45309)' } }, t('pinCustomHint')) : null,
-                  ))),
+                  : h('div', null,
+                    pinValueRow('lan', status.lanToken, [
+                      h('button', { style: styles.mini, onClick: refreshLanPin }, t('refresh')),
+                      customBtn('lan'),
+                    ]),
+                    status?.lanPinCustom ? h('div', { style: { ...styles.warn, fontSize: 11, marginTop: 4 } }, t('pinCustomHint')) : null))),
             // 高级：手动选地址（默认收起）
             row(t('advAddress'),
-              h('button', { style: { border: 'none', background: 'none', font: 'inherit', cursor: 'pointer', fontSize: 12, color: 'var(--dsw-alias-label-tertiary,#8b93a1)', padding: 0 }, onClick: () => setAdvOpen((v) => !v) },
-                (status?.lanIpOverride || t('lanAddressAuto')) + ' ›'),
+              h('button', {
+                style: { ...styles.link, font: 'inherit' },
+                onClick: () => setAdvOpen((v) => !v),
+              }, (status?.lanIpOverride || t('lanAddressAuto')) + (advOpen ? ' ‹' : ' ›')),
               advOpen ? h('div', { style: { marginTop: 8 } },
                 h('label', { style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--dsw-alias-label-secondary,#6b7280)' } },
                   t('lanAddress'),
@@ -482,174 +566,156 @@ function PocketSettingsTab({ rpcCall, t }) {
                   h('option', { value: '' }, t('lanAddressAuto')),
                   (status?.lanCandidates || []).map((ip) => h('option', { key: ip, value: ip }, ip)),
                   ),
-                ),
-              ) : null),
+                )) : null),
           )
-          : h('div', { style: styles.muted }, t('lanStarting'))),
-    ),
+          : h('div', { style: { ...styles.muted, marginTop: 8 } }, t('lanStarting'))),
+        'lan'),
 
-    // 公网：标题行自带 开启/关闭 → 开启后：二维码+地址、地址模式行、访问密码行
-    h('div', { style: styles.block },
-      h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } },
-        h('span', { style: { fontWeight: 600, fontSize: 13 } }, t('wanAccess')),
+    // ── 公网 ────────────────────────────────────────────────────────────────
+    // 标题行自带总开关（与局域网同语义）：开=已连隧道，关=未开启；
+    // 开启经免责声明弹窗确认，进度/错误由下方提示条呈现
+    Section(h('span', null, Dot(!!tunnelUrl), t('wanAccess')),
+      Switch(!!tunnelUrl, () => (tunnelUrl ? stopTunnel() : startTunnel()), tunnelStarting),
+      h('div', null,
+        tunnelStarting
+          ? Alert('info', h('span', null,
+              tunnelPhase === 'downloading'
+                ? fmt(t, 'downloading', { s: elapsed(tunnelStateStarted) })
+                : fmt(t, 'connecting', { s: elapsed(tunnelStateStarted), suffix: elapsed(tunnelStateStarted) > 30 ? t('slowHint') : '' })))
+          : tunnelPhase === 'error'
+            ? Alert('error', fmt(t, 'error', { detail: errText(tunnelStateDetail) || t('unknownError') }))
+            : (!tunnelUrl && !isDesktop ? h('div', { style: { ...styles.muted, marginTop: 8 } }, t('wanOffHint')) : null),
         tunnelUrl
-          ? h('button', { style: { ...styles.btn, height: 28, padding: '0 12px', fontSize: 12, color: 'var(--dsw-alias-state-error-primary,#dc2626)' }, onClick: stopTunnel }, t('stopTunnel'))
-          : h('button', { style: { ...styles.primary, height: 28, padding: '0 14px', fontSize: 12 }, onClick: startTunnel, disabled: busy || tunnelStarting }, busy || tunnelStarting ? t('opening') : t('enable')),
-      ),
-      tunnelStarting
-        ? h('div', { style: { marginTop: 8, fontSize: 12, color: 'var(--dsw-alias-label-secondary,#6b7280)' } },
-          tunnelPhase === 'downloading'
-            ? fmt(t, 'downloading', { s: elapsed(tunnelStateStarted) })
-            : fmt(t, 'connecting', { s: elapsed(tunnelStateStarted), suffix: elapsed(tunnelStateStarted) > 30 ? t('slowHint') : '' }))
-        : tunnelPhase === 'error'
-          ? h('div', { style: { marginTop: 8, fontSize: 12, color: 'var(--dsw-alias-state-error-primary,#dc2626)' } },
-            fmt(t, 'error', { detail: errText(tunnelStateDetail) || t('unknownError') }))
-          : (!tunnelUrl && !isDesktop ? h('div', { style: { ...styles.muted, marginTop: 8 } }, t('wanOffHint')) : null),
-      tunnelUrl
-        ? h('div', null,
-          qrArea(status.tunnelQr, tunnelUrl, namedMode ? t('namedRunningHint') : t('wanHint')),
-          // 防钓鱼 / 别收藏（issue #82）：公网链接仅本次有效、勿收藏提示
-          h('div', { style: { marginTop: 8, fontSize: 12, lineHeight: 1.5, borderLeft: '4px solid var(--dsw-alias-state-warn-primary,#b45309)', background: 'var(--dsw-alias-bg-layer-2,#f3f4f6)', borderRadius: 8, padding: '8px 10px' } }, t('wanEphemeralWarn')),
-          // 地址模式行（随机/固定；固定域名选中或编辑时高亮）
-          row(t('modeLabel'),
-            h('span', { style: { display: 'inline-flex', gap: 6 } },
-              h('button', { style: modeBtnStyle(!namedActive), onClick: namedMode ? switchToQuick : (tunnelCfg ? () => setTunnelCfg(null) : undefined) }, t('modeQuick')),
-              h('button', { style: modeBtnStyle(namedActive), onClick: () => setTunnelCfg(tunnelCfg ? null : { hostname: tunnelModeView.hostname ?? '', token: '', err: null }) }, t('modeNamed')),
-            ),
-            h('div', { style: { marginTop: 6 } },
-              // 刚保存固定域名但当前连接仍是随机域名：需关闭后重新开启才生效
-              namedMode && /trycloudflare\.com/i.test(tunnelUrl ?? '') ? h('div', { style: { ...styles.warn } }, t('namedTakeEffect')) : null,
-              // 固定域名：已保存摘要 + 修改入口（非编辑态）
-              namedMode && !tunnelCfg ? h('div', { style: { ...styles.muted } },
-                fmt(t, 'namedSummary', { host: tunnelModeView.hostname || '—', token: tunnelModeView.tokenSet ? t('namedTokenSet') : t('namedTokenMissing') }),
-                h('button', { style: { ...styles.btn, height: 26, padding: '0 10px', fontSize: 12, marginLeft: 8 }, onClick: () => setTunnelCfg({ hostname: tunnelModeView.hostname ?? '', token: '', err: null }) }, t('namedEdit')),
-                h('div', { style: { ...styles.muted, marginTop: 4 } }, t('namedHow')),
-                !tunnelModeView.tokenSet || !tunnelModeView.hostname ? h('div', { style: { marginTop: 2, color: 'var(--dsw-alias-state-error-primary,#dc2626)' } }, t('namedNeedCfg')) : null,
-              ) : null,
-              // 固定域名：编辑表单（域名 + Tunnel Token，Token 留空保持不变）
-              tunnelCfg ? h('div', { style: { marginTop: 6, fontSize: 12, color: 'var(--dsw-alias-label-secondary,#6b7280)', lineHeight: 1.6 } },
-                h('div', null,
-                  t('namedHostnameLabel'),
-                  h('input', {
-                    style: { margin: '4px 0 0 6px', padding: '4px 8px', fontSize: 13, border: '1px solid var(--dsw-alias-border-l2,#d1d5db)', borderRadius: 6, outline: 'none', width: 200 },
-                    placeholder: 'pocket.example.com',
-                    value: tunnelCfg.hostname ?? '',
-                    autoFocus: true,
-                    onChange: (e) => setTunnelCfg((c) => ({ ...c, hostname: e.target.value.trim(), err: null })),
-                    onKeyDown: (e) => { if (e.key === 'Enter') saveNamedTunnel(); if (e.key === 'Escape') setTunnelCfg(null); },
-                  }),
-                ),
-                h('div', { style: { marginTop: 6 } },
-                  t('namedTokenLabel'),
-                  h('input', {
-                    style: { margin: '4px 0 0 6px', padding: '4px 8px', fontSize: 13, border: '1px solid var(--dsw-alias-border-l2,#d1d5db)', borderRadius: 6, outline: 'none', width: 240, fontFamily: 'ui-monospace,Menlo,monospace' },
-                    type: 'password',
-                    value: tunnelCfg.token ?? '',
-                    onChange: (e) => setTunnelCfg((c) => ({ ...c, token: e.target.value.trim(), err: null })),
-                    onKeyDown: (e) => { if (e.key === 'Enter') saveNamedTunnel(); if (e.key === 'Escape') setTunnelCfg(null); },
-                  }),
-                ),
-                h('div', { style: { marginTop: 6, display: 'flex', gap: 8 } },
-                  h('button', { style: { ...styles.btn, height: 26, padding: '0 10px', fontSize: 12 }, onClick: saveNamedTunnel }, t('save')),
-                  h('button', { style: { ...styles.btn, height: 26, padding: '0 10px', fontSize: 12 }, onClick: () => setTunnelCfg(null) }, t('cancel')),
-                ),
-                h('div', { style: { ...styles.muted, marginTop: 6 } }, t('namedHow')),
-                h('div', { style: { marginTop: 2, fontSize: 11, color: 'var(--dsw-alias-state-warn-primary,#b45309)', lineHeight: 1.5 } }, t('namedSecurity')),
-                tunnelCfg.err ? h('div', { style: { color: 'var(--dsw-alias-state-error-primary,#dc2626)', marginTop: 4 } }, errText(tunnelCfg.err)) : null,
-              ) : null,
-            ),
-          ),
-          // 访问密码行：值 + 自定义（自定义输入态整体替换）
-          status.accessToken
-            ? row(t('pinLabel'),
-              customPin?.which === 'public'
-                ? null
-                : h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: 8 } },
-                  h('span', { style: { fontFamily: 'ui-monospace,Menlo,monospace', fontSize: 13, letterSpacing: 1 } }, status.accessToken),
-                  customBtn('public')),
+          ? h('div', null,
+            qrBlock(status.tunnelQr, tunnelUrl, namedMode ? t('namedRunningHint') : t('wanHint')),
+            // 防钓鱼 / 别收藏（issue #82）：公网链接仅本次有效、勿收藏提示
+            Alert('warn', t('wanEphemeralWarn')),
+            // 地址模式行（随机/固定；固定域名选中或编辑时分段高亮）
+            row(t('modeLabel'), modeSeg,
               h('div', { style: { marginTop: 6 } },
-                customPin?.which === 'public' ? customPinRow('public') : null,
-                status?.publicPinCustom ? h('div', { style: { ...styles.warn } }, t('pinCustomHint')) : null,
-                namedMode ? h('div', { style: { ...styles.warn } }, t('namedSecurity')) : null))
-            : null,
-        )
-        : null,
-    ),
+                // 刚保存固定域名但当前连接仍是随机域名：需关闭后重新开启才生效
+                namedMode && /trycloudflare\.com/i.test(tunnelUrl ?? '') ? h('div', { style: styles.warn }, t('namedTakeEffect')) : null,
+                // 固定域名：已保存摘要 + 修改入口（非编辑态）
+                namedMode && !tunnelCfg ? h('div', { style: { ...styles.muted } },
+                  fmt(t, 'namedSummary', { host: tunnelModeView.hostname || '—', token: tunnelModeView.tokenSet ? t('namedTokenSet') : t('namedTokenMissing') }),
+                  h('button', { style: { ...styles.mini, marginLeft: 8 }, onClick: () => setTunnelCfg({ hostname: tunnelModeView.hostname ?? '', token: '', err: null }) }, t('namedEdit')),
+                  h('div', { style: { ...styles.muted, marginTop: 4 } }, t('namedHow')),
+                  !tunnelModeView.tokenSet || !tunnelModeView.hostname ? h('div', { style: { marginTop: 2, color: 'var(--dsw-alias-state-error-primary,#dc2626)' } }, t('namedNeedCfg')) : null,
+                ) : null,
+                // 固定域名：编辑表单（域名 + Tunnel Token，Token 留空保持不变）
+                tunnelCfg ? h('div', { style: { marginTop: 6, fontSize: 12, color: 'var(--dsw-alias-label-secondary,#6b7280)', lineHeight: 1.6 } },
+                  h('div', null,
+                    t('namedHostnameLabel'),
+                    h('input', {
+                      style: { margin: '4px 0 0 6px', padding: '4px 8px', fontSize: 13, border: '1px solid var(--dsw-alias-border-l2,#d1d5db)', borderRadius: 6, outline: 'none', width: 200 },
+                      placeholder: 'pocket.example.com',
+                      value: tunnelCfg.hostname ?? '',
+                      autoFocus: true,
+                      onChange: (e) => setTunnelCfg((c) => ({ ...c, hostname: e.target.value.trim(), err: null })),
+                      onKeyDown: (e) => { if (e.key === 'Enter') saveNamedTunnel(); if (e.key === 'Escape') setTunnelCfg(null); },
+                    }),
+                  ),
+                  h('div', { style: { marginTop: 6 } },
+                    t('namedTokenLabel'),
+                    h('input', {
+                      style: { margin: '4px 0 0 6px', padding: '4px 8px', fontSize: 13, border: '1px solid var(--dsw-alias-border-l2,#d1d5db)', borderRadius: 6, outline: 'none', width: 240, ...styles.mono },
+                      type: 'password',
+                      value: tunnelCfg.token ?? '',
+                      onChange: (e) => setTunnelCfg((c) => ({ ...c, token: e.target.value.trim(), err: null })),
+                      onKeyDown: (e) => { if (e.key === 'Enter') saveNamedTunnel(); if (e.key === 'Escape') setTunnelCfg(null); },
+                    }),
+                  ),
+                  h('div', { style: { marginTop: 8, display: 'flex', gap: 8 } },
+                    h('button', { style: styles.mini, onClick: saveNamedTunnel }, t('save')),
+                    h('button', { style: styles.mini, onClick: () => setTunnelCfg(null) }, t('cancel')),
+                  ),
+                  h('div', { style: { ...styles.muted, marginTop: 6 } }, t('namedHow')),
+                  h('div', { style: { marginTop: 2, fontSize: 11, color: 'var(--dsw-alias-state-warn-primary,#b45309)', lineHeight: 1.5 } }, t('namedSecurity')),
+                  tunnelCfg.err ? h('div', { style: { color: 'var(--dsw-alias-state-error-primary,#dc2626)', marginTop: 4 } }, errText(tunnelCfg.err)) : null,
+                ) : null,
+              )),
+            // 访问密码行：遮罩值 + 自定义（自定义输入态整体替换）
+            status.accessToken
+              ? row(t('pinLabel'), null,
+                  customPin?.which === 'public'
+                    ? customPinRow('public')
+                    : h('div', null,
+                      pinValueRow('public', status.accessToken, [customBtn('public')]),
+                      h('div', { style: { marginTop: 4 } },
+                        status?.publicPinCustom ? h('div', { style: { ...styles.warn, fontSize: 11 } }, t('pinCustomHint')) : null,
+                        namedMode ? h('div', { style: { ...styles.warn, fontSize: 11 } }, t('namedSecurity')) : null)))
+              : null,
+          )
+          : null,
+      ),
+      'wan'),
 
-    h('div', { style: styles.block },
+    // ── 偏好：手机端右边栏 ───────────────────────────────────────────────────
+    Section(null, null,
       row(
         t('mobileRightbar'),
         Switch(status?.mobileRightbarEnabled !== false, () => setMobileRightbar(status?.mobileRightbarEnabled === false)),
         h('div', { style: { ...styles.muted, marginTop: 6 } }, t('mobileRightbarHint')),
       ),
-    ),
+      'prefs'),
 
-    error ? h('div', { style: { color: 'var(--dsw-alias-state-error-primary,#dc2626)', fontSize: 12, marginTop: 8 } }, `❌ ${errText(error)}`) : null,
+    error ? h('div', { style: { color: 'var(--dsw-alias-state-error-primary,#dc2626)', fontSize: 12, marginTop: 12 } }, `❌ ${errText(error)}`) : null,
 
-    // 恢复出厂设置：设置出问题时的临时兜底（最底部，避免误触）
-    h('div', { style: styles.block },
-      h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 } },
-        h('span', { style: { fontWeight: 600, fontSize: 13 } }, t('resetFactory')),
-        h('button', { style: { ...styles.btn, height: 28, padding: '0 12px', fontSize: 12, color: 'var(--dsw-alias-state-error-primary,#dc2626)' }, onClick: () => setResetOpen(true) }, t('resetGo')),
+    // ── 恢复出厂设置：设置出问题时的临时兜底（最底部，避免误触） ─────────────
+    Section(null, null,
+      row(
+        t('resetFactory'),
+        h('button', { style: { ...styles.mini, color: 'var(--dsw-alias-state-error-primary,#dc2626)' }, onClick: () => setResetOpen(true) }, t('resetGo')),
+        h('div', { style: { ...styles.muted, fontSize: 11, marginTop: 4 } }, t('resetIntro')),
       ),
-      h('div', { style: { ...styles.muted, marginTop: 6 } }, t('resetIntro')),
+      'reset'),
+
+    // 页脚署名行：开发者 · Star · 反馈（一行收拢，弱化处理）
+    h('div', { style: { marginTop: 20, paddingTop: 12, borderTop: '1px solid var(--dsw-alias-border-l2,#eceef2)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, flexWrap: 'wrap', fontSize: 11, color: 'var(--dsw-alias-label-tertiary,#8b93a1)' } },
+      h('span', null, t('developer')),
+      h('span', null, '·'),
+      h('a', { href: 'https://github.com/daha1216/dsh-pocket', target: '_blank', rel: 'noreferrer', title: t('starAsk'), style: { color: 'inherit', textDecoration: 'none', borderBottom: '1px dashed currentColor' } }, t('starCta')),
+      h('span', null, '·'),
+      h('a', { href: 'https://github.com/daha1216/dsh-pocket/issues', target: '_blank', rel: 'noreferrer', style: { color: 'inherit', textDecoration: 'none', borderBottom: '1px dashed currentColor' } }, t('feedback')),
     ),
 
     // 恢复出厂设置确认弹框
-    resetOpen ? h('div', { style: { position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } },
-      h('div', { style: { background: 'var(--dsw-alias-bg-layer-1,#fff)', borderRadius: 12, maxWidth: 440, width: '100%', padding: '20px 22px', boxShadow: '0 8px 32px rgba(0,0,0,.18)' } },
-        h('div', { style: { fontWeight: 600, fontSize: 15, color: 'var(--dsw-alias-state-warn-primary,#b45309)', marginBottom: 10 } }, t('resetTitle')),
-        h('div', { style: { fontSize: 13, lineHeight: 1.7, color: 'var(--dsw-alias-label-primary,inherit)', whiteSpace: 'pre-line' } }, t('resetBody')),
-        h('div', { style: { display: 'flex', gap: 8, marginTop: 16 } },
-          h('button', { style: { ...styles.btn, flex: 1 }, onClick: () => setResetOpen(false) }, t('cancel')),
-          h('button', { style: { ...styles.primary, flex: 1, background: 'var(--dsw-alias-state-error-primary,#dc2626)' }, onClick: doFactoryReset }, t('resetConfirm')),
-        ),
-      ),
-    ) : null,
+    resetOpen ? Modal({ title: t('resetTitle'), tone: 'danger',
+      children: h('div', { style: { fontSize: 13, lineHeight: 1.7, color: 'var(--dsw-alias-label-primary,inherit)', whiteSpace: 'pre-line' } }, t('resetBody')),
+      actions: [
+        h('button', { style: { ...styles.btn, height: 32, padding: '0 16px' }, onClick: () => setResetOpen(false) }, t('cancel')),
+        h('button', { style: { ...styles.primary, height: 32, padding: '0 16px', background: 'var(--dsw-alias-state-error-primary,#dc2626)' }, onClick: doFactoryReset }, t('resetConfirm')),
+      ] }) : null,
 
     // Toast：重置等操作的即时反馈（固定屏幕正中央，2.6s 自动消失）
     toast ? h('div', {
-      style: { position: 'fixed', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', zIndex: 10001, width: 'auto', maxWidth: 280, background: 'rgba(17,24,39,.92)', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 16px', fontSize: 13, lineHeight: 1.5, textAlign: 'center', boxShadow: '0 8px 24px rgba(0,0,0,.22)' },
+      style: { position: 'fixed', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', zIndex: 10001, maxWidth: 300, background: 'rgba(17,24,39,.92)', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 16px', fontSize: 13, lineHeight: 1.5, textAlign: 'center', boxShadow: '0 8px 24px rgba(0,0,0,.22)' },
     }, toast) : null,
 
     // 局域网访问开关确认弹框（关闭/打开时弹窗提醒）
-    lanToggleOpen !== null ? h('div', { style: { position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } },
-      h('div', { style: { background: 'var(--dsw-alias-bg-layer-1,#fff)', borderRadius: 12, maxWidth: 420, width: '100%', padding: '20px 22px', boxShadow: '0 8px 32px rgba(0,0,0,.18)' } },
-        h('div', { style: { fontWeight: 600, fontSize: 15, color: lanToggleOpen ? 'var(--dsw-alias-brand-primary,#4f6ef7)' : 'var(--dsw-alias-state-warn-primary,#b45309)', marginBottom: 10 } }, t(lanToggleOpen ? 'lanToggleTitleOn' : 'lanToggleTitleOff')),
-        h('div', { style: { fontSize: 13, lineHeight: 1.7, color: 'var(--dsw-alias-label-primary,inherit)' } }, t(lanToggleOpen ? 'lanToggleBodyOn' : 'lanToggleBodyOff')),
-        h('div', { style: { display: 'flex', gap: 8, marginTop: 16 } },
-          h('button', { style: { ...styles.btn, flex: 1 }, onClick: () => setLanToggleOpen(null) }, t('cancel')),
-          h('button', { style: { ...styles.primary, flex: 1 }, onClick: confirmLanToggle }, t('confirm')),
-        ),
-      ),
-    ) : null,
+    lanToggleOpen !== null ? Modal({ title: t(lanToggleOpen ? 'lanToggleTitleOn' : 'lanToggleTitleOff'), tone: lanToggleOpen ? 'brand' : 'warn',
+      children: h('div', { style: { fontSize: 13, lineHeight: 1.7, color: 'var(--dsw-alias-label-primary,inherit)' } }, t(lanToggleOpen ? 'lanToggleBodyOn' : 'lanToggleBodyOff')),
+      actions: [
+        h('button', { style: { ...styles.btn, height: 32, padding: '0 16px' }, onClick: () => setLanToggleOpen(null) }, t('cancel')),
+        h('button', { style: { ...styles.primary, height: 32, padding: '0 16px' }, onClick: confirmLanToggle }, t('confirm')),
+      ] }) : null,
 
     // 安全免责声明弹框（issue #31）：每次开启公网访问前确认
-    disclaimerOpen ? h('div', { style: { position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } },
-      h('div', { style: { background: 'var(--dsw-alias-bg-layer-1,#fff)', borderRadius: 12, maxWidth: 420, width: '100%', padding: '20px 22px', boxShadow: '0 8px 32px rgba(0,0,0,.18)' } },
-        h('div', { style: { fontWeight: 600, fontSize: 15, color: 'var(--dsw-alias-state-warn-primary,#b45309)', marginBottom: 10 } }, t('disclaimerTitle')),
+    disclaimerOpen ? Modal({ title: t('disclaimerTitle'), tone: 'warn',
+      children: h('div', null,
         h('div', { style: { fontSize: 13, lineHeight: 1.7, color: 'var(--dsw-alias-label-primary,inherit)' } }, t('disclaimerBody')),
         h('label', { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, fontSize: 13, cursor: 'pointer' } },
           h('input', { type: 'checkbox', checked: disclaimerChecked, onChange: (e) => setDisclaimerChecked(e.target.checked), style: { width: 16, height: 16 } }),
-          t('disclaimerAgree'),
-        ),
-        h('div', { style: { display: 'flex', gap: 8, marginTop: 16 } },
-          h('button', { style: { ...styles.btn, flex: 1 }, onClick: () => setDisclaimerOpen(false) }, t('cancel')),
-          h('button', {
-            style: { ...styles.primary, flex: 1, opacity: disclaimerChecked ? 1 : .5 },
-            disabled: !disclaimerChecked,
-            onClick: confirmDisclaimer,
-          }, t('disclaimerAgree')),
-        ),
-        !disclaimerChecked ? h('div', { style: { marginTop: 8, fontSize: 12, color: 'var(--dsw-alias-state-error-primary,#dc2626)' } }, t('disclaimerHint')) : null,
-      ),
-    ) : null,
-
-    // 页面最底部：反馈入口
-    h('div', { style: { ...styles.block, textAlign: 'center' } },
-      h('a', { href: 'https://github.com/daha1216/dsh-pocket/issues', target: '_blank', rel: 'noreferrer', style: { fontSize: 12, color: 'var(--dsw-alias-label-secondary,#6b7280)', textDecoration: 'none' } },
-        t('feedback')),
-    ),
+          t('disclaimerAgree')),
+        !disclaimerChecked ? h('div', { style: { marginTop: 8, fontSize: 12, color: 'var(--dsw-alias-state-error-primary,#dc2626)' } }, t('disclaimerHint')) : null),
+      actions: [
+        h('button', { style: { ...styles.btn, height: 32, padding: '0 16px' }, onClick: () => setDisclaimerOpen(false) }, t('cancel')),
+        h('button', {
+          style: { ...styles.primary, height: 32, padding: '0 16px', opacity: disclaimerChecked ? 1 : 0.5 },
+          disabled: !disclaimerChecked,
+          onClick: confirmDisclaimer,
+        }, t('disclaimerAgree')),
+      ] }) : null,
   );
 }
 
