@@ -252,6 +252,26 @@ const POCKET_EXTRA_CSS = `/* pocket 控件/门控样式：刻意不加媒体查�
       transform: translateY(calc(-0.5 * var(--dshp-kb, 0px))) !important;
     }
 
+    /* ---------- M3b 键盘期 composer 座位抬升（2026-09-29 真机反馈：键盘挡住输入内容） ----------
+       宿主只在 [data-phase=active]（有内容的会话）给座位 position:sticky;bottom:0，
+       钉在滚动视口底=布局视口底；iOS 与 Android(resizes-visual) 的软键盘只收缩
+       visual viewport、布局视口不动 → 座位连同输入行整排沉到键盘底下。hero 态
+       （空会话）座位更是静态居中，同样被键盘盖。键盘开态统一补 sticky + 把偏移
+       改为键盘高度（html[data-dshp-kb="open"] 由 --dshp-kb 写入方同点维护）：
+       sticky 只上推不下压——active 态座位钉到可视视口底；hero 态自然位在阈值之上
+       时零位移、被键盘压到时同样自动上抬，一条规则通吃两形态。kb 公式已减
+       vv.offsetTop，浏览器为露出焦点而滚动页面时偏移自洽。收起态（属性缺席）
+       规则不命中，宿主原定位逐字节保留。刻意不用 translateY：座位子树里的
+       fixed 弹层（plus 菜单等）会被 transform 变成 containing block，锚定全乱。
+       html 前缀与三锚点选择器族同上游座位 padding 规则（防类名哈希代际漂移），
+       特异性手法同 M2。 */
+    html[data-dshp-kb="open"] [data-mobile-nav="frame"] [class*="_composerSeat"],
+    html[data-dshp-kb="open"] div[class*="_frame"] [class*="_composerSeat"],
+    html[data-dshp-kb="open"] [data-mobile-nav="frame"] [data-phase] [class*="_composerSeat"] {
+      position: sticky !important;
+      bottom: var(--dshp-kb, 0px) !important;
+    }
+
     /* ---------- iOS standalone 布局视口偏矮兜底（2026-09-28 真机反馈：A2HS 底部留白） ----------
        部分 iOS 版本的 standalone（添加到主屏幕）模式下，100%/dvh 参照的布局视口
        不含底部一段真实窗口（innerHeight < visualViewport.height，键盘收起且未缩放
@@ -497,7 +517,8 @@ export function mobileApply(ctx: ClientContext): void {
   // session-menu 的删除确认弹窗）仍按 layout viewport 定位，全部沉到键盘底下。
   // 这里把键盘高度写进 documentElement 的 --dshp-kb = max(0px, innerHeight -
   // visualViewport.height - visualViewport.offsetTop)，供上述弹层的 bottom calc()
-  // 消费（POCKET_EXTRA_CSS 覆盖上游 delete-dialog；fileGuard 内联样式直接用）。
+  // 消费（POCKET_EXTRA_CSS 覆盖上游 delete-dialog；fileGuard 内联样式直接用；
+  // M3b composer 座位抬升同吃此变量，见 POCKET_EXTRA_CSS）。
   // Android 不需要也不受影响：其键盘弹出 resize 整个视口，innerHeight 与
   // vv.height 同步收缩，差值恒 ≈0。resize/scroll 在键盘动画期间每帧触发，rAF
   // 合并 + 同值短路，避免每帧写 style 强制重排。visualViewport 缺失（罕见）不挂。
@@ -518,6 +539,10 @@ export function mobileApply(ctx: ClientContext): void {
       if (value === last) return
       last = value
       root.style.setProperty('--dshp-kb', value)
+      // 键盘开合标记：POCKET_EXTRA_CSS 的 composer 座位抬升（M3b）只在开态命中，
+      // 收起态完全不覆盖宿主原 bottom 值。与 setProperty 同点同短路，两态不漂移。
+      if (kb > 0) root.setAttribute('data-dshp-kb', 'open')
+      else root.removeAttribute('data-dshp-kb')
     }
     const schedule = (): void => { if (raf === 0) raf = requestAnimationFrame(write) }
     vv.addEventListener('resize', schedule)
@@ -528,6 +553,7 @@ export function mobileApply(ctx: ClientContext): void {
       vv.removeEventListener('scroll', schedule)
       if (raf !== 0) cancelAnimationFrame(raf)
       root.style.removeProperty('--dshp-kb')
+      root.removeAttribute('data-dshp-kb')
     }
   })
 
