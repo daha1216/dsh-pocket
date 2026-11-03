@@ -21,10 +21,7 @@ import type { ReconcilerTask } from '../core/reconciler-core.ts'
  * 2026-09-06-conversation-overlay-takeover-design.md §4.1.)
  */
 export function createFileViewerMarkerTask(): ReconcilerTask {
-  /** Last observed panel presence + frame. This '*' task wakes on every
-   * mutation batch and the file-viewer tab is closed the overwhelming
-   * majority of the time; without the memo, each flush re-ran the
-   * set/remove attribute pair for no state change. */
+  /** Pocket patch: last observed panel presence + frame (see ensure). */
   let wasActive: boolean | null = null
   let lastFrame: HTMLElement | null = null
   return {
@@ -34,8 +31,10 @@ export function createFileViewerMarkerTask(): ReconcilerTask {
       const frame = getFrame()
       if (frame === null) return
       const active = document.querySelector('.dsfv-panel') !== null
-      // No presence change on the same frame: the marker already holds the
-      // right value — this task is its only writer while active. The frame
+      // Pocket patch: memo of last observed panel presence + frame. This '*'
+      // task wakes on every mutation batch and the file-viewer tab is closed
+      // the overwhelming majority of the time; without the memo, each flush
+      // re-ran the set/remove attribute pair for no state change. The frame
       // identity check covers a shell rebuild: a NEW frame element must be
       // re-marked even when the panel state carried over.
       if (active === wasActive && frame === lastFrame) return
@@ -43,11 +42,13 @@ export function createFileViewerMarkerTask(): ReconcilerTask {
       lastFrame = frame
       if (active) {
         frame.setAttribute('data-file-viewer-open', '')
-      } else {
+      } else if (frame.hasAttribute('data-file-viewer-open')) {
         frame.removeAttribute('data-file-viewer-open')
       }
     },
     dispose: () => {
+      // Pocket patch: reset the memo with the marker — a dispose/re-arm cycle
+      // must not inherit the pre-dispose observation.
       wasActive = null
       lastFrame = null
       getFrame()?.removeAttribute('data-file-viewer-open')

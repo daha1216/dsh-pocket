@@ -104,10 +104,10 @@ export function installDebugBadge(ctx: ClientContext): void {
     }
     const paint = (): void => { badge.textContent = read() }
     paint()
-    // Coalesce observer-driven paints onto one animation frame: paint() runs
-    // several querySelector + getComputedStyle forced reflows, and the
-    // observer fires on every streaming batch — a synchronous paint per
-    // batch would force style/layout on every token.
+    // Pocket patch: coalesce observer-driven paints onto one animation frame —
+    // paint() runs several querySelector + getComputedStyle forced reflows, and
+    // the observer fires on every streaming batch; a synchronous paint per batch
+    // would force style/layout on every token.
     let paintRaf = 0
     const schedulePaint = (): void => {
       if (paintRaf !== 0) return
@@ -164,6 +164,7 @@ export function installDebugBadge(ctx: ClientContext): void {
       observer.disconnect()
       clearInterval(timer)
       clearInterval(beaconTimer)
+      if (paintRaf !== 0) cancelAnimationFrame(paintRaf)
       badge.remove()
     }
   }, 'dsh-web-mobile: debug badge')

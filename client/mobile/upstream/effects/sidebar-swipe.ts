@@ -529,21 +529,24 @@ function drawerOpen(): boolean {
 }
 
 /**
- * True when the host's right sidebar files panel is currently VISIBLE (any
- * form: fullscreen on phones, docked on tablets). Measured on 0.1.5: the
- * panel element is persistent — the closed fullscreen form stays in the DOM
- * at `visibility: hidden` with its rect pushed to x=viewport-width — so
- * presence alone is not the panel-state read. Detect the open state by the
- * three ways the host can hide it (visibility / display / pushed-off rect);
- * a host without this panel keeps returning false and the explorer fallback
- * applies.
+ * True when the host's right sidebar files panel is currently OPEN (any form:
+ * fullscreen on phones, docked on tablets).
+ *
+ * The host owns the authoritative marker: `data-sidebar-right-open` is present
+ * exactly while the panel is expanded (live-verified on 0.2.1-rc.2).
+ * The 0.1.5-era geometry probe (`rect.left < innerWidth` on a mounted, not
+ * visibility:hidden panel) died with the 0.2.0 dockkit refactor: the panel is
+ * now a persistent viewport-wide box whose CLOSED form hides its children
+ * instead of itself, so its own rect always spans the viewport and every
+ * closed panel read as open (measured 2026-10-29 at 390x844: closed rect
+ * [0,0,390,844] without the marker, open the same rect with it). That read
+ * killed the documented right-edge LEFTWARD entry and left an undocumented
+ * rightward one (#249). A host without this panel keeps returning false and
+ * the explorer fallback applies.
  */
-function filesPanelOpen(): boolean {
+export function filesPanelOpen(): boolean {
   const panel = document.querySelector('[data-sidebar-right-panel]')
-  if (panel === null) return false
-  const cs = getComputedStyle(panel)
-  if (cs.visibility === 'hidden' || cs.display === 'none') return false
-  return panel.getBoundingClientRect().left < window.innerWidth
+  return panel !== null && panel.hasAttribute('data-sidebar-right-open')
 }
 
 /**
@@ -666,11 +669,10 @@ function dragMarkYields(event: PointerEvent): boolean {
 }
 
 /** Upper bound (px) of the "small floating widget" positional heuristic.
- * The real-world reference is dsh-pet's floating ball (kz2Bea_float,
- * position:fixed, measured 148x160 on the live profile page) — 160 would
- * sit exactly on that widget's edge; 200 leaves headroom for sibling
- * plugin widgets while a full-screen overlay (backdrop, sheets, dialogs)
- * still cannot pass. */
+ * Sized for third-party widgets that ship no nameable root: dsh-pet's 0.3.x
+ * hit box (measured 173x206 on the live profile page) already exceeds it and
+ * is claimed by name below instead, while a full-screen overlay (backdrop,
+ * sheets, dialogs) still cannot pass. */
 const FLOATING_WIDGET_MAX_PX = 200
 
 /**
@@ -679,21 +681,28 @@ const FLOATING_WIDGET_MAX_PX = 200
  * panel shapes) that carry NO standard "draggable" DOM mark, yet the user
  * presses the widget itself — so the stroke's start target sits inside that
  * widget's layer. Draggable widgets almost always live in a SMALL
- * freely-positioned layer (position: fixed | absolute, own box ≤ 160px)
- * hovering above the page, so walk the ancestor chain from the event target:
- * the first small positioned ancestor counts as a floating widget and the
- * stroke yields (no arm, no touchmove preventDefault). Pairs with
- * dragMarkYields (cooperation mark) which needs no shape guessing.
- * Excluded: anything inside our own frame subtree — the FAB / backdrop /
+ * freely-positioned layer (position: fixed | absolute, own box under
+ * FLOATING_WIDGET_MAX_PX) hovering above the page, so walk the ancestor chain
+ * from the event target: the first small positioned ancestor counts as a
+ * floating widget and the stroke yields (no arm, no touchmove preventDefault).
+ * Pairs with dragMarkYields (cooperation mark) which needs no shape guessing.
+ * Named exception (2026-10-29, #249-1): dsh-pet 0.3.x registers its root
+ * (.dsh-pet-root) into the shell overlay slot, i.e. INSIDE our frame subtree,
+ * and its hit box is 173x206 — the frame exclusion and the size cap both miss
+ * it, so a stroke started on the pet dragged it AND armed the drawer. Known
+ * roots are claimed by name before either filter runs.
+ * Excluded: anything else inside our own frame subtree — the FAB / backdrop /
  * drawer content carry their own gesture semantics and must never be
  * misread as floating widgets (the closed-state FAB sits in the start zone).
  * ponytail: no DOM-standard draggable signal exists; shape ≈ draggable is an
  * approximation with a known ceiling — a STATIC small positioned element
  * (e.g. a message badge) also yields, costing a stroke start under a
- * ≤160px dot; a REAL widget that misses (bigger layer, static positioning)
- * upgrades via the data-mobile-nav-dragging mark or by raising the cap.
+ * FLOATING_WIDGET_MAX_PX dot; a REAL widget that misses upgrades via the
+ * data-mobile-nav-dragging mark, a named branch like the pet one, or the cap.
  */
-function findFloatingWidget(target: Element): Element | null {
+export function findFloatingWidget(target: Element): Element | null {
+  const pet = target.closest('.dsh-pet-root')
+  if (pet !== null) return pet
   if (target.closest('[data-mobile-nav="frame"]') !== null) return null
   let el: Element | null = target
   while (el !== null) {
@@ -815,14 +824,14 @@ function armOpenFollow(ctx: ClientContext): void {
   drawer.style.setProperty('transition', 'none', 'important')
   const pinned = followOpenTransform(0.0001, strokeRtl)
   drawer.style.setProperty('transform', pinned ?? `translateX(-${CLOSED_SLOT_PCT}%)`, 'important')
-  // Promote the drawer to its own compositor layer for the follow: the
-  // per-move transform writes in applyFollow would otherwise re-rasterize
-  // the 389-node drawer in the main layer on every pointermove, which
-  // reads as stutter on mid-range phones. Cleared together with the inline
-  // follow pair wherever it is dropped (releaseFollowStyles /
-  // finishPendingCommit — release, abort and dispose all exit through
-  // those two); leaking it would pin the layer, and its memory, on the
-  // resting drawer forever.
+  // Pocket patch: promote the drawer to its own compositor layer for the
+  // follow — the per-move transform writes in applyFollow would otherwise
+  // re-rasterize the whole drawer subtree in the main layer on every
+  // pointermove, which reads as stutter on mid-range phones. Cleared together
+  // with the inline follow pair wherever it is dropped (releaseFollowStyles /
+  // finishPendingCommit — release, abort and dispose all exit through those
+  // two); leaking it would pin the layer, and its memory, on the resting
+  // drawer forever.
   drawer.style.willChange = 'transform'
   // Split the mount cost (2026-08-29, user report 「滑动不会立刻生效，而是卡
   // 那么零点几秒」): the toggle below synchronously mounts the 389-node
@@ -923,9 +932,6 @@ function releaseFollowStyles(): void {
   followEngaged = false
   el.style.removeProperty('transition')
   el.style.removeProperty('transform')
-  // Drop the arm-time layer promotion with the inline pair (see armOpenFollow):
-  // the resting drawer must not hold a compositor layer.
-  el.style.removeProperty('will-change')
 }
 
 /** A close commit that is still animating to the closed slot before the host
@@ -949,7 +955,6 @@ function finishPendingCommit(): void {
   // flip); stripping inline from a detached node is a harmless no-op.
   pending.el.style.removeProperty('transition')
   pending.el.style.removeProperty('transform')
-  pending.el.style.removeProperty('will-change')
   // If the host already closed while our animation ran (e.g. a genuine
   // backdrop tap inside the 280ms window), the flip already happened and a
   // blind toggle would RE-OPEN the drawer — skip it.
@@ -1115,13 +1120,13 @@ function beginStroke(
   // drawer open (failure scenario C1). Applies to both branches: inside the
   // drawer the same "scroller owns horizontal" semantics should hold.
   if (findHorizontalScroller(chainFrom(event.target)) !== null) return false
-  // The composer card sits low-center and often hosts horizontally draggable
-  // affordances (attachment chips, file cards) that are NOT inside any
-  // horizontally scrollable container, so the scroller test above does not
-  // cover them; a swipe armed on the composer would also yank the drawer
-  // under the user's thumb mid-edit. Host class names differ per build, so
-  // match the seat/card/dock shapes the composer is known to render into
-  // (class-substring, same tolerance the rest of this file uses).
+  // Pocket patch: the composer card sits low-center and often hosts
+  // horizontally draggable affordances (attachment chips, file cards) that are
+  // NOT inside any horizontally scrollable container, so the scroller test
+  // above does not cover them; a swipe armed on the composer would also yank
+  // the drawer under the user's thumb mid-edit. Host class names differ per
+  // build, so match the seat/card/dock shapes the composer is known to render
+  // into (class-substring, same tolerance the rest of this file uses).
   if (event.target.closest('[class*="_composerSeat"], [data-composer-card], [class*="_dock"]') !== null) return false
   const open = drawerOpen()
   const filesZonePx = startZonePxFor(viewportWidthPx, FILES_ZONE_RATIO)

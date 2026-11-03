@@ -273,22 +273,28 @@ export const MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
      inherit none from the card, and an unselectable contenteditable cannot
      host a caret or a paste on WebKit. Dialogs and text fields portalled
      into the drawer DOM (settings sheet) are re-enabled the same way, so
-     their values stay copyable. Scope: the conversation header is the
-     header inside the [data-phase] root (chat content never renders one
-     there), and the anchor stays the DESCENDANT form on purpose: 0.2.0-rc.2
-     (live-host probe 2026-10-07) renders an unclassed wrapper <div> between
-     .wSkVaW_root[data-phase] and <header class="wSkVaW_header">, so the
-     child-combinator form this rule used to carry matched 0 elements - the
-     title bar kept user-select:auto and a drag-select up over it still ended
-     in the header title span (4391 selected chars, opening with the title /
-     mode / tab labels). On the composer side only the input card
-     ([data-composer-card], host marker since 0.1.2) and the plugin stats
-     row - the dock above the card (todo card, approval / ask-question
-     panels) is reply content and stays copyable. */
+     their values stay copyable. Scope: the conversation header is the host
+     header inside the [data-phase] root, anchored to the HOST HEADER CLASS
+     (header.wSkVaW_header) rather than to a bare header - a bare header also
+     hits every other <header> under [data-phase], and the ask-question card
+     (dsh-client-ui-user-questions QuestionComposer) renders its own
+     <header class="Mbwy4a_header"> in composerSeat with the question text
+     as the heading. A bare header made that text unselectable, so the
+     question could not be long-press-copied (2026-10-20, same anchor rule
+     as the layout.css.ts header block; the dock above the input card is
+     reply content and must stay copyable). The anchor stays the DESCENDANT
+     form on purpose: 0.2.0-rc.2 (live-host probe 2026-10-07) renders an
+     unclassed wrapper <div> between .wSkVaW_root[data-phase] and
+     <header class="wSkVaW_header">, so the child-combinator form this rule
+     used to carry matched 0 elements - the title bar kept user-select:auto
+     and a drag-select up over it still ended in the header title span (4391
+     selected chars, opening with the title / mode / tab labels). On the
+     composer side only the input card ([data-composer-card], host marker
+     since 0.1.2) and the plugin stats row. */
   [data-mobile-nav="frame"] > :first-child,
-  [data-mobile-nav="frame"] [data-phase] header,
+  [data-mobile-nav="frame"] [data-phase] header:has([class*="_headerLeading"]),
   [data-mobile-nav="frame"] [data-composer-card],
-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"],
+  [data-mobile-nav="stats"],
   [data-mobile-nav="fab"],
   [data-mobile-nav="backdrop"] {
     -webkit-user-select: none !important;
@@ -299,7 +305,7 @@ export const MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
   [data-mobile-nav="frame"] > :first-child [role="dialog"],
   [data-mobile-nav="frame"] > :first-child input,
   [data-mobile-nav="frame"] > :first-child textarea,
-  [data-mobile-nav="frame"] [data-phase] header input {
+  [data-mobile-nav="frame"] [data-phase] header:has([class*="_headerLeading"]) input {
     -webkit-user-select: text !important;
     user-select: text !important;
   }
@@ -368,12 +374,16 @@ export const MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
 @media (min-width: 1024px), (pointer: fine), (pointer: none) {
   [data-mobile-nav="toggle"],
   [data-mobile-nav="files"],
+  [data-mobile-nav="downloads"],
   [data-mobile-nav="file-upload"],
   [data-mobile-nav="fab"],
   [data-mobile-nav="backdrop"],
   [data-mobile-nav="session-log"],
   [data-mobile-nav="session-log-wrap"],
-  [data-mobile-nav="preview-full-toggle"] {
+  [data-mobile-nav="quick-settings"],
+  [data-mobile-nav="quick-settings-wrap"],
+  [data-mobile-nav="preview-full-toggle"],
+  [data-mobile-nav="question-expand"] {
     display: none !important;
   }
 }
@@ -389,4 +399,247 @@ export const MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
     display: none !important;
   }
 }
+
+/* 宽屏触屏（≥1024，壳不生效）同样没有 hover：会话行的 ⋯ 必须常显。
+   宿主只在 :hover / menuOpen 时显示 _rowActions（dsh-client-ui-workspace），
+   而这一档没有移动壳的帧内规则兜底（手机档那条在 layout.css 的 frame 作用域里），
+   于是触屏平板点不到重命名 / 分叉 / 归档 / 删除 —— 只按指针门挂上同一条可见性
+   规则，不动行内布局（标题仍是 flex:1 + min-width:0 自己让位）。
+   与 session-delete 三件套同一门控口径：粗指针在任何宽度都成立。 */
+@media (min-width: 1024px) and (pointer: coarse) {
+  [class*="sessionRow"] [class*="_rowActions"] {
+    display: inline-flex !important;
+  }
+
+  /* ①′ 触屏平板的行内热区（2026-10-29 实测：会话行 32px 高、行距 34，
+     行内操作按钮只有 16×16、彼此相隔 31px —— 手指点不中，也点不准）。
+     做法：行抬到 44px（宿主没有行高约束，标题仍 flex:1 自己省略），
+     按钮盒 40×40、间距 4px（盒间净空 0、不重叠），图标本身仍是 16px 不放大。
+     40 而不是 44：三个按钮 + 净空在 256px 侧栏里已经占掉 128px，
+     再宽就把标题挤到 100px 以下；44 需要侧栏加宽，是产品取舍，不在本轮。 */
+  [class*="sessionRow"] {
+    min-height: 44px !important;
+  }
+  [class*="sessionRow"] [class*="_rowActions"] {
+    gap: 4px !important;
+  }
+  [class*="sessionRow"] [class*="_rowActions"] button,
+  [class*="sessionRow"] [class*="_rowActions"] [role="button"] {
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    min-height: 40px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 !important;
+    border-radius: 10px;
+  }
+
+  /* @patch
+     id: wide-touch-session-shortcuts
+     for: dsh-client-ui-workspace 的会话行 _rowActions 与归档 / 置顶快捷按钮
+     why: 宽屏触屏常显三颗 40px 按钮挤压标题；沿用手机档 #154 的精确标签收进 ⋯ 菜单（#255）
+     until: 宿主自带触屏快捷按钮收起规则，或会话行提供独立的操作区布局契约，届时删本块
+     test: tests/dsha-session-interaction.test.ts
+  */
+  [class*="sessionRow"] [class*="_rowActions"] :is([aria-label="归档会话"], [aria-label="取消归档"], [aria-label="置顶会话"], [aria-label="取消置顶"], [aria-label="Archive session"], [aria-label="Unarchive session"], [aria-label="Pin session"], [aria-label="Unpin session"]) {
+    display: none !important;
+  }
+
+  /* ① 隐藏「更多视图」⋯（owner 2026-10-29）：手机档早就藏了（≤1023 那条在下面），
+     它的入口是宿主 header 里的 viewsMoreAnchor；平板这一档没有壳的帧内规则，
+     于是这颗对触屏平板毫无用处的按钮就漏了出来。只藏按钮与锚点，菜单不会再弹。 */
+  header [class*="viewsMore"],
+  header [class*="viewsMoreAnchor"] {
+    display: none !important;
+  }
+
+  /* ② 设置弹层改成手机档的「顶边贴齐、整宽、内容高」sheet（owner 2026-10-29：
+     「手机端和设置界面是分开的，平板还是原生，也改造成手机一样」）。
+     原生的 800×800 居中模态在平板上离拇指太远；手机档的几何在 layout.css 的
+     移动块里（同一条家族谓词），这里只按粗指针补同样的几何与横向页签导航，
+     不动内容列。谓词与手机档完全一致：首孩子末孩子里有 button、且不是导航树 /
+     目录选择器 / 快捷键弹层。 */
+  [aria-modal="true"]:has(> :first-child > :last-child > button):not(:has([role="navigation"])):not(:has([class*="ZuhsRW"])):not([data-shortcut-modal="shortcuts"]) {
+    position: absolute !important;
+    left: 8px !important;
+    top: calc(env(safe-area-inset-top, 0px) + 12px) !important;
+    width: calc(100vw - 16px) !important;
+    max-width: calc(100vw - 16px) !important;
+    height: auto;
+    max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px));
+    flex-direction: column !important;
+    border-radius: 14px !important;
+  }
+  [aria-modal="true"]:has(> :first-child > :last-child > button):not(:has([role="navigation"])):not(:has([class*="ZuhsRW"])):not([data-shortcut-modal="shortcuts"]) > :first-child {
+    width: 100%;
+    flex-direction: row !important;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 12px 8px;
+  }
+  /* 手机档隐藏的是导航标题（整宽 sheet 上冗余）；横排后页签独占一行。 */
+  [aria-modal="true"]:has(> :first-child > :last-child > button):not(:has([role="navigation"])):not(:has([class*="ZuhsRW"])):not([data-shortcut-modal="shortcuts"]) > :first-child > :first-child {
+    display: none !important;
+  }
+  [aria-modal="true"]:has(> :first-child > :last-child > button):not(:has([role="navigation"])):not(:has([class*="ZuhsRW"])):not([data-shortcut-modal="shortcuts"]) > :first-child [class*="_navList"] {
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    overflow: visible !important;
+    gap: 6px;
+    margin-right: 42px;
+  }
+  [aria-modal="true"]:has(> :first-child > :last-child > button):not(:has([role="navigation"])):not(:has([class*="ZuhsRW"])):not([data-shortcut-modal="shortcuts"]) > :first-child [class*="_navCell"] {
+    flex: 0 0 auto !important;
+    white-space: nowrap !important;
+    padding: 6px 8px !important;
+    gap: 6px !important;
+    font-size: 13px !important;
+    justify-content: flex-start !important;
+  }
+  /* ②′ 平板标题行布局（owner 2026-10-29 团队投票：其余功能居中）。
+     宿主把标题、预设、Agent Team / 子智能体 / 后台任务都塞在 titleCluster 的
+     headerActions 里，从左一个接一个排；平板宽屏上它们全挤在标题后面。
+     这里把「预设」用 order 提到最前（留在标题旁），其余状态入口用一对对称的
+     margin:auto 居中 —— 对称 margin 的好处是：后台任务 chip 出现/消失时，
+     整组的**中心点不动**，只有两翼伸缩，不会像左对齐那样把标题区推来推去。
+     只作用于 ≥1024 + 粗指针（平板原生布局档），≤1023 的壳与桌面都不命中。 */
+  [class*="titleCluster"] [class*="headerActions"] {
+    flex: 1 1 auto !important;
+  }
+  [class*="titleCluster"] [class*="headerActions"] [class*="SVAs4q_label"] {
+    order: -1 !important;
+  }
+  [class*="titleCluster"] [class*="headerActions"] [class*="VoX2oq_root"] {
+    margin-left: auto !important;
+  }
+  [class*="titleCluster"] [class*="headerActions"] > div > :last-child {
+    margin-right: auto !important;
+  }
+
+  /* ③ 一键设置齿轮放回来（owner 2026-10-29：「手机上是分开的，平板还是原生」——
+     手机档把设置从账户菜单里拆出来、给了独立齿轮，平板这一档协调器不跑，齿轮又被
+     上面的桌面隐藏块一起藏掉。这里按粗指针放回，注入逻辑见 effects/tablet-quick-settings.ts；
+     账户菜单里那份设置项的收起由 base.css 的 data-mobile-nav-quick-menu 规则负责，那条是全局的。 */
+  [data-mobile-nav="quick-settings-wrap"],
+  [data-mobile-nav="quick-settings"] {
+    display: inline-flex !important;
+  }
+
+  /* ④ 设置弹层顶部的「Open configuration file」按钮：手机档在 layout.css 的家族谓词里
+     藏了它（约 94px + 32px 关闭键会把工具栏撑到 138px，挤掉页签行）。平板照做。 */
+  [aria-modal="true"]:has(> :first-child > :last-child > button):not(:has([role="navigation"])):not(:has([class*="ZuhsRW"])):not([data-shortcut-modal="shortcuts"]) > :last-child > [class*="_header"]:not([class*="_headerActions"]) [class*="_actions"] {
+    display: none !important;
+  }
+  /* ⑤ 关掉上面那颗按钮之后，内容列顶部的工具栏（关闭 ✕）会留在文档流里、落到页签行
+     左下方（实测 x≈38 / y≈123）。手机档的做法是把它绝对定位钉到弹层右上角
+     （layout.css 的 #105 A′：top 10 / right 12 / z-index 10 / 32px 高）；平板这里
+     补同一条，让 ✕ 与页签行右端对齐。 */
+  [aria-modal="true"]:has(> :first-child > :last-child > button):not(:has([role="navigation"])):not(:has([class*="ZuhsRW"])):not([data-shortcut-modal="shortcuts"]) > :last-child > [class*="_header"]:not([class*="_headerActions"]) {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    z-index: 10;
+    flex: 0 0 auto;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+    padding: 0 0 0 4px;
+    height: 32px;
+    min-height: 32px;
+  }
+}
+
+/* 手机档：「更多视图」⋯ 与侧边栏「更多」重复，而且它把页签行挤成两行
+   （tablist 宽 100% → flex 换行），连带把谱系 chip 顶到 header 底边那条空行。
+   只藏按钮本身：菜单以它为锚点，藏了按钮就不会再弹出。 */
+@media (max-width: 1023px) and (pointer: coarse) {
+  [data-mobile-nav="frame"] [data-phase] header:has([class*="_headerLeading"]) button[class*="viewsMore"],
+  [data-mobile-nav="frame"] [data-phase] header:has([class*="_headerLeading"]) [class*="viewsMoreAnchor"] {
+    display: none !important;
+  }
+}
+
+/* 抽屉打开时，「更多」菜单（宿主 PanelMoreMenu，align=start、宽 288）从锚点
+   左缘起算会越过 min(88vw,280px) 的抽屉右缘。把菜单钉在抽屉内：左缘 8px、
+   宽度跟着抽屉算，右侧留 8px。 */
+@media (max-width: 1023px) and (pointer: coarse) {
+  body:has([data-mobile-nav="frame"]:not([data-sidebar-collapsed])) [class*="moreMenu"] {
+    left: 8px !important;
+    right: auto !important;
+    max-width: calc(min(88vw, 280px) - 16px) !important;
+  }
+}
+
+/* 头部「下载记录」按钮：它是 headerActions 里唯一留在文档流里的插件按钮
+   （toggle/files 都绝对定位到两角），所以会孤零零卡在标题和「标准模式」之间。
+   右侧图标簇已经没有 28px 的空位（团队 chip 的箭头与文件按钮只隔 ~39px），
+   先把它从头部撤下；要保留入口就放进抽屉品牌行或文件面板。 */
+@media (max-width: 1023px) and (pointer: coarse) {
+  [data-mobile-nav="frame"] [data-phase] header:has([class*="_headerLeading"]) [data-mobile-nav="downloads"] {
+    display: none !important;
+  }
+}
+
+/* 抽屉品牌行「下载」菜单：视觉与宿主 Menu 对齐（Menu.module.css / MenuSurface）：
+   4px 内边距、radius-lg 表面、elevation-prominent 阴影、34px 行高、13px 字、
+   6px 图标间距；行高与「更多」菜单完全一致。 */
+[data-mobile-nav="session-log-menu"] {
+  position: fixed;
+  z-index: 1400;
+  box-sizing: border-box;
+  min-width: 200px;
+  max-width: calc(100vw - 24px);
+  padding: 4px;
+  border: 0;
+  border-radius: var(--dsw-radius-lg, 12px);
+  background: var(--dsw-menu-surface-fill, var(--dsw-alias-bg-elevated, #fff));
+  backdrop-filter: var(--dsw-menu-backdrop-filter, blur(20px));
+  /* 与宿主 Menu.module.css 同款：prominent 阴影的第一段是 0.5px 描边环，
+     颜色取自 --dsw-elevation-stroke-color；不声明它会落成黑色，就是用户看到的黑边。 */
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
+  box-shadow: var(--dsw-elevation-prominent, 0 3px 8px rgba(0, 0, 0, .04), 0 0 20px rgba(0, 0, 0, .05));
+}
+[data-mobile-nav="session-log-menu"] [role="menuitem"] {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--dsw-radius-md, 8px);
+  background: transparent;
+  color: var(--dsw-alias-label-primary, #141414);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+[data-mobile-nav="session-log-menu"] [role="menuitem"] svg {
+  flex: none;
+  color: var(--dsw-alias-label-secondary, inherit);
+}
+[data-mobile-nav="session-log-menu"] [role="menuitem"]:hover:not(:disabled),
+[data-mobile-nav="session-log-menu"] [role="menuitem"]:active:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, .06));
+}
+[data-mobile-nav="session-log-menu"] [role="menuitem"]:disabled {
+  opacity: .45;
+}
+
+
+/* 头部顶部留白：屏幕状态栏高 38px（152px @4x），标题原始落在 54px。
+   2026-10-25 试过 -16（标题约 38），会进入 App 的顶部遮盖层，已回退到 -8
+   （标题约 46，仍在状态栏之下）；再往上需要 App 层配合，见 04-plan 交接文档。 */
+@media (max-width: 1023px) and (pointer: coarse) {
+  [data-mobile-nav="frame"] [data-phase] header:has([class*="_headerLeading"]) {
+    margin-top: -8px !important;
+  }
+}
+
 `

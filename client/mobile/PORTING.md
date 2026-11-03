@@ -25,6 +25,15 @@ node %USERPROFILE%\.dsh\dsh-pocket\sync-dsh-web-mobile.mjs          # 跟 origin
 node %USERPROFILE%\.dsh\dsh-pocket\sync-dsh-web-mobile.mjs v2.4.0   # 或指定 tag
 ```
 
+**注意（2026-11-03）：sync 脚本硬编码落点 `POCKET='C:/dsh/dsh-pocket-pure'`（pure 树）。
+维护中的工作副本是 `D:/dsh work/dsh-pocket-fix`——脚本跑完后要把 pure 的新 `upstream/`
+复制进 fix 树再重打补丁（本次同步即此流程，下述 2026-11-03 基线）。**
+
+```powershell
+node %USERPROFILE%\.dsh\dsh-pocket\sync-dsh-web-mobile.mjs          # 跟 origin/main
+node %USERPROFILE%\.dsh\dsh-pocket\sync-dsh-web-mobile.mjs v2.4.0   # 或指定 tag
+```
+
 脚本会：fetch → 镜像 src/client → **镜像期变换（见下）** → esbuild 重建 client.js →
 node --check。产物 `client/client.js` 由 esbuild 打包 upstream/ + 适配器 + fileGuard
 为一个 `window.__ModuleLoader__.load` 包装的 CJS bundle（react 与
@@ -67,7 +76,65 @@ node --check。产物 `client/client.js` 由 esbuild 打包 upstream/ + 适配�
 组件闭包/reconciler 回调/slot 组件），每次 `sync-dsh-web-mobile.mjs` 会把它们
 整目录冲掉。按序号逐个施加，施加完用 `git diff client/mobile/upstream` 复核。
 
-**2026-10-19 对账基线：v3.2.0 (473a78b)。** 相对 v3.1.0 的 14 条补丁：#12
+**2026-11-03 对账基线：上游 main @2cf9061（v3.2.2 之后、#254/#257/#258 合入）。**
+14 条补丁全部重打完成（3 条已被上游吸收，见下）。本轮上游要点：
+- 新效果 ×5：composer-clearance（#245 横屏键盘挤压输入框）、question-fullscreen
+  （提问卡手动全屏回答）、image-lightbox-zoom（灯箱双指缩放只缩图片）、
+  drawer-quick-settings（抽屉一键设置齿轮）+ tablet-quick-settings（平板档单独武装）；
+  effects 总数 42 → 47。
+- #254 死锚修复：宿主 0.2.1 哈希换代使 layout.css 86 处/misc.css 18 处失效，上游改用
+  后缀锚（`[class*="_suffix"]`）与 `header:has([class*="_headerLeading"])`。
+- document-scroll-lock（新文件）：JS 把 document 钉回 scrollY=0（宿主 caret helper 的
+  window.scrollBy 把整个壳顶飞，`overflow:hidden` 拦不住、`position:fixed` 炸绘制）。
+- 键盘视口外壳满高（a5b867e）：frame 高度改 `--dsha-mobile-visible-vh`，拒绝文档级 scroll。
+- inject 名单不变（仍是 5 服务），repro-activate 冒烟需给 window 桩补 `scrollBy`/`scrollX`。
+
+**哈希重锚（pocket 侧对宿主 0.2.1-rc.5 的额外对账）**：上游新效果里仍有 4 个精确哈希
+选择器锚在 rc.2 的 class map（`Mbwy4a_*`），rc.5 已换代为 `wnLwla_*`（后缀名不变）。
+`effects/question-fullscreen.ts` 的四个 SELECTOR 常量已改后缀锚（`[class*="_headerActions"]`
+等；CARD_FRAME 用 `[class*="_frame"]`，已核验 conversation 包无 `_frame` 类、user-questions
+包内 Nksazq_frame（PlanReviewPanel）与 wnLwla_frame 同形同 padding，误命中无行为差异）。
+`composer-clearance.ts` 的 `wSkVaW_header` 只在注释里，选择器本体已是 `header:has(...)`
+结构锚，rc.5 免改。styles 两文件的全部 wSkVaW/Mbwy4a 均在注释里，无死规则。
+
+**3 条已被上游吸收（免打）**：
+- #9 base.css 三处 hover 包 `@media (hover: hover)` —— 上游现为 4 处（多了
+  downloads/quick-settings 两个新按钮）。
+- #8③ preview-full-toggle 的 hover 包裹 —— 上游 compat.css 已自带。
+- #12 reasoning-defaults 退避 —— 该文件上游 v3.2.0 已退休（旧记录，本轮再次确认无需打）。
+
+**14 条补丁 → 重打落点（2026-11-03 实录）**：
+- #1 `effects/overlay-backdrop-fab.ts` — frame-null 分支清理 timer/backdrop/FAB（原样重打）。
+- #2 `effects/session-menu.ts` — ①capture contextmenu + captureRow 共用；②removedMenu
+  清 anchor。上游本轮把 onDocumentClick 重构为内联箭头函数，补丁改挂在同构的 captureRow 上。
+- #3 `debug.ts` — paint() rAF 合并（schedulePaint）+ dispose 清 raf。上游新增了
+  textContent 自反馈守卫，补丁保留其原语义，只把 paint() 调用点换成 schedulePaint()。
+- #4 `effects/sidebar-swipe.ts` — ①armOpenFollow 加 `willChange='transform'`（本版上游
+  arm 序列重排，落点在 transform pin 之后、content-visibility 之前）；②起手守卫
+  composerSeat/composer-card/dock 三选择器（落在 findHorizontalScroller 判定之后）。
+- #5 `effects/file-viewer-compat.ts` — wasActive/lastFrame memo + dispose 清缓存。⚠ 补丁
+  引入的 `active` 变量必须先于 memo 判断计算（本轮冒烟抓到漏行）。
+- #6 `components/MobileNavToggle.tsx` — aria-expanded 订阅（data-sidebar-collapsed +
+  attributeFilter + 纯文本批跳过 + rAF 合并）。上游该组件本轮重写（48 行），补丁整体移植。
+- #7 `styles/layout.css.ts` — ①html/body `text-size-adjust: 100%`；②scrollBody
+  `overscroll-behavior: contain`；③座位/root `padding-bottom: 2px`；④座位钉底
+  `margin-top: auto`（`[data-phase="active"] [data-conversation-scroll] > [data-composer-seat]`）。
+  ①②③④的插入点：html,body 第一块 / scrollBody 块 / z-index:30 顶栏规则之后、
+  composer-tight 块之前（新上游把钉底等旧规则整段删了，需整块移植）。
+- #8 `styles/compat.css.ts` — ①opPanel `z-index: 60`；②cardShots
+  `overscroll-behavior-x: contain`（③已被上游吸收）。
+- #10 dvh 双行回退 — compat 4 处（explorer sheet、preview sheet、preview 全屏、模式菜单）
+  + layout 3 处（team-action 面板、_panel 族 -96px、-200px）。`--dsh-web-mobile-vh`
+  变量式两处上游自带回退语义免打。
+- #13 每-flush 查询缓存批 — ①`effects/stats-line.ts` mark() 的锚缓存（cachedAnchor +
+  dispose 清空；上游 mark() 重构为 viewportHandler 注册后的快路径，补丁挂同一处）；
+  ②`effects/panel-exit.ts` panelRowActiveEl 模块级缓存；③`effects/overlay-backdrop-fab.ts`
+  heroActiveEl 缓存 + dispose 清空；④`effects/aionui-compat.ts` colCache 两列缓存 +
+  dispose 清空。
+- #14 `effects/session-menu.ts` — body 观察者 chat-flow 整批早退（与 #2 同文件，一并打）。
+
+**历史对账基线：v3.2.0 (473a78b)（已被 2026-11-03 的 main @2cf9061 取代，见上一节）。**
+当时相对 v3.1.0 的 14 条补丁：#12
 `effects/reasoning-defaults.ts` 随上游 v3.2.0 退休整份删除、补丁作废；#13 的
 stats-line 部分已按上游新 `locateRing` 代码重放；其余 12 条原样重打。v3.2.0
 还吸收了本仓此前的两个真机修复点（viewport `interactive-widget=resizes-content`、
@@ -223,6 +290,21 @@ characterData 脏键取代）、#4③ dispose 清注入（上游 injected Set）
   - pocket 侧配套：14 条补丁三方合并（#12 作废、13 条存活）；POCKET_EXTRA_CSS
     删除旧 `[data-mobile-nav="session-log"]` 触控高度规则；`client/repro-activate.mjs`
     的 DOM 桩补 `querySelector` 等形状（新任务会查 frame 品牌行）
+- **2026-11-03 同步到 main @2cf9061**（v3.2.1 #234、v3.2.2 #246/#250/#253 与
+  #254/#257/#258 全部纳入；14 条补丁重打实录见上方「重打落点」）：
+  - 上游要点：灯箱双指缩放（只缩 img，core/image-zoom-core.ts）、提问卡手动全屏回答
+    （core/question-fullscreen.ts + 键盘期回答框滚回可视）、composer-clearance
+    （#245 横屏键盘挤压：座位被顶栏盖住时 `data-mobile-nav-composer-tight` 收 dock 行）、
+    抽屉一键设置齿轮 + 平板档单任务武装（TABLET_TOUCH_QUERY）、document-scroll-lock
+    （JS 钉 document 滚动）、#254 死锚批量修复（后缀锚 + header:has 结构锚）、
+    sidebar-swipe 速度窗口物理化（60ms 斜率 0.45 px/ms + 350ms 冷却）、panel-exit
+    Android 返回键逐层退（pushState 必须提前备，同任务发的会被 WebView 丢）、
+    host 半区 compress.ts 改 libuv 线程池（pocket 不采用——代理层已流式压缩）、
+    file-transfer.js（DSHA 下载桥，pocket 不采用）
+  - pocket 侧配套：14 条补丁重打（#8③/#9/#12 已被上游吸收，实打 11 条）+ 哈希重锚
+    （question-fullscreen 四个 SELECTOR 常量换后缀锚，宿主 rc.5 = wnLwla_）+
+    `repro-activate.mjs` window 桩补 `scrollBy`/`scrollX`（document-scroll-lock 需要）；
+    冒烟 47 effects 全注册、locale NS 6 族正常、289/0/2 全绿
 
 ## pocket 附加层（适配器 mobile-apply.tsx 负责，上游没有的）
 

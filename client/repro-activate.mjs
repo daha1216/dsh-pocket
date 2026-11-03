@@ -25,6 +25,7 @@ globalThis.window = {
   requestAnimationFrame: () => 1, cancelAnimationFrame() {},
   dispatchEvent() {}, CustomEvent: class { constructor(n, o) { this.type = n; this.detail = o?.detail } },
   visualViewport: null, navigator: globalThis.navigator, scrollY: 0, scrollTo() {}, innerHeight: 800,
+  scrollX: 0, scrollBy() {},
   URLSearchParams,
 }
 globalThis.document = {

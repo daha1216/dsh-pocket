@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { useEffect, useState } from 'react'
 import { IconFolderOpen, IconPanelLeft } from '../core/icon-compat.ts'
-import { getFrame } from '../platform/frame.ts'
 import { NS } from '../i18n/locales.ts'
+import { getFrame } from '../platform/frame.ts'
 import { openFilesPanel } from './open-files-panel.ts'
 
 /** Full props for the session-header directory toggle. */
@@ -22,6 +22,9 @@ export interface MobileNavToggleProps extends PropsRuntime<'conversation.session
  * Hidden entirely on wide screens (CSS media query).
  */
 export function MobileNavToggle({ toggleSidebar, t }: MobileNavToggleProps) {
+  const toggleExplorer = (): void => {
+    openFilesPanel()
+  }
   // pocket patch: drawer-toggle a11y — subscribe to the frame's
   // data-sidebar-collapsed (documentElement-level MutationObserver with
   // attributeFilter) and render aria-expanded, switching aria-label/title
@@ -75,9 +78,6 @@ export function MobileNavToggle({ toggleSidebar, t }: MobileNavToggleProps) {
       observer.disconnect()
     }
   }, [])
-  const toggleExplorer = (): void => {
-    openFilesPanel()
-  }
   return (
     <>
       <button

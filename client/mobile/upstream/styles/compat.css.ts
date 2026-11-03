@@ -48,7 +48,7 @@ export const COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
     bottom: 36px !important;
     width: auto !important;
     /* vh 行在前、dvh 行在后（pocket 补丁）：无 dvh 引擎把 dvh 声明整条丢弃，
-       老设备上弹层高度全部塌回 auto。 */
+       回退行保证 sheet 仍有高度。 */
     height: min(55vh, 460px) !important;
     height: min(55dvh, 460px) !important;
     max-height: calc(100vh - 44px) !important;
@@ -155,6 +155,14 @@ export const COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
        INSIDE the preview column, so it rides the sheet's own open
        animation and geometry transition — no curve matching needed. */
     transition: background-color .15s, top .24s var(--ds-ease-out, ease-in-out);
+  }
+  /* 44px 热区：20×20 的按钮外扩——纵向 ±12px（标题栏行内上下都有空），横向只能
+     ±4px（右侧 8px 外就是宿主自己的 20px 收起键：两颗命中盒再宽就会互相压住，
+     变成「点收起却展开」。该约束与上面「头部按钮热区」那组同一来源）。 */
+  [data-mobile-nav="preview-full-toggle"]::after {
+    content: '';
+    position: absolute;
+    inset: -12px -4px;
   }
   @media (hover: hover) {
     [data-mobile-nav="preview-full-toggle"]:hover {
@@ -555,26 +563,33 @@ export const COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
 
   /* ---------- dsh-web-ui polish: floating pet ----------
      The whale-girl pet (dsh-pet) floats at the viewport corner with a
-     persisted, draggable position. On phones the pet is scaled down so
-     it does not dominate the screen; the plugin's own drag + persist
-     still work (the position itself is left alone — the mobile default
-     position is seeded via the pet API to just above the composer). */
-
-  body > [class*="_float"]:has([class*="_sprite"][role="button"]) {
-    transform: scale(.66);
-    transform-origin: bottom right;
-  }
-  /* While a modal dialog (settings sheet / export) owns the screen the pet
-     floats ABOVE it and covers the dialog content; modal semantics say the
-     background is inert, so hide the pet for the modal's lifetime. */
-  body:has([aria-modal="true"]) > [class*="_float"]:has([class*="_sprite"][role="button"]) {
+     persisted, draggable position. Its root is a pointer-events:auto drag
+     layer, so while a sheet owns the screen it sits on top of the sheet's own
+     content and swallows taps; hide it for that sheet's lifetime.
+     2026-10-29 (#248): 0.3.x renamed the root to .dsh-pet-root — the shipped
+     bundle carries no _float / _sprite / role=button node at all, so the old
+     descendant selector had been dead for the whole 0.3 line. Both generations
+     are listed. The mobile scale rule that used to live here is gone: it never
+     matched 0.3.x, and the pet's own size setting owns that decision. */
+  /* @patch
+     id: pet-hidden-under-sheets
+     for: dsh-pet 0.3.x 的 .dsh-pet-root（slot shell.overlay）+ 老代际 _float/_sprite 根节点
+     why: 宠物根节点是拖拽层，弹层与全屏右侧栏面板期间压住面板内容并吞点击；旧选择器打不到 0.3.x 的根节点
+     until: 宠物插件提供「背景 inert 时自行收起」的接缝，或稳定暴露一个语义标记——届时合并本块
+     test: tests/pet-overlay.test.ts
+  */
+  body:has([aria-modal="true"]) .dsh-pet-root,
+  body:has([data-sidebar-right-open][data-sidebar-right-panel="fullscreen"]) .dsh-pet-root,
+  body:has([aria-modal="true"]) > [class*="_float"]:has([class*="_sprite"][role="button"]),
+  body:has([data-sidebar-right-open][data-sidebar-right-panel="fullscreen"])
+    > [class*="_float"]:has([class*="_sprite"][role="button"]) {
     display: none !important;
   }
 
   /* ---------- dsh-web-ui polish: conversation stats line ----------
      The official session-status row (turns / steps / LLM time / TTFT /
      cache) is long. The client marks the exact row with
-     body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] (text-anchored, hashed classes can't be
+     [data-mobile-nav="stats"] (text-anchored, hashed classes can't be
      targeted). Layout: ONE fixed-height (28px) flex strip that scrolls
      horizontally — the full metrics stream stays reachable by swiping,
      the row never grows vertically, no ellipsis or fade, 12px gaps
@@ -597,7 +612,7 @@ export const COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
       → 视觉间距约 7px，仍留余量；早前的 -4px 会把间隙压到 0（就是"挨得太近"），
       已按实测改回。不改 28px 行高、不动 composer 底部占位（8px + 28px 几何契约）。 */
 
-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] {
+  [data-mobile-nav="stats"] {
     margin-top: -2px !important;
     display: flex !important;
     flex-flow: row nowrap !important;
@@ -617,12 +632,12 @@ export const COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
     line-height: 18px !important;
     font-size: 10px !important;
   }
-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"]::-webkit-scrollbar {
+  [data-mobile-nav="stats"]::-webkit-scrollbar {
     display: none !important;
     width: 0 !important;
     height: 0 !important;
   }
-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] > * {
+  [data-mobile-nav="stats"] > * {
     display: flex !important;
     flex-flow: row nowrap !important;
     align-items: center !important;
@@ -631,7 +646,7 @@ export const COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
     padding: 0 !important;
   }
   /* 第一组（轮次·步数·tok/s）保持完整。 */
-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] > *:first-child {
+  [data-mobile-nav="stats"] > *:first-child {
     flex: 0 0 auto !important;
     width: max-content !important;
     min-width: max-content !important;
@@ -643,7 +658,7 @@ export const COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
      这版保持 flex 对齐，只让药丸**内部的文字 span** 收缩 + 出省略号；
      图标 svg 固定不缩。另外把两组药丸的左右内边距压到 6px、组间距压到 4px，
      抠出来的宽度全部让给第二组（实测它原本只分到 76px 而需要 156px）。 */
-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] > *:last-child {
+  [data-mobile-nav="stats"] > *:last-child {
     display: flex !important;
     align-items: center !important;
     flex: 0 1 auto !important;
@@ -653,23 +668,23 @@ export const COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
     overflow: hidden !important;
     margin-right: 0 !important;
   }
-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] > *:last-child > * {
+  [data-mobile-nav="stats"] > *:last-child > * {
     display: flex !important;
     align-items: center !important;
     min-width: 0 !important;
     max-width: 100% !important;
     overflow: hidden !important;
   }
-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] > *:last-child svg {
+  [data-mobile-nav="stats"] > *:last-child svg {
     flex: 0 0 auto !important;
   }
-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] > *:last-child span {
+  [data-mobile-nav="stats"] > *:last-child span {
     flex: 0 1 auto !important;
     min-width: 0 !important;
     overflow: hidden !important;
     text-overflow: ellipsis !important;
   }
-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] button {
+  [data-mobile-nav="stats"] button {
     padding: 0 3px !important;
     margin: 0 !important;
     min-width: 0 !important;
@@ -677,17 +692,17 @@ export const COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
   }
   /* 药丸内部的 span/svg 有自己的字号（宿主 .pill 自带），只在外层设 10px 不会被
      继承进去 —— 真机上第二组仍差 ~20px 被省略号切掉，所以这里显式压到内部。 */
-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] button,
-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] button span,
-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] button svg,
-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] > * {
+  [data-mobile-nav="stats"] button,
+  [data-mobile-nav="stats"] button span,
+  [data-mobile-nav="stats"] button svg,
+  [data-mobile-nav="stats"] > * {
     font-size: 10px !important;
     line-height: 18px !important;
   }
-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] > *:not(:last-child) {
+  [data-mobile-nav="stats"] > *:not(:last-child) {
     margin-right: 3px !important;
   }
-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] * {
+  [data-mobile-nav="stats"] * {
     white-space: nowrap !important;
   }
   /* 「上下文环」显示在输入框行的右簇（店主 2026-09-23 确认：
@@ -1343,6 +1358,72 @@ export const COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
      底部可点」的二选一，本次选了前者。 */
   body > .ofm_toasts {
     z-index: 1310 !important;
+  }
+}
+
+/* ---------- session inspector: the disclosure triangles are too small ----------
+   2026-10-20 店主报障：手机端「会话数据诊断」面板（宿主实验插件
+   dsh-experimental-session-inspector）里那些深色小三角太小、点不准。
+
+   三处 disclosure 不是一个东西，得分开打：
+   A 表格「类型」列里的行展开箭头 —— 16px 宽、11px 的 ▸/▾ 文本按钮，
+     组件自己只给了 width:16px，没有 height/line-height，实际可点面 ≈16×13px，
+     而它紧贴「选中该行」的类型文本按钮（同一 td 内相邻），手机上很容易点错。
+   B 「原始数据」JSON 树每层 —— 原生 details/summary 的 UA marker，
+     宿主只设了 cursor:pointer，没有任何尺寸声明，随 root 的 11px 字号一起小。
+   C 面板顶部「原始数据 ▾」—— 原生 select 的 UA 箭头，同样 11px。
+   行高 30px 是宿主虚拟化的常量（client.js 里 size/estimateSize 与 sticky 偏移
+   多处写死 30，且没有 measureElement），所以只放大控件本身，绝不改行高。 */
+@media (max-width: 1023px) and (pointer: coarse) {
+  /* @patch
+     id: session-inspector-disclosure-size
+     for: @deepseek-ai/dsh-experimental-session-inspector 0.2.1-rc.2（CSS 模块哈希前缀 GTtnTq）
+     why: 树行展开箭头只有 16×≈13px、字号 11px，低于触控下限，且与相邻的「选中该行」按钮动作不同
+     until: 宿主把 GTtnTq_disclosure 提到 ≥24px，或换成可缩放图标并自带内边距
+     test: tests/css-rules.test.ts
+  */
+  /* A：行箭头。22px 正好等于行内容盒（30px 行高 − 上下 4px 内边距），
+     不会撑高行、也不会打乱虚拟化的行位置模型。 */
+  [class*="GTtnTq_root"] [class*="_disclosure"][aria-expanded] {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 22px !important;
+    height: 22px !important;
+    font-size: 15px !important;
+    line-height: 1 !important;
+  }
+  /* B：JSON 树的原生 marker。字段名的缩进槽是 16px（ul 的 padding-inline-start），
+     15px 字形正好卡进槽里，放大不会把字段名右移。 */
+  [class*="GTtnTq_objectTree"] details > summary::marker {
+    font-size: 15px !important;
+  }
+  /* C：顶部模式选择器（原生 select）。不在虚拟化区域里，可以直接长高。 */
+  [class*="GTtnTq_modeSelector"] {
+    font-size: 13px !important;
+    padding: 4px 6px !important;
+    min-height: 32px !important;
+  }
+  /* D：吸顶祖先行（顶部那一群灰色行）在快速滑动时错乱/拖影。
+     宿主给它们是 position:sticky + 灰底，而整张表是 border-collapse:collapse ——
+     Chromium 里「sticky 的 <tr> + 合并边框」会逐帧重算行盒，甩动时就撕开。
+     两刀都只动呈现、不动布局：①把合并边框换成 separate + 0 间距（每行只有一条
+     border-bottom，视觉与合并边框一致，但行盒不再是合并边框模型）；②给 sticky
+     行独立合成层，吸顶位移整块平移，不再每帧重绘整行。
+     计时器/虚拟区间仍归宿主，这里不碰 scrollTop 与 overflow-anchor。 */
+  /* @patch
+     id: session-inspector-sticky-flicker
+     for: @deepseek-ai/dsh-experimental-session-inspector 0.2.1-rc.2（GTtnTq_table / GTtnTq_sticky）
+     why: sticky 的 <tr> 叠在 border-collapse:collapse 表格上，快速滑动时吸顶祖先行被逐帧重算行盒，出现撕裂/拖影
+     until: 宿主把表格改成 border-collapse:separate，或不再用 sticky <tr> 表达祖先上下文
+     test: tests/css-rules.test.ts
+  */
+  [class*="GTtnTq_table"] {
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+  }
+  [class*="GTtnTq_table"] [class*="GTtnTq_sticky"] {
+    will-change: transform !important;
   }
 }
 
