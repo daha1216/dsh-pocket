@@ -1,3 +1,29 @@
+## [3.0.9](https://github.com/daha1216/dsh-pocket/compare/v3.0.8...v3.0.9) (2026-11-03)
+
+> 同步上游移动端适配 dsh-web-mobile（v3.2.1 → main@2cf9061）并重打全部移植补丁；附 iOS PWA 后台冻结后重连输入框消失的看门狗修复（1fe1e03）。
+
+### Features
+
+* **mobile:** composer-clearance（上游 #245）：横屏+软键盘把 composer 座位上半截压进顶栏盒子时，实测发布 `data-mobile-nav-composer-tight`，让座位压过顶栏并收起次要行——修复「横屏打字输入框错位/消失只能刷新」
+* **mobile:** question-fullscreen：提问卡手动全屏回答 + 键盘期把回答框滚回卡片 body 可视区（宿主卡片 `max-height` 随键盘缩水把回答框挤出滚动区，「打字看不见自己打的字」）
+* **mobile:** image-lightbox-zoom：原图灯箱双指缩放，只缩图片本身（保持根 `touch-action: pan-y pinch-zoom` 契约，页面不跟缩）
+* **mobile:** drawer-quick-settings + tablet-quick-settings：抽屉一键设置齿轮；平板档（≥1024 触屏）用独立轻量 observer 单独武装该任务，不放宽全树协调器
+* **mobile:** document-scroll-lock：宿主 caret helper 的 `window.scrollBy` 会把整个壳顶出可见带（`overflow:hidden` 拦不住、`position:fixed` 炸绘制），JS 同任务把 document 钉回 scrollY=0
+
+### Bug Fixes
+
+* **mobile:** iOS 主屏 PWA 被系统冻结后恢复，socket 僵死而 generation 不经过 undefined，宿主 `handleConnected` 不触碰会话 `openState`，settling 相位把输入框永久隐藏——新增 settling-watchdog 用 generation/state/pageshow/时间空洞四路证据识别冻结恢复，先 `connection.reconnect()` 换 socket 再 `resync()` 会话，都修不动时仅还原输入框可见性（同轮最多 3 次，防活锁）
+* **mobile:** #254 死锚批量修复：宿主 0.2.1 哈希换代使上游 86+18 条 CSS 失效，上游改后缀锚与 `header:has([class*="_headerLeading"])` 结构锚，本仓已并入
+* **mobile:** 哈希重锚：宿主 0.2.1-rc.5 提问卡哈希换代（`wnLwla_`），question-fullscreen 四个选择器常量从 `Mbwy4a_*` 精确锚改后缀锚，核验无跨包误命中
+* **mobile:** sidebar-swipe 速度窗口物理化（60ms 斜率 0.45px/ms 阈值 + 350ms 冷却），抽屉跟手手感升级
+* **mobile:** panel-exit Android 返回键逐层退（`pushState` 提前备——同任务里发的会被 WebView 丢弃）
+
+### 副作用与兼容
+
+* 上游 inject 名单不变（slots/layout/locale/sessionLogDownload/sessions），无需重启宿主即可热载；仓库自带构建产物，装完刷新页面即可
+* 上游 host 半区的 `compress.ts`（同步压缩改线程池）与 `file-transfer.js`（DSHA 下载桥）不采用——pocket 代理层已有流式压缩、无 DSHA 桥
+* 14 条移植补丁重打实录见 `client/mobile/PORTING.md`（2026-11-03 基线段）
+
 ## [3.0.8](https://github.com/daha1216/dsh-pocket/compare/v3.0.7...v3.0.8) (2026-10-27)
 
 > 第六轮对抗验证（CLI/更新链路、并发与内存生命周期）后的补丁，完整记录见 [docs/security-audit-2026-10-27.md](./docs/security-audit-2026-10-27.md)。
