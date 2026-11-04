@@ -2284,6 +2284,54 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
     padding-left: 6px !important;
     padding-right: 6px !important;
   }
+  /* 2026-11-03 统计行收拾（店主截图二轮，上游 #260 同批）：图标与组间距保持原样；
+     环未被折进输入行时（stats-line 没认出它，环仍是 [data-composer-dock] 里
+     ContextMeter 那个兄弟，进度圆带 stroke-dasharray）——只留环、隐掉「21%」，
+     贴行尾右缘（去掉宿主 8px 内边距），与统计之间只留 4px，腾出的宽度给统计条
+     （缓存命中不再被截成「缓…」）。锚稳定属性，不依赖 stats 标记；已折叠的环带
+     data-mobile-nav，本条不碰。 */
+  /* 三轮（店主截图：两组之间 ~26px，组内「·」只有 ~4px，环 ~12px，疏密不一）：
+     组间距原是 stats gap 6 + 锚 margin 3 + 两侧药丸内边距 6+6 叠出来的，这里把药丸
+     朝向组间的那侧内边距与锚 margin 清零，组间只由 stats 的 gap 决定（12px）；环与
+     统计之间由 dock gap 决定（8px）。首组左内边距保留，行首对齐不变。 */
+  [data-mobile-nav="frame"] [data-phase] [data-composer-dock]:has([data-composer-stat]) {
+    gap: 8px !important;
+  }
+  [data-mobile-nav="frame"] [data-phase] [data-composer-dock] > [data-mobile-nav="stats"] {
+    flex: 1 1 auto !important;
+    width: auto !important;
+    gap: 12px !important;
+  }
+  [data-mobile-nav="frame"] [data-phase] [data-composer-dock] [data-composer-stat] {
+    margin: 0 !important;
+  }
+  [data-mobile-nav="frame"] [data-phase] [data-composer-dock] [data-composer-stat] [class*="_pill"] {
+    padding-right: 0 !important;
+  }
+  /* 四轮（店主截图：行首留白 ~11px、行尾环外 ~7px，左宽右窄）：首组药丸左内边距
+     6px 也清零，两侧都只剩容器自身的边距。 */
+  [data-mobile-nav="frame"] [data-phase] [data-composer-dock] [data-composer-stat] [class*="_pill"] {
+    padding-left: 0 !important;
+  }
+  [data-mobile-nav="frame"] [data-phase] [data-composer-dock] > :not([data-mobile-nav]):not(:has([data-composer-stat])):has(circle[stroke-dasharray]) {
+    flex: 0 0 auto !important;
+    margin-left: auto !important;
+  }
+  [data-mobile-nav="frame"] [data-phase] [data-composer-dock] > :not([data-mobile-nav]):not(:has([data-composer-stat])):has(circle[stroke-dasharray]) button {
+    padding: 0 !important;
+    gap: 0 !important;
+    position: relative !important;
+  }
+  /* 命中区（店主：触控范围大一点点）：画出来的环不变，透明 ::after 外扩成 26×38；
+     横向 6px 小于 dock gap 8px，不会盖到「缓存命中」那颗药丸。 */
+  [data-mobile-nav="frame"] [data-phase] [data-composer-dock] > :not([data-mobile-nav]):not(:has([data-composer-stat])):has(circle[stroke-dasharray]) button::after {
+    content: "";
+    position: absolute;
+    inset: -8px -6px;
+  }
+  [data-mobile-nav="frame"] [data-phase] [data-composer-dock] > :not([data-mobile-nav]):not(:has([data-composer-stat])):has(circle[stroke-dasharray]) button > span {
+    display: none !important;
+  }
   [data-mobile-nav="frame"] [data-phase] header:has([class*="_headerLeading"]) [data-mobile-nav="files"] {
     /* Keep the 36px seat the reference phone UI shows (opener box 316..352 at
        360px, icon 326..342): it is the geometry the lane's 46px reservation
@@ -3599,13 +3647,13 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
      Mbwy4a_ 是该包 QuestionComposer.module.css 的稳定前缀，哈希变更时整组
      规则自动失效，不误伤别家（哈希子串锚，非后缀锚，见 pitfalls「哈希子
      串」）。 */
-  [class*="Mbwy4a_headerActions"] {
+  [data-question-key] [class*="_headerActions"] {
     gap: 12px !important;
   }
-  [class*="Mbwy4a_iconButton"] {
+  [data-question-key] [class*="_iconButton"] {
     position: relative;
   }
-  [class*="Mbwy4a_headerActions"] [class*="Mbwy4a_iconButton"]::after {
+  [data-question-key] [class*="_headerActions"] [class*="_iconButton"]::after {
     content: '';
     position: absolute;
     inset: -4px;
@@ -3660,17 +3708,17 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
      until: 宿主把 Mbwy4a_body 的 overflow-x 钉成 hidden/clip 并给五族文本补换行、或卡片自带「展开」形态与键盘感知定高 —— 届时整节删除
      test: tests/question-fullscreen.test.ts
   */
-  [data-mobile-nav="frame"] [class*="Mbwy4a_body"] {
+  [data-mobile-nav="frame"] [data-question-key] [class*="_body"] {
     min-width: 0;
     overflow-x: hidden !important;
   }
-  [data-mobile-nav="frame"] [class*="Mbwy4a_title"],
-  [data-mobile-nav="frame"] [class*="Mbwy4a_detail"],
-  [data-mobile-nav="frame"] [class*="Mbwy4a_reviewNote"] {
+  [data-mobile-nav="frame"] [data-question-key] [class*="_title"],
+  [data-mobile-nav="frame"] [data-question-key] [class*="_detail"],
+  [data-mobile-nav="frame"] [data-question-key] [class*="_reviewNote"] {
     overflow-wrap: anywhere;
   }
-  [data-mobile-nav="frame"] [class*="Mbwy4a_optionLabel"],
-  [data-mobile-nav="frame"] [class*="Mbwy4a_description"] {
+  [data-mobile-nav="frame"] [data-question-key] [class*="_optionLabel"],
+  [data-mobile-nav="frame"] [data-question-key] [class*="_description"] {
     min-width: 0;
     overflow-wrap: anywhere;
   }
@@ -3678,11 +3726,11 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
      "Mbwy4a_headerActions" 的前缀子串（pitfalls §哈希子串：前缀重叠片段用 :not
      防误伤），少了这个 :not 就会把动作行的 padding 一起改成 10px 8px 0 12px。 */
   @media (max-width: 767px) and (pointer: coarse) {
-    [data-mobile-nav="frame"] [class*="Mbwy4a_frame"] {
+    [data-mobile-nav="frame"] [data-question-key] [class*="_frame"] {
       padding-left: var(--dsh-composer-side-clearance, 16px) !important;
       padding-right: var(--dsh-composer-side-clearance, 16px) !important;
     }
-    [data-mobile-nav="frame"] [class*="Mbwy4a_header"]:not([class*="Mbwy4a_headerActions"]) {
+    [data-mobile-nav="frame"] [data-question-key] [class*="_header"]:not([class*="_headerActions"]) {
       position: relative;
       padding: 10px 8px 0 12px !important;
     }
@@ -3700,7 +3748,7 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
        间距 2026-10-25 二批由 6 改 20：44px 热区要求三颗图标两两中心距 ≥44px，
        否则外扩的命中盒会彼此叠住、抢同一笔（见下一条）。可见图标仍是 24px，
        整排从 84px 变 112px；动作行 top 6 → 10 让 44px 热区整块落在卡片内。 */
-    [data-mobile-nav="frame"] [class*="Mbwy4a_headerActions"] {
+    [data-mobile-nav="frame"] [data-question-key] [class*="_headerActions"] {
       position: absolute;
       /* 10 而不是 6：宿主 _card 是 overflow:hidden，热区顶边要落在卡片内
          （6 − 10 = −4 会被裁掉 4px，44 只剩 40）。10 − 10 = 0，整 44 都在卡内；
@@ -3717,19 +3765,19 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
        可见尺寸 / 圆底 / 行高一律不动（与 035dd21 的 44px 热区同一手法）。
        纵向会伸进正文首行右侧约 13px（热区 y 6~50、正文顶边 33）：正文不可点，
        可接受；换来的是 44px 的最小命中。 */
-    [data-mobile-nav="frame"] [class*="Mbwy4a_headerActions"] [class*="Mbwy4a_iconButton"] {
+    [data-mobile-nav="frame"] [data-question-key] [class*="_headerActions"] [class*="_iconButton"] {
       position: relative;
     }
-    [data-mobile-nav="frame"] [class*="Mbwy4a_headerActions"] [class*="Mbwy4a_iconButton"]::after {
+    [data-mobile-nav="frame"] [data-question-key] [class*="_headerActions"] [class*="_iconButton"]::after {
       content: '';
       position: absolute;
       inset: -10px;
     }
-    [data-mobile-nav="frame"] [class*="Mbwy4a_headingBlock"] {
+    [data-mobile-nav="frame"] [data-question-key] [class*="_headingBlock"] {
       flex: 1 1 100%;
       min-width: 0;
     }
-    [data-mobile-nav="frame"] [class*="Mbwy4a_eyebrow"] {
+    [data-mobile-nav="frame"] [data-question-key] [class*="_eyebrow"] {
       /* 112（三颗 24 + 两个 20 间距）+ 6 右距 − 8 卡头右内边距 + 4 呼吸 ≈ 116：
          图标列整体右移后，eyebrow（短标题）不能钻到里面。 */
       margin-right: 116px;
@@ -3739,7 +3787,7 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
        23 —— 字号不动、行距放宽，是同一密度带里最保守的一档，不再自创刻度。
        首行 padding-top 2：图标底边 30，标题顶边 = 10 + 16 + 5 + 2 = 33，仍不重叠。
        Markdown 段落（_detail 走 MarkdownText）补 8px 段距，末段不留尾隙。 */
-    [data-mobile-nav="frame"] [class*="Mbwy4a_title"] {
+    [data-mobile-nav="frame"] [data-question-key] [class*="_title"] {
       padding-top: 2px;
       font-size: 15px;
       line-height: 23px;
@@ -3752,57 +3800,76 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
          「问题区还是太长，再缩 1/3」→ 34vh/232px 的三分之二 ≈ 23vh/155px
          （约 6~7 行正文），问题区与选项区高度观感终于同级。
          overscroll-behavior:contain 防止滑到底后
-         把会话一起带走；touch-action 按全库约定写 pan-y pinch-zoom。 */
-      max-height: min(23vh, 155px);
-      overflow-y: auto;
+         把会话一起带走；touch-action 按全库约定写 pan-y pinch-zoom。
+         2026-11-03 owner 第四轮（上游 #260 同步）：封顶撤掉——全屏了问题区仍被压在
+         155px 里滚，两个滚动区观感割裂。改为「整张卡一个滚动区」（见下方
+         question-card-single-scroll）：问题正文按自然高度排，问题与选项一起滚，
+         卡高仍由宿主 min(60vh,520px) 或全屏带决定。 */
+    }
+    /* @patch
+       id: question-card-single-scroll
+       for: dsh-client-ui-user-questions 的 QuestionComposer（Mbwy4a_card > header + body + footer；
+            宿主 card overflow:hidden、header flex-shrink:0、body 是唯一滚动区）
+       why: 宿主让问题正文（header 里的 h2）不参与滚动，长问题会把 body 压成一条缝；
+            插件不能改它的 DOM，只能把滚动区从 body 换成整张卡
+       until: 宿主让 header 参与滚动或自己给长问题限高
+       test: tests/question-fullscreen.test.ts
+    */
+    [data-mobile-nav="frame"] [data-question-key] [class*="_card"]:not([class*="_cardMinimized"]) {
+      overflow-x: hidden !important;
+      overflow-y: auto !important;
       overscroll-behavior: contain;
       touch-action: pan-y pinch-zoom;
       scrollbar-width: none;
     }
-    [data-mobile-nav="frame"] [class*="Mbwy4a_title"]::-webkit-scrollbar {
+    [data-mobile-nav="frame"] [data-question-key] [class*="_card"]::-webkit-scrollbar {
       display: none;
     }
-    /* 排版微调（owner 2026-10-25）：问题区与选项区之间加一条分隔线——两段内容
-       同色同字重，靠留白分不开，读起来像一段连续文字。用 0.5px 光学细线
-       （本库弹层/卡片的既有刻度，见 b-end 的那套 0.5px 微边框约定）。颜色取宿主
-       描边色阶的第二档 --dsw-alias-border-l2：l1 在真机上「几乎看不见」，l2 是宿主
-       自己给浮层描边用的那一档（elevation-stroke-color 也是它），「看得见但不显眼」；
-       深浅仍随主题走，不自造色值。
-       线画在 header 的 border box 上 = 卡片整宽，与卡片的圆角裁剪路径一致；
-       padding-bottom 2 → 8 给线上下各留呼吸。 */
-    /* 线画在伪元素上而不是 border：owner 三轮口径（l1「几乎看不见」→ l2「太深了」）
-       说明要的是两档之间。同一个 token 加 opacity 比再找一档色值可控，也仍然跟随
-       主题（深浅两侧都比 l2 淡同样的比例）；0.5px 高度 = 本库的微边框刻度。 */
-    [data-mobile-nav="frame"] [class*="Mbwy4a_header"]:not([class*="Mbwy4a_headerActions"]) {
+    /* body 不再自己滚：按内容自然高度排，滚动交给卡片。两轴都必须是 visible ——
+       上面 A 节给 body 钉的 overflow-x:hidden 会让它仍是一个滚动容器（另一轴被算成
+       auto），加上宿主的 overscroll-behavior:contain，手指落在选项区时滑动停在 body
+       里、传不到卡片（owner 实测「问题区能滑、回答区动不了」）。横向裁切挪到卡片上。 */
+    [data-mobile-nav="frame"] [data-question-key] [class*="_card"]:not([class*="_cardMinimized"]) > [class*="_body"] {
+      flex: 0 0 auto !important;
+      overflow: visible !important;
+      overscroll-behavior: auto !important;
+    }
+    /* 提交 / 跳过按钮钉在卡片底：卡片 padding-bottom 10px，sticky 用 -10px 贴到底边，
+       底色取卡片同色并向下补 10px，滚动内容不会从按钮下面透出来。 */
+    [data-mobile-nav="frame"] [data-question-key] [class*="_card"]:not([class*="_cardMinimized"]) > [class*="_footer"] {
+      position: sticky;
+      bottom: -10px;
+      z-index: 1;
+      background: var(--dsw-specific-input-major);
+      padding-top: 8px !important;
+      padding-bottom: 10px !important;
+      margin-top: 4px !important;
+      margin-bottom: -10px !important;
+    }
+    /* 排版微调（owner 2026-10-25）：问题区与选项区之间的分隔线本用 0.5px 光学细线
+       （--dsw-alias-border-l2 + opacity 0.55 的伪元素，线画在 header border box 上）。
+       2026-11-03 owner 第四轮（上游 #260 同步）：问题与选项改成同一个滚动区后，
+       分隔线去掉（「问题区和回答区中间的细线去掉」）。header 的 padding-bottom 8
+       保留作留白，伪元素线撤除。 */
+    [data-mobile-nav="frame"] [data-question-key] [class*="_header"]:not([class*="_headerActions"]) {
       position: relative;
       padding-bottom: 8px;
     }
-    [data-mobile-nav="frame"] [class*="Mbwy4a_header"]:not([class*="Mbwy4a_headerActions"])::after {
-      content: '';
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      height: 0.5px;
-      background: var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.14));
-      opacity: 0.55;
-      pointer-events: none;
-    }
-    [data-mobile-nav="frame"] [class*="Mbwy4a_options"] {
+    [data-mobile-nav="frame"] [data-question-key] [class*="_options"] {
       padding-left: 8px;
       padding-right: 8px;
     }
-    [data-mobile-nav="frame"] [class*="Mbwy4a_detail"] p {
+    [data-mobile-nav="frame"] [data-question-key] [class*="_detail"] p {
       margin: 0 0 8px;
     }
-    [data-mobile-nav="frame"] [class*="Mbwy4a_detail"] p:last-child {
+    [data-mobile-nav="frame"] [data-question-key] [class*="_detail"] p:last-child {
       margin-bottom: 0;
     }
   }
   /* C：展开/收起按钮，与宿主那两颗 24px 图标键同盒。三颗统一 44×44 命中盒
      （::after ±10；间距 20 见上面手机档「三颗图标的 44px 热区」一条），
      可见图标仍是 24px。 */
-  [data-mobile-nav="frame"] [class*="Mbwy4a_headerActions"] [data-mobile-nav="question-expand"] {
+  [data-mobile-nav="frame"] [data-question-key] [class*="_headerActions"] [data-mobile-nav="question-expand"] {
     position: relative;
     display: grid;
     place-items: center;
@@ -3816,12 +3883,12 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
     color: var(--dsw-alias-label-tertiary);
     cursor: pointer;
   }
-  [data-mobile-nav="frame"] [class*="Mbwy4a_headerActions"] [data-mobile-nav="question-expand"]::after {
+  [data-mobile-nav="frame"] [data-question-key] [class*="_headerActions"] [data-mobile-nav="question-expand"]::after {
     content: '';
     position: absolute;
     inset: -10px;
   }
-  [data-mobile-nav="frame"] [class*="Mbwy4a_headerActions"] [data-mobile-nav="question-expand"] svg {
+  [data-mobile-nav="frame"] [data-question-key] [class*="_headerActions"] [data-mobile-nav="question-expand"] svg {
     width: 14px;
     height: 14px;
   }
@@ -3834,12 +3901,12 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
   [data-mobile-nav="frame"][data-mobile-nav-question-full] [data-mobile-nav="question-expand"] .dsh-web-mobile-question-collapse {
     display: block;
   }
-  [data-mobile-nav="frame"][data-mobile-nav-question-full] [class*="Mbwy4a_frame"] {
+  [data-mobile-nav="frame"][data-mobile-nav-question-full] [data-question-key] [class*="_frame"] {
     --dsha-mobile-question-band: calc(
       var(--dsha-mobile-visible-vh) - var(--mobile-nav-header-h) - var(--dsha-mobile-question-reserve, 0px)
     );
   }
-  [data-mobile-nav="frame"][data-mobile-nav-question-full] [class*="Mbwy4a_card"]:not([class*="Mbwy4a_cardMinimized"]) {
+  [data-mobile-nav="frame"][data-mobile-nav-question-full] [data-question-key] [class*="_card"]:not([class*="_cardMinimized"]) {
     height: var(--dsha-mobile-question-band, auto);
     max-height: var(--dsha-mobile-question-band, min(60vh, 520px));
   }

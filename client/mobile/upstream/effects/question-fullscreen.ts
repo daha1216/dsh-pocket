@@ -51,6 +51,7 @@ import type { ReconcilerTask } from '../core/reconciler-core.ts'
 import { NS } from '../i18n/locales.ts'
 import { installMobileEffect } from '../platform/breakpoints.ts'
 import { getFrame } from '../platform/frame.ts'
+import { VISIBLE_BAND_EVENT } from '../platform/visible-band.ts'
 import { addReconcilerTask } from './reconciler-adapter.ts'
 
 /** Frame marker: the card owns the whole answer band. */
@@ -72,6 +73,11 @@ const CARD_FRAME_SELECTOR = '[class*="_frame"][style*="--dsh-composer-side-clear
 const HEADER_ACTIONS_SELECTOR = '[class*="_headerActions"]'
 const CARD_BODY_SELECTOR = '[class*="_body"]'
 const ANSWER_FIELD_SELECTOR = '[class*="_fieldInput"]'
+/** The question card itself (single-scroll owner, 2026-11-03) and its pinned
+ *  footer row — both scoped to the composer card subtree, never the reply
+ *  bubbles (they carry data-question-reply, outside [data-question-key]). */
+const CARD_SELECTOR = '[data-question-key] [class*="_card"]'
+const CARD_FOOTER_SELECTOR = '[class*="_footer"]'
 
 /** The host composer seat (same anchor as composer-clearance.ts): the card's
  *  bottom edge has to be measured against the seat it sits in. */
@@ -130,9 +136,25 @@ export function installQuestionFullscreen(ctx: ClientContext): void {
     let reserveText = ''
     let frame = 0
 
+    // 2026-11-03 性能：本任务 scopes:['*']，流式时每批变动都跑；原先每次都在整个 frame
+    // 上做一次 [class*=] 子串查询，卡片不在时（绝大多数时间）就是一次全树扫。卡片只会
+    // 出现在 composer 座位里，所以先缓存座位、只在座位子树里找；找到的卡片也缓存，
+    // 仍连在座位里就直接复用。座位不在（老宿主 / 空态）时退回原来的整 frame 查询。
+    let seatCache: HTMLElement | null = null
+    let cardCache: HTMLElement | null = null
+    const composerSeat = (host: HTMLElement): HTMLElement | null => {
+      if (seatCache !== null && seatCache.isConnected && host.contains(seatCache)) return seatCache
+      seatCache = host.querySelector<HTMLElement>(SEAT_SELECTOR)
+      return seatCache
+    }
     const cardFrame = (): HTMLElement | null => {
       const host = getFrame()
-      return host === null ? null : host.querySelector<HTMLElement>(CARD_FRAME_SELECTOR)
+      if (host === null) return null
+      const seat = composerSeat(host)
+      const scope = seat ?? host
+      if (cardCache !== null && cardCache.isConnected && scope.contains(cardCache)) return cardCache
+      cardCache = scope.querySelector<HTMLElement>(CARD_FRAME_SELECTOR)
+      return cardCache
     }
 
     const label = (): string => t(armed ? 'questionCollapse' : 'questionExpand')
@@ -186,11 +208,19 @@ export function installQuestionFullscreen(ctx: ClientContext): void {
       // focused (i.e. every keyboard episode that is not about this card).
       const active = document.activeElement
       if (!(active instanceof HTMLElement) || !active.matches(ANSWER_FIELD_SELECTOR)) return
-      const body = active.closest<HTMLElement>(CARD_BODY_SELECTOR)
+      // 2026-11-03：手机档滚动区从 body 换成了整张卡（layout.css.ts question-card-single-scroll），
+      // 所以滚卡片；卡片不滚（老样式 / 最小化）时仍退回 body。底部钉住的按钮行要从
+      // 可视底边里扣掉，否则回答框会停在按钮后面。
+      const cardEl = active.closest<HTMLElement>(CARD_SELECTOR)
+      const bodyEl = active.closest<HTMLElement>(CARD_BODY_SELECTOR)
+      const body = cardEl !== null && cardEl.scrollHeight > cardEl.clientHeight + 1 ? cardEl : bodyEl
       if (body === null) return
+      const pinned = body === cardEl ? cardEl.querySelector<HTMLElement>(':scope > ' + CARD_FOOTER_SELECTOR) : null
       const field = active
       const fieldRect = field.getBoundingClientRect()
-      const bodyRect = body.getBoundingClientRect()
+      const box = body.getBoundingClientRect()
+      const pinnedTop = pinned?.getBoundingClientRect().top ?? Number.NaN
+      const bodyRect = { top: box.top, bottom: Number.isFinite(pinnedTop) ? Math.min(box.bottom, pinnedTop) : box.bottom }
       const visual = window.visualViewport
       const visibleTop = visual?.offsetTop ?? Number.NaN
       const visibleBottom = visual === null || visual === undefined ? Number.NaN : visual.offsetTop + visual.height
@@ -347,6 +377,11 @@ export function installQuestionFullscreen(ctx: ClientContext): void {
     window.visualViewport?.addEventListener('resize', schedule)
     document.addEventListener('focusin', schedule, true)
     document.addEventListener('focusout', schedule, true)
+    // The band variable itself publishes on the keyboard SETTLING (two equal
+    // frames), i.e. after the last resize event — measure on this too, or the
+    // fullscreen card keeps the keyboard-era height after the IME closes
+    // (2026-11-03 upstream field report).
+    document.addEventListener(VISIBLE_BAND_EVENT, schedule)
     schedule()
 
     return () => {
@@ -355,6 +390,7 @@ export function installQuestionFullscreen(ctx: ClientContext): void {
       window.visualViewport?.removeEventListener('resize', schedule)
       document.removeEventListener('focusin', schedule, true)
       document.removeEventListener('focusout', schedule, true)
+      document.removeEventListener(VISIBLE_BAND_EVENT, schedule)
       removeTask()
     }
   })

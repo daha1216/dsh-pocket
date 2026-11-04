@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
+import { stripCssComments } from '../scripts/strip-css-comments.mjs';
 
 const sourceDir = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(sourceDir, '..');
@@ -32,6 +33,22 @@ const result = await build({
 const bundled = result.outputFiles?.[0]?.text;
 if (!bundled) throw new Error('esbuild did not produce a client bundle');
 
+// 模板字面量里的 CSS 注释（设计记录）只留在源码里，产物剥掉——它们约占注入
+// 样式表的一半，且每个页面加载都要被浏览器重新解析。esbuild minify 会改名
+// 常量（var _n=`...`），按 *_CSS 名字匹配行不通；改按内容识别：无插值、
+// 含 @media/@font-face/@keyframes/@container、且以选择器或 CSS 注释开头的
+// 模板串才剥。本仓产物里满足这三条的全部是纯 CSS 文本（base/layout/compat/
+// misc + 设置页样式，见 tests/strip-css-comments.test.js），其余模板串
+// （JS/文案/HTML 片段）一律原样返回。${ 出现在内容里时整串跳过。
+const stripInBundle = (text) =>
+  text.replace(/`((?:[^`\\]|\\.)*)`/gs, (whole, css) => {
+    if (css.includes('${')) return whole
+    if (!/@media|@font-face|@keyframes|@container/.test(css)) return whole
+    if (!/^[ \t\n]*(?:[.[#[:@*]|\/\*)/.test(css)) return whole
+    return `\`${stripCssComments(css)}\``
+  });
+const cleaned = stripInBundle(bundled);
+
 const wrapped = `window.__ModuleLoader__.load({
   id: ${JSON.stringify(loaderId)},
   factory: (require) => {
@@ -44,7 +61,7 @@ const wrapped = `window.__ModuleLoader__.load({
     // the bundle must bind React itself - otherwise every mobile component
     // crashes at render time with "ReferenceError: React is not defined".
     var React = require("react");
-${bundled}
+${cleaned}
     return module.exports;
   }
 });

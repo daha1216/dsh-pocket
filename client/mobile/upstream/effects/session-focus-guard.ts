@@ -100,6 +100,7 @@ export function installSessionFocusGuard(ctx: ClientContext): void {
       window.clearTimeout(windowTimer)
       windowTimer = 0
       windowOpen = false
+      inputObserver.disconnect()
       const el = document.querySelector<HTMLElement>(`[${SHADOW_MARKER}]`)
       if (el === null) return
       el.removeAttribute(SHADOW_MARKER)
@@ -122,26 +123,36 @@ export function installSessionFocusGuard(ctx: ClientContext): void {
     const hasPanelExitMarker = (): boolean =>
       document.querySelector(`[data-mobile-nav="frame"][${PANEL_EXIT_ATTR}]`) !== null
 
+    // Session switches remount the InputBar: catch the freshly mounted editor
+    // inside the window. Microtask timing beats the host's passive effect.
+    // This observer is WINDOW-SCOPED (2026-11-03): it only runs childList+
+    // subtree while the window is open and disconnects on restore — a resident
+    // full-tree childList observer costs a querySelector on every streamed
+    // mutation for the whole app lifetime.
+    const inputObserver = new MutationObserver(() => {
+      if (!windowOpen) return
+      const el = document.querySelector<HTMLElement>(COMPOSER_INPUT_SELECTOR)
+      if (el !== null) shadow(el)
+    })
+
     const arm = (): void => {
       restore()
       windowOpen = true
       const el = document.querySelector<HTMLElement>(COMPOSER_INPUT_SELECTOR)
       if (el !== null) shadow(el)
+      inputObserver.observe(document.documentElement, { childList: true, subtree: true })
       windowTimer = window.setTimeout(restore, FOCUS_GUARD_WINDOW_MS)
     }
 
-    // Session switches remount the InputBar: catch the freshly mounted editor
-    // inside the window. Microtask timing beats the host's passive effect.
-    // The same observer watches the panel-exit marker: a panel occupies the
-    // main slot while open, so leaving it remounts the InputBar and re-runs its
-    // mount-time focus. Arm on the marker's arrival — it lands before the panel
-    // actually leaves (panel-exit animates first, then selectPanel), so the
-    // window is already open when the conversation remounts.
-    const observer = new MutationObserver(() => {
+    // The resident observer watches ONLY the panel-exit marker (2026-11-03):
+    // a panel occupies the main slot while open, so leaving it remounts the
+    // InputBar and re-runs its mount-time focus. Arm on the marker's arrival —
+    // it lands before the panel actually leaves (panel-exit animates first,
+    // then selectPanel), so the window is already open when the conversation
+    // remounts. No childList here: marker arrival is an attribute flip on a
+    // node that already exists.
+    const markerObserver = new MutationObserver(() => {
       if (!windowOpen && hasPanelExitMarker()) arm()
-      if (!windowOpen) return
-      const el = document.querySelector<HTMLElement>(COMPOSER_INPUT_SELECTOR)
-      if (el !== null) shadow(el)
     })
 
     // A tap on the editing surface is the user saying "I want to type": close
@@ -178,9 +189,7 @@ export function installSessionFocusGuard(ctx: ClientContext): void {
       if (!windowOpen) arm()
     }
 
-    observer.observe(document.documentElement, {
-      childList: true,
-      subtree: true,
+    markerObserver.observe(document.documentElement, {
       attributes: true,
       attributeFilter: [PANEL_EXIT_ATTR],
     })
@@ -189,7 +198,7 @@ export function installSessionFocusGuard(ctx: ClientContext): void {
     document.addEventListener('focusin', onFocusIn, true)
     return () => {
       unsubscribe()
-      observer.disconnect()
+      markerObserver.disconnect()
       document.removeEventListener(PANEL_EXIT_EVENT, onPanelExit)
       document.removeEventListener('pointerdown', onPointerDown, true)
       document.removeEventListener('focusin', onFocusIn, true)

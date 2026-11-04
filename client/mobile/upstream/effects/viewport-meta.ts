@@ -8,6 +8,7 @@
 // 本模块**不**调 installMobileEffect / ctx.effect：各段自持的 matchMedia 会变成
 // 「每次外层重新武装就往 ctx 上再注册三个收不到的 effect」的累积注册，也会把
 // 一段确定的回调顺序拆成三个监听器各自的（规范未定义的）触发顺序。
+import { VISIBLE_BAND_EVENT } from '../platform/visible-band.ts'
 
 /** Marker the iOS-only zoom-guard CSS is scoped to (html element). */
 const IOS_MARKER = 'data-mobile-nav-ios'
@@ -135,6 +136,13 @@ export function syncStableViewportHeight(): () => void {
   let pendingVisible = ''
   let pendingVisibleFrames = 0
   let pendingVisibleFrame = 0
+  // 2026-11-03：发布时机晚于最后一次 resize 事件（要等两帧确认），而读这个变量排版的
+  // 效果（提问卡全屏带）只在 resize 时量。没有这个通知，它们最后一次测量量到的是
+  // 发布前的旧几何——录屏实测：键盘收起后全屏卡片停在键盘高度不回来。
+  const publishVisible = (value: string): void => {
+    root.style.setProperty('--dsha-mobile-visible-vh', value)
+    document.dispatchEvent(new CustomEvent(VISIBLE_BAND_EVENT))
+  }
   const syncStableViewport = (): void => {
     const height = window.innerHeight
     const width = window.innerWidth
@@ -153,7 +161,7 @@ export function syncStableViewportHeight(): () => void {
     pendingVisible = visibleValue
     if (pendingVisibleFrames >= 2 &&
       root.style.getPropertyValue('--dsha-mobile-visible-vh') !== visibleValue)
-      root.style.setProperty('--dsha-mobile-visible-vh', visibleValue)
+      publishVisible(visibleValue)
     // The keyboard stops without announcing it: the last resize event still sees
     // a fresh value, so confirmation has to come from a frame of its own. One
     // rAF at a time; during the animation each tick re-arms exactly once.

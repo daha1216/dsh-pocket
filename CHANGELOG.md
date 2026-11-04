@@ -1,3 +1,24 @@
+## [3.0.10](https://github.com/daha1216/dsh-pocket/compare/v3.0.9...v3.0.10) (2026-11-05)
+
+> 吸收上游 v3.2.3（#260 批次，d3b0a2e…91b328c）并修复上次同步漏网的 28 条提问卡死锚；客户端产物加构建期注释剥离，bundle 从 635KB 降到 339KB。
+
+### Bug Fixes
+
+* **mobile:** 提问卡死锚（上次同步漏网）：`layout.css.ts` 里 28 条 `[class*="Mbwy4a_*"]` 精确哈希选择器在宿主 0.2.1-rc.5（`wnLwla_` 代）上全部 0 命中，提问卡的整套适配自 3.0.9 起静默失效——全部改后缀锚 `[class*="_X"]` 并逐条加 `[data-question-key]` 作用域前缀（QuestionComposer 根节点自带属性，排掉同包 Nksazq/BfLV8a 的同名后缀冲突）
+* **mobile:** viewport-meta：可见带 `--dsha-mobile-visible-vh` 改为停稳两帧后才写入 `:root` 并派发 `dsh-mobile-visible-band` 事件——键盘 300ms 上升期逐帧写根变量引发整树重排/白屏（上游 #260）
+* **mobile:** session-focus-guard 观察窗口化：常驻 observer 只监听 `data-mobile-panel-exit` 属性，全树 childList 观察只在 800ms 防键盘窗口内挂、restore 即断——流式输出期间不再每次 DOM 变动都跑一遍 querySelector（上游 #260）
+* **mobile:** question-fullscreen：seat/card 双层查找缓存（isConnected 存活校验）；监听 `dsh-mobile-visible-band` 在键盘收起停稳后重新测量，修全屏卡高度不回弹；滚动主体升级为「卡自身溢出则滚卡」，提交按钮 sticky 钉卡底（上游 #260）
+
+### Features
+
+* **mobile:** `question-card-single-scroll` @patch（上游 #260 第四轮口径）：提问卡整卡单滚动区（卡 overflow-y:auto + body 两轴 visible + footer sticky 贴底），撤掉标题 155px 封顶与 0.5px 分隔线——长问题不再把回答区压成一条缝
+* **mobile:** 统计行环带兜底（上游 #260）：子代理 composer 无模型胶囊时环锚点 `margin-left:auto` 当吸收器 + 发送键 auto 清零，修 188px 空档；组间距/药丸内边距按店主三轮口径收拾
+* **build:** 新增 `scripts/strip-css-comments.mjs` 并挂进构建：源码注释（设计记录）全保留，产物里剥掉——esbuild minify 改名常量后按内容识别（无插值 + @media 族 + 选择器/注释开头），bundle 635KB → 339KB（-47%），每页加载的 CSS 解析量同比例下降
+
+### 测试
+
+* 新增 `test/upstream-v323-port.test.js` 12 项（移植不变量：死锚清零、作用域计数、@patch 块、事件订阅对称性）与 `test/strip-css-comments.test.js` 6 项（规则列表剥注释前后一致的安全性钉子）；全量 345 项通过
+
 ## [3.0.9](https://github.com/daha1216/dsh-pocket/compare/v3.0.8...v3.0.9) (2026-11-03)
 
 > 同步上游移动端适配 dsh-web-mobile（v3.2.1 → main@2cf9061）并重打全部移植补丁；附 iOS PWA 后台冻结后重连输入框消失的看门狗修复（1fe1e03）。
