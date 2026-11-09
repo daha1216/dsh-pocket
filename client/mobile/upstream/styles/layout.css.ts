@@ -136,7 +136,29 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
     padding-bottom: env(safe-area-inset-bottom, 0px) !important;
   }
 
-  /* The sidebar column (first grid child) becomes a left drawer. The drawer
+  /* The centre column is pinned back into the one track that has width.
+     The host stopped relying on auto-placement: its frame children now carry
+     explicit grid placement (centre grid-area 1/2, right rail 1/3, and a new
+     full-width bottom row). With the rule above leaving width only in track 1
+     — track 1 is empty because the sidebar became an out-of-flow drawer — the
+     centre column inherits 0px and the entire conversation renders at zero
+     width: the phone shows a blank page with the app alive behind it
+     (measured 2026-11-09 on 0.2.2-rc.1, 390x844: frame tracks 390px 0 0,
+     centre [390,0 0x844], composer seat 0x433, hero headline 0px).
+
+     Selected by meaning, not by child index or host class hash: whichever
+     direct child carries the conversation region is the one that must take the
+     full track. Older hosts that still auto-place resolve to the same box, so
+     the declaration is inert there. */
+  html [data-mobile-nav="frame"] > :has([data-conversation-region]) {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+  }
+
+  /* The sidebar column becomes a left drawer. It is addressed by its class
+     suffix, not by :first-child: the host prepends its own drawer mask to the
+     frame, so child 0 stopped being the sidebar (2026-11-09 host 0.2.2-rc.1).
+     The drawer
      hugs the sidebar content exactly (the wide sidebar carries an inline
      width, ~280px): a fixed 92vw box would leave a white strip where the
      container background shows beside the content.
@@ -156,7 +178,7 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
      position/inset/width on the element, the column kept a correct-looking box
      while neither painting nor hit-testing, which is the "all black, click
      anywhere closes" root cause. The backdrop we append carries the dimming. */
-  [data-mobile-nav="frame"] > :first-child {
+  [data-mobile-nav="frame"] > [class*="_sidebarCol"] {
     position: absolute !important;
     inset: 0 auto 0 0 !important;
     /* !important is load-bearing: the host ships
@@ -257,10 +279,10 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
      until: 上游提供不透明的面板填充接缝，或不再把 --dsw-specific-sidebar-fill 置空——届时本块删除
      test: tests/wallpaper-surface-fill.test.ts
   */
-  body[data-dsh-bg] [data-mobile-nav="frame"] > :first-child {
+  body[data-dsh-bg] [data-mobile-nav="frame"] > [class*="_sidebarCol"] {
     background: var(--dsw-static-neutral-bluish-50, #f9fafb);
   }
-  body[data-ds-dark-theme][data-dsh-bg] [data-mobile-nav="frame"] > :first-child {
+  body[data-ds-dark-theme][data-dsh-bg] [data-mobile-nav="frame"] > [class*="_sidebarCol"] {
     background: var(--dsw-static-neutral-bluish-900, #1b1b1c);
   }
 
@@ -412,7 +434,7 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
      (audit S2 2026-08-27 — the old reduce block only covered the settings
      sheet and its mask). Same idiom as the animation:none blocks below. */
   @media (prefers-reduced-motion: reduce) {
-    [data-mobile-nav="frame"] > :first-child {
+    [data-mobile-nav="frame"] > [class*="_sidebarCol"] {
       transition: none !important;
     }
   }

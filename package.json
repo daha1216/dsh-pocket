@@ -1,6 +1,7 @@
 {
   "name": "dsh-pocket",
   "description": "把 DeepSeek Harness 装进你的口袋：一个包、一个设置页，手机扫码即同步访问电脑上的 DSH（局域网 + 公网，实时同屏）。",
+  "icon": "assets/icon.png",
   "type": "module",
   "main": "lib/index.js",
   "bin": {
@@ -11,12 +12,15 @@
       "default": "./lib/index.js"
     },
     "./client": "./client/client.js",
+    "./locale/*.json": "./locale/*.json",
     "./package.json": "./package.json"
   },
   "files": [
     "bin",
     "lib",
     "client",
+    "assets",
+    "locale",
     "cordis.patch.yml",
     "README.md",
     "LICENSE",
@@ -83,7 +87,7 @@
     "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
-  "version": "3.0.10",
+  "version": "3.0.11",
   "allowScripts": {
     "esbuild@0.25.12": true
   }

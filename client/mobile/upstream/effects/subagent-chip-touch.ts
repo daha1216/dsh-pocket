@@ -68,7 +68,24 @@ const SWALLOW_WINDOW_MS = 800
  */
 const CLICK_GRACE_MS = 1000
 
-const SWALLOWED_TYPES = ['mouseover', 'mouseout', 'mouseenter', 'mouseleave'] as const
+/**
+ * Both channels must be swallowed on the host this plugin runs against
+ * (0.2.2-rc.1): the lineage root and its menu carry `onPointerLeave →
+ * scheduleHoverClose(120 ms)`, and a touch tap emits pointerout/pointerleave
+ * for the point it just left *plus* the mouse family the browser synthesizes.
+ * Because the keyboard path above never sets the component's `pinnedRef`, a
+ * surviving pointerleave closes the card we just opened (CDP: expanded true
+ * right after pointerup, still true at 60 ms, false by 150 ms). Swallowing
+ * only the mouse family was enough for the earlier hover-only build.
+ */
+const SWALLOWED_TYPES = [
+  'mouseover',
+  'mouseout',
+  'mouseenter',
+  'mouseleave',
+  'pointerout',
+  'pointerleave',
+] as const
 
 export function installSubagentChipTouch(ctx: ClientContext): void {
   installMobileEffect(ctx, 'dsh-web-mobile: lineage chip touch toggle', () => {

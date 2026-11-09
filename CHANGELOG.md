@@ -1,3 +1,21 @@
+## [3.0.11](https://github.com/daha1216/dsh-pocket/compare/v3.0.10...v3.0.11) (2026-11-09)
+
+> 修宿主 0.2.2-rc.1 上手机端整页空白（frame 三轨网格把会话列压成 0 宽），并吸收上游 v3.3.5 的谱系 chip 触摸修复与插件页图标/双语元数据。
+
+### Bug Fixes
+
+* **mobile:** 手机端整页空白：宿主 0.2.2-rc.1 给 frame 子元素加了显式 grid 放置（会话列 grid-area 1/2、右栏 1/3、新增整宽 bottomRow），而移动壳把宽度只留在第 1 轨、第 1 轨又因侧栏改绝对定位而空——会话列因此拿到 0px，整页什么都不画（实测 390x844：轨道 `390px 0 0`、会话列 `[390,0 0x844]`、输入区 `0x433`、hero 标题 0px；页面文本仍在 DOM 里，属布局塌陷而非脚本崩溃）。新增 `html [data-mobile-nav="frame"] > :has([data-conversation-region]) { grid-column: 1; grid-row: 1 }`，按语义（谁承载会话区）而不是子元素序号选人，旧宿主自动放置时该声明无副作用
+* **mobile:** 侧栏列改按类名后缀 `[class*="_sidebarCol"]` 定位，不再用 `> :first-child`：宿主把自带的抽屉遮罩插成 frame 第 0 个子元素，序号锚点整体错位（`layout.css.ts` 4 处、`misc.css.ts` 5 处，覆盖抽屉定位、壁纸填充、reduced-motion、tree 的 content-visibility、文本选择白名单）
+* **mobile:** 谱系 chip 触摸 shim 补吞 `pointerout`/`pointerleave`：宿主 0.2.2-rc.1 把关闭定时器从 mouse 族搬到 `onPointerLeave`（120ms），而 shim 走键盘路径不置组件 `pinnedRef`，触摸自带的 pointerleave 会把刚打开的卡在 150ms 内关掉（上游 #283；CDP 读数：expanded 在 pointerup 后 true、60ms 仍 true、150ms 变 false）
+
+### Features
+
+* **meta:** 插件页图标与双语元数据（上游 #279）：`assets/icon.png`（256×256 RGBA，蓝色渐变 + 手机轮廓 + 屏内 `>_` 提示符，生成器 `scripts/make-icon.py` 可重跑）、`locale/{zh,en}.json` 的 `meta.title`/`meta.description`；package.json 补 `icon` 字段、`exports` 暴露 `./locale/*.json`、`files` 收录 `assets` 与 `locale`
+
+### 测试
+
+* 新增 `test/mobile-frame-grid.test.js` 4 项（会话列占满轨道、侧栏按类名后缀定位、遮罩不再被当作侧栏）与 `test/upstream-v335-port.test.js` 6 项（吞名单六项齐全、注释点名 `onPointerLeave`/`pinnedRef`、icon 指向、locale 可经 exports 解析、双语 meta 非空、PNG 头 256×256 带 alpha）；全量 355 项通过
+
 ## [3.0.10](https://github.com/daha1216/dsh-pocket/compare/v3.0.9...v3.0.10) (2026-11-05)
 
 > 吸收上游 v3.2.3（#260 批次，d3b0a2e…91b328c）并修复上次同步漏网的 28 条提问卡死锚；客户端产物加构建期注释剥离，bundle 从 635KB 降到 339KB。
