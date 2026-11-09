@@ -155,6 +155,22 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
     grid-row: 1 !important;
   }
 
+  /* Same trap on every other view. The rule above is scoped to whichever frame
+     child carries the conversation region, so it rescues the session page and
+     nothing else: the plugin manager, settings and the other panels render
+     inside the same centre column but without that marker, and the host still
+     pins that column to grid-column 2 — the 0px track. Measured 2026-11-09 on
+     0.2.2-rc.1, 390x844, plugin page: frame tracks 390px 0 0, centre column
+     [390,0 0x844], panel 40px wide at x=390 → a blank page with only the
+     back button visible. Anchored by the class suffix rather than the child
+     position because the host nests it under two display:contents wrappers
+     (data-slot=main > [data-global-panel] > centre column), so a child
+     combinator cannot reach it. */
+  html [data-mobile-nav="frame"] [class*="_centerCol"] {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+  }
+
   /* The sidebar column becomes a left drawer. It is addressed by its class
      suffix, not by :first-child: the host prepends its own drawer mask to the
      frame, so child 0 stopped being the sidebar (2026-11-09 host 0.2.2-rc.1).
@@ -1641,6 +1657,19 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
       padding-top: 0 !important;
       align-self: flex-end !important;
     }
+    /* 2026-11-09：页签文字互相压住（真机截图里「对话」「轨迹」「上下文」读成一串
+       「话轨迹上下文」，激活下划线只盖住半个字）。宿主给每个页签 margin-left/right:
+       -10px 做视觉贴边，于是相邻页签盒互相重叠 4px、整组还越出容器左缘 10px；页签
+       一多（装了带 conversation.view 的插件后是三个）重叠就更明显。归零负 margin
+       再用 gap 拉开。实测（430x932 DPR3，宿主 0.2.2-rc.1）：页签 x 6/28/50 →
+       16/48/80，盒间 -4 → +6，页签行仍 19px、header 仍 64px 高。 */
+    html [data-mobile-nav="frame"] [data-phase] header:has([class*="_headerLeading"]) [data-conversation-tabs][role="tablist"] > button[role="tab"] {
+      margin-left: 0 !important;
+      margin-right: 0 !important;
+    }
+    html [data-mobile-nav="frame"] [data-phase] header:has([class*="_headerLeading"]) [data-conversation-tabs][role="tablist"] {
+      gap: 6px !important;
+    }
   }
   /* NOTHING extra here on purpose. The header's own padding is already forced
      to 0 above, and the title row carries padding-left:40px of its own, so the
@@ -2406,7 +2435,12 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
     display: none !important;
   }
   [data-mobile-nav="frame"] [data-phase] header:has([class*="_headerLeading"]) [role="tablist"] {
-    width: 100% !important;
+    /* 2026-11-09：width: 100% 换成可收缩的 flex 项 —— 恢复「更多视图」⋯ 之后
+       （上游 v3.3.5 #276），满宽会把 ⋯ 挤出 header 右缘。flex: 1 1 auto 让它吃掉
+       除 ⋯ 以外的全部宽度，min-width: 0 才是能压到内容宽的前提。 */
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    width: auto !important;
     margin-top: 4px !important;
   }
   /* 状态 chip 的座位：
@@ -2604,6 +2638,20 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
   [data-mobile-nav="frame"] [data-phase] header:has([class*="_headerLeading"]):has([role="tablist"] > button:nth-child(3)) [class*="ZKlsPq_root"]:not([class*="_switcherRoot"]) {
     left: auto !important;
     right: 8px !important;
+    margin: 0 !important;
+  }
+  /* @patch
+     id: lineage-chip-views-more-yield
+     for: 会话头部「更多视图」⋯（viewsMoreAnchor）与谱系 chip（ZKlsPq_root）的座位冲突
+     why: 两者都钉在行右缘、⋯ 是 22×19 的按钮，chip 的 z-index 3 会把它整个盖住，
+          点不到也就打不开第三个视图；上游 v3.3.5 用同一判据修过（#283）
+     until: 宿主给页签行提供独立的溢出菜单槽位，届时删本块
+     test: test/upstream-v335-port.test.js
+  */
+  [data-mobile-nav="frame"] [data-phase] header:has([class*="_headerLeading"]):has([class*="viewsMoreAnchor"]) [class*="ZKlsPq_root"]:not([class*="_switcherRoot"]) {
+    /* ⋯ 占行右缘 8..30px（22 宽），chip 让到 34px，两者之间留 4px。 */
+    left: auto !important;
+    right: 34px !important;
     margin: 0 !important;
   }
   /* 2026-10-12：≥3 标签版的让位规则（原 right:126px）已一并删除 —— 同 Y1，
@@ -3329,12 +3377,15 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
        heading(≈154) + gap16 + toolbar(≈172) 放不下一行，就折成三行堆叠。
        这里禁止换行、把 heading 让成可收缩的 flex 项（min-width:0 才能压到内容宽），
        toolbar 保持自身宽度贴右；说明过长时在左列内换行，不再把工具栏挤下去。 */
-    [data-mobile-nav="frame"] section[data-plugin-panel] > [class*="_pageHead"] {
-      --dsh-web-mobile-panel-clearance: calc(60px - clamp(24px, 4vw, 48px));
-      flex-wrap: nowrap !important;
-      align-items: flex-start !important;
-      gap: 8px !important;
-    }
+    /* 原有一条「页首一行内排」规则挂在这里，选择器是
+       section[data-plugin-panel] > [class*="_pageHead"]，已于 2026-11-09 删除：
+       宿主 0.2.2-rc.1 把页首包进 div.pageBar[data-plugin-bar][data-natural]，
+       页首不再是面板的直接子元素，子代组合器命中 0（实测
+       section[data-plugin-panel] > [class*="_pageHead"] → false，而
+       section[data-plugin-panel] [class*="_pageHead"] → true），那条规则从落盘起
+       就没生效过，页首留白一直由上面 56px 口径那条提供（实测 margin-left 32px）。
+       上游 v3.3.5 #274 对同一失效结构也是整块删除，这里跟随。下面三条是后代
+       选择器、命中正常，保留。 */
     [data-mobile-nav="frame"] section[data-plugin-panel] [class*="_pageHeading"] {
       flex: 1 1 auto !important;
       min-width: 0 !important;

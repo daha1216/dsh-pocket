@@ -553,13 +553,16 @@ export const MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
   }
 }
 
-/* 手机档：「更多视图」⋯ 与侧边栏「更多」重复，而且它把页签行挤成两行
-   （tablist 宽 100% → flex 换行），连带把谱系 chip 顶到 header 底边那条空行。
-   只藏按钮本身：菜单以它为锚点，藏了按钮就不会再弹出。 */
+/* 手机档：「更多视图」⋯ 恢复显示（2026-11-09，吸收上游 v3.3.5 #276）。
+   旧规则把按钮和锚点一起藏掉，理由是「与侧边栏『更多』重复」以及「把页签行挤成
+   两行」；但宿主是按页签行剩余的宽度折页签的 —— 390px 上只放得下两颗，第三个
+   及以后的第三方 conversation.view 只从 ⋯ 菜单进入，藏了按钮等于封死入口。
+   挤行已不成立：下面 layout.css 的 #41 契约把 tablist 改成 nowrap + 横向滚动，
+   ⋯ 只占行右缘（flex: 0 0 auto），页签行仍是单行。谱系 chip 的让位见
+   layout.css 的 lineage-chip-views-more-yield。 */
 @media (max-width: 1023px) and (pointer: coarse) {
-  [data-mobile-nav="frame"] [data-phase] header:has([class*="_headerLeading"]) button[class*="viewsMore"],
   [data-mobile-nav="frame"] [data-phase] header:has([class*="_headerLeading"]) [class*="viewsMoreAnchor"] {
-    display: none !important;
+    flex: 0 0 auto !important;
   }
 }
 

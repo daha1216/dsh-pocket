@@ -214,7 +214,7 @@ let openFollowRefused = false
  * right-edge files-panel gesture (no follow painting, host-panel commit).
  * Written by beginStroke only; a fresh beginStroke always routes it.
  */
-let strokeMode: 'drawer' | 'files' = 'drawer'
+let strokeMode: 'drawer' | 'files' | 'pending' = 'drawer'
 /** Files-panel visibility at lock time (the mirror of lockDrawerOpen). */
 let lockFilesOpen = false
 /**
@@ -1180,12 +1180,21 @@ function beginStroke(
       insideDrawer,
       filesZoneHit(event.clientX, viewportWidthPx, rtl, filesZonePx),
     )
-  } else if (hitTestStart(event.clientX, viewportWidthPx, rtl, { startZonePx: startZonePxFor(viewportWidthPx) })) {
-    strokeMode = 'drawer'
-  } else if (filesZoneHit(event.clientX, viewportWidthPx, rtl, filesZonePx)) {
+  } else if (filesPanelOpen()) {
+    // v3.3.5 #275: with the files panel open the topmost surface decides, so
+    // any start point belongs to files (its rightward close). The old 45%-of-
+    // viewport gate left the left half inert while the panel was open.
     strokeMode = 'files'
   } else {
-    return false
+    // v3.3.5 #275: both rails are closed, so the gesture's family is decided by
+    // its DIRECTION at axis lock (see tryLock), not by where the finger landed.
+    // The 45%/45% start zones retired here: they left the middle 10% of the
+    // screen inert and, worse, made the strip just outside an open drawer's
+    // right edge unusable for a close stroke (#268). Starts outside every
+    // earlier guard (modal, takeover, scroller, composer seat, floating widget,
+    // selection, drag mark) are all fair game now; a vertical-dominant stroke
+    // still abandons to native scrolling before it can arm anything.
+    strokeMode = 'pending'
   }
   trackingPointer = event.pointerId
   tracking = false
@@ -1221,6 +1230,14 @@ function tryLock(event: PointerEvent): boolean {
   }
   tracking = true
   lockDrawerOpen = drawerOpen()
+  // Resolve a direction-decided stroke before any follow is bound: the files
+  // branch below binds the drawer's close follow only for an open drawer, and
+  // the fall-through branch calls startFollow() unconditionally, so the mode has
+  // to be concrete by now. frameRtl() rather than a parameter because tryLock
+  // has no rtl in scope and the frame's direction cannot change mid-stroke.
+  if (strokeMode === 'pending') {
+    strokeMode = (dx > 0) !== frameRtl() ? 'drawer' : 'files'
+  }
   if (strokeMode === 'files') {
     lockFilesOpen = filesPanelOpen()
     // An OPEN drawer shares this stroke (the right-edge rightward close):
@@ -1358,7 +1375,18 @@ function endStroke(
   if (armedOpen) {
     // The host is already open (early commit). Keep it on 'open', otherwise
     // animate back into the slot and flip closed.
-    if (verdict === 'open') {
+    //
+    // 2026-11-09: arming is itself the user's decision — the stroke travelled
+    // past OPEN_FOLLOW_ARM_PX in the opening direction, and the drawer is
+    // already on screen. A short release (travel below OPEN_DISTANCE_RATIO but
+    // still opening) must therefore stay open, not snap back. Only a genuine
+    // retreat — the finger back inside the arm window or reversed — closes.
+    // Before #275 made any x-position a legal start, arming required the
+    // 45% left-edge start zone, so the short-release case was rare; with the
+    // zone gone it became the common "swiped the drawer open and it closed
+    // itself" report.
+    const stillOpening = (dx > 0) !== rtl && Math.abs(dx) >= OPEN_FOLLOW_ARM_PX
+    if (verdict === 'open' || stillOpening) {
       releaseFollowStyles()
       cooldownUntil = performance.now() + COOLDOWN_MS
     } else {

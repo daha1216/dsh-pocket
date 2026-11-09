@@ -1052,6 +1052,82 @@ export function mobileApply(ctx: ClientContext): void {
     };
   }, 'dsh-pocket: settling watchdog (host reconnect leaves composer hidden)')
 
+  // ---- 链路看门狗（2026-11-09 反馈：宿主断开后页面不会自己回来）----
+  // 上面那条只看 [data-phase=settling]，覆盖不到「页面停在断线态」这一类：宿主只在
+  // socket 的 close 事件上重连，而 iOS 主屏 PWA 被冻结、宿主进程重启、隧道抖动都可能
+  // 让 close 回调根本不执行，socket 于是「已死但 readyState 仍是 1」——画面停在断线
+  // 前那一刻，用户只能手动刷新。
+  // 这条兜底只看链路状态本身：前台且连续 DISCONNECT_STALE_MS 判定为 down，就主动
+  // connection.reconnect()。退避按 6/12/24/60s 递进且不封顶尝试次数，只要还在前台就
+  // 一直试；恢复后立刻归零。后台完全不动作（省电，也不跟宿主自己的退避抢节奏），
+  // 切回前台那一刻立即评估一次——冻结回来后往往正是这里救回来的。
+  armOnNarrow('dsh-pocket: link watchdog (silent disconnect never recovers)', () => {
+    const CHECK_MS = 4000;
+    const STALE_MS = 12000;
+    const BACKOFF_MS = [6000, 12000, 24000, 60000];
+    let downSince = 0;
+    let attempts = 0;
+    let lastAttemptAt = Number.NEGATIVE_INFINITY;
+    let disposed = false;
+
+    const now = (): number => performance.now();
+
+    /** 与 settling 看门狗同一个判据来源：generation 存在时以它的有无为准（断连瞬间
+     *  变 undefined、重连后换新 id），缺失的代际退化看 state。 */
+    const linkDown = (): boolean => {
+      try {
+        const conn = ctx.connection as unknown as {
+          generation?: { getSnapshot?: () => unknown };
+          state?: { getSnapshot?: () => unknown };
+        };
+        const hasGeneration = typeof conn?.generation?.getSnapshot === 'function';
+        return resolveLinkVerdict({
+          hasGeneration,
+          generation: hasGeneration ? conn.generation?.getSnapshot?.() : undefined,
+          state: hasGeneration ? undefined : conn?.state?.getSnapshot?.(),
+        }).down;
+      } catch { return false; }
+    };
+
+    const tryReconnect = (): void => {
+      try {
+        const conn = ctx.connection as unknown as { reconnect?: () => unknown };
+        if (typeof conn?.reconnect === 'function') void conn.reconnect();
+      } catch { /* 连接层不可用：交回宿主自身的退避 */ }
+    };
+
+    const evaluate = (): void => {
+      if (disposed) return;
+      const at = now();
+      if (!linkDown()) {
+        downSince = 0;
+        attempts = 0;
+        lastAttemptAt = Number.NEGATIVE_INFINITY;
+        return;
+      }
+      if (downSince === 0) { downSince = at; return; }
+      if (at - downSince < STALE_MS) return;
+      if (document.visibilityState !== 'visible') return;
+      const gap = BACKOFF_MS[Math.min(attempts, BACKOFF_MS.length - 1)];
+      if (at - lastAttemptAt < gap) return;
+      attempts += 1;
+      lastAttemptAt = at;
+      tryReconnect();
+    };
+
+    const timer = window.setInterval(evaluate, CHECK_MS);
+    const onVisibility = (): void => {
+      if (document.visibilityState === 'visible') evaluate();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    evaluate();
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, 'dsh-pocket: link watchdog (silent disconnect never recovers)')
+
   // M3：键盘高度 CSS 变量。iOS 软键盘弹起只收缩 visual viewport（layout viewport
   // 不动），底部锚定的 fixed 弹层（fileGuard 的 toast/长按 fallback 面板、上游
   // session-menu 的删除确认弹窗）仍按 layout viewport 定位，全部沉到键盘底下。
