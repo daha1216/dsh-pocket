@@ -74,9 +74,6 @@ export function installFrameController(): () => void {
     dispose: () => {
       if (frame !== null) {
         frame.removeAttribute('data-mobile-nav')
-        frame.removeAttribute('data-mobile-preview-full')
-        frame.removeAttribute('data-aionui-explorer-open')
-        frame.removeAttribute('data-aionui-preview-open')
       }
       if (typeof document !== 'undefined') {
         document.querySelector(DISMISS_SHADOW_SELECTOR)?.remove()

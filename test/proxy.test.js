@@ -1217,11 +1217,14 @@ test('issue #90：Host 头不可再伪造成本机——用 TCP 源地址给声�
 
 test('issue #90：HTTP 与 WS 两条入口都必须走 policyHost，不能只改一边', async () => {
   const { readFileSync } = await import('node:fs');
-  const src = readFileSync(new URL('../lib/proxy.mjs', import.meta.url), 'utf8');
-  const wired = src.match(/policyHost\(req, String\(req\.headers\.host \?\? ''\)\)/g) ?? [];
-  assert.equal(wired.length, 2, 'createServer 与 server.on("upgrade") 各一处');
+  // 2026-11-12 评审 §3.1 拆包：WS upgrade 已搬到 proxy/upgrade.mjs，两条入口各一处。
+  const httpSrc = readFileSync(new URL('../lib/proxy.mjs', import.meta.url), 'utf8');
+  const wsSrc = readFileSync(new URL('../lib/proxy/upgrade.mjs', import.meta.url), 'utf8');
+  const pattern = /policyHost\(req, String\(req\.headers\.host \?\? ''\)\)/g;
+  assert.equal((httpSrc.match(pattern) ?? []).length, 1, 'HTTP 入口一处');
+  assert.equal((wsSrc.match(pattern) ?? []).length, 1, 'WS 入口一处');
   assert.ok(
-    !/const host = String\(req\.headers\.host \?\? ''\);/.test(src),
+    !/const host = String\(req\.headers\.host \?\? ''\);/.test(httpSrc + wsSrc),
     '不得再有直接把原始 Host 头当策略依据的入口',
   );
 });

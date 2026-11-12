@@ -8,6 +8,10 @@
 // 座位，该 phase 依赖 openState === "loading"；这个 'loading' 没人接手，座位永久不可见。
 // 用户实际跑 iOS 主屏 PWA：页面冻结后 socket 已死但 readyState 仍为 1，连断线事件都没有，
 // 所以首版「靠断线证据」的判据在本机上失效，现已改为「页面恢复 / 结构性矛盾 / 超长 loading」。
+//
+// 2026-11-12（评审 §3.3：断线感知 < 3s）追加后半段：同一个「socket 死得无声无息」的事实
+// 也否掉了旧的链路看门狗（状态判据连续 12s 为 down 才重连，对静默断线完全无感）。现在
+// 状态快照与前台探活并行，判定/退避在 createLinkLiveness 里。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -20,6 +24,11 @@ const {
   HARD_STUCK_MS,
   MAX_REPAIR_ATTEMPTS,
   FREEZE_GAP_MS,
+  createLinkLiveness,
+  LINK_PING_MS,
+  LINK_TICK_MS,
+  LINK_PROBE_TIMEOUT_MS,
+  LINK_BACKOFF_MS,
 } = await import('../client/mobile/settling-watchdog.mjs');
 
 const apply = readFileSync(new URL('../client/mobile/mobile-apply.tsx', import.meta.url), 'utf8');
@@ -259,4 +268,100 @@ test('bundle：构建产物包含看门狗与 CSS 兜底（防止改了源码忘
   assert.ok(bundle.includes('settling watchdog'), 'bundle 必须包含看门狗');
   assert.ok(/\[data-phase="settling"\]\[data-dshp-settling-stale\]/.test(bundle),
     'bundle 里的 CSS 规则必须与源码一致');
+});
+
+// ---- 链路探活（2026-11-12）----
+//
+// 全部用假时钟（外部时刻），不碰 DOM：要断言的是「多快发现、多快重连、退避多远」，
+// 这三件事直接决定用户盯着死页面等多久。
+
+test('createLinkLiveness：前台按节拍探活，in-flight 期间不重发，后台不探', () => {
+  const l = createLinkLiveness();
+  assert.equal(l.shouldProbe(0, true), true, '前台首轮立即探活');
+  assert.equal(l.shouldProbe(0, true), false, '上一发还没回就不许再发');
+  l.noteProbe(true, 10);
+  assert.equal(l.shouldProbe(LINK_PING_MS - 1, true), false, '没到节拍不探');
+  assert.equal(l.shouldProbe(LINK_PING_MS, true), true, '到节拍就探');
+  l.noteProbe(true, LINK_PING_MS + 10);
+  assert.equal(l.shouldProbe(LINK_PING_MS * 2, false), false, '后台不探活（定时器会被系统节流，也没意义）');
+  assert.deepEqual([LINK_PING_MS, LINK_TICK_MS, LINK_PROBE_TIMEOUT_MS], [1500, 500, 900],
+    '最坏感知 = 1500 + 500 + 900 < 3s（评审验收线）');
+  assert.equal(LINK_PING_MS + LINK_TICK_MS + LINK_PROBE_TIMEOUT_MS < 3000, true);
+});
+
+test('createLinkLiveness：一次探活失败即判死（静默断线的主路径）', () => {
+  const l = createLinkLiveness();
+  l.noteState(false, 0);
+  assert.equal(l.isDown(), false);
+  l.noteProbe(false, 100);
+  assert.equal(l.isDown(), true, '探活失败就是断线，不必等任何确认窗口');
+  assert.equal(l.shouldReconnect(100, true), true, '用户已经等了一个探活周期，立即重连');
+});
+
+test('createLinkLiveness：快照说正常冲不掉探活证据（否则会来回翻转）', () => {
+  const l = createLinkLiveness();
+  l.noteProbe(false, 100);
+  for (let at = 200; at <= 2000; at += 500) l.noteState(false, at);
+  assert.equal(l.isDown(), true, '静默断线期间快照一直报 usable，不能因此放行');
+  l.noteProbe(true, 2100);
+  assert.equal(l.isDown(), false, '探活成功才清判定');
+});
+
+test('createLinkLiveness：快照报断线时，一次探活成功不能撤销判定', () => {
+  const l = createLinkLiveness();
+  l.noteState(true, 0);
+  assert.equal(l.isDown(), true);
+  l.noteProbe(true, 100);
+  assert.equal(l.isDown(), true, '宿主自己也认为断线时必须继续重连');
+  l.noteState(false, 200);
+  assert.equal(l.isDown(), false, '快照恢复即清除');
+});
+
+test('createLinkLiveness：重连退避递进且封顶，恢复后归零', () => {
+  const l = createLinkLiveness();
+  l.noteState(true, 0);
+  const hits = [];
+  for (let at = 0; at <= 120000; at += 250) {
+    if (l.shouldReconnect(at, true)) hits.push(at);
+  }
+  assert.deepEqual(hits.slice(0, 6), [0, 4000, 12000, 27000, 57000, 87000],
+    '首轮立即重连，之后按 2/4/8/15/30s 递进并封顶 30s');
+  // 恢复后归零：下一次断线仍是立即重连，而不是接着 30s 的退避。
+  l.noteProbe(true, 900000);
+  l.noteState(true, 900500);
+  assert.equal(l.shouldReconnect(900500, true), true, '恢复后归零');
+});
+
+test('createLinkLiveness：不可见时不重连，reset 清干净', () => {
+  const l = createLinkLiveness();
+  l.noteState(true, 0);
+  assert.equal(l.shouldReconnect(0, false), false, '后台不重连');
+  assert.equal(l.shouldReconnect(0, true), true);
+  l.reset();
+  assert.equal(l.isDown(), false);
+  assert.equal(l.shouldReconnect(1000, true), false, 'reset 后无断线判定');
+});
+
+test('mobile-apply：链路看门狗前台探活（2026-11-12 提速：12s → 最坏 2.9s）', () => {
+  const start = apply.indexOf("armOnNarrow('dsh-pocket: link watchdog");
+  assert.ok(start > 0, '链路看门狗必须包在 armOnNarrow 里');
+  const body = apply.slice(start, apply.indexOf('\n  }, ', start));
+  assert.ok(body.includes('createLinkLiveness()'), '判定必须委托纯模块（本文件就是它的单测）');
+  assert.ok(body.includes('POCKET_ENDPOINTS.status'), '探活必须打真实 RPC，不能只看快照');
+  assert.ok(body.includes('LINK_TICK_MS'), '轮询节拍来自模块常量');
+  assert.ok(body.includes('LINK_PROBE_TIMEOUT_MS'), '探活必须带超时（不能永久挂住）');
+  assert.ok(body.includes('liveness.noteProbe('), '探活结果必须回填判定');
+  assert.ok(body.includes("addEventListener('visibilitychange'"), '切回前台必须立即评估');
+  assert.ok(body.includes('clearInterval(timer)'), '清理必须清掉轮询计时器');
+  assert.ok(body.includes('clearTimeout(probeTimer)'), '清理必须清掉探活超时');
+  assert.ok(body.includes('liveness.reset()'), '清理必须重置判定');
+  assert.ok(!/STALE_MS/.test(body) && !/BACKOFF_MS/.test(body),
+    '旧的 12s 门限与本地退避必须删掉（现在只有纯模块里那一份）');
+});
+
+test('bundle：链路看门狗随构建产物上线（防止改了源码忘了重建）', () => {
+  assert.ok(bundle.includes('dsh-pocket: link watchdog'), 'bundle 必须包含链路看门狗');
+  // 函数名会被压缩改名，但对象字面量的属性名保留：用 noteProbe 认这条判定链。
+  assert.ok(bundle.includes('noteProbe'), 'bundle 必须包含探活判定（属性名不压缩）');
+  assert.ok(bundle.includes('pocket.status'), 'bundle 必须打真实 RPC 探活');
 });

@@ -1,5 +1,5 @@
 // dsh-pocket 网页客户端：
-//   1. 设置页签「手机访问」（局域网/公网通道卡 + 二维码 + 更新/重启提示）
+//   1. 设置页签「手机访问」（局域网/公网通道卡 + 二维码 + 重启提示）
 //   2. 移动端适配（移植自 MIT 项目 dsh-web-mobile，见 client/mobile/LICENSE.dsh-web-mobile）
 //
 // 手机扫码打开的就是电脑上的 dsh web，实时同步；窄屏自动变成抽屉布局。
@@ -16,7 +16,7 @@
 import { createElement as h, useEffect, useRef, useState } from 'react';
 import * as uiPrimitives from '@deepseek-ai/dsh-client-ui-primitives';
 
-import { POCKET_RPC_CHANNEL, POCKET_ENDPOINTS, MOBILE_RIGHTBAR_ATTRIBUTE, MOBILE_RIGHTBAR_EVENT, MOBILE_PINCH_ZOOM_ATTRIBUTE, MOBILE_PINCH_ZOOM_EVENT, MOBILE_FONT_ATTRIBUTE, MOBILE_FONT_EVENT, MOBILE_FONT_SIZE_VAR, MOBILE_FONT_MIN, MOBILE_FONT_MAX, redactStatus, compareVersions, isSameRepo } from './api.js';
+import { POCKET_RPC_CHANNEL, POCKET_ENDPOINTS, MOBILE_RIGHTBAR_ATTRIBUTE, MOBILE_RIGHTBAR_EVENT, MOBILE_PINCH_ZOOM_ATTRIBUTE, MOBILE_PINCH_ZOOM_EVENT, MOBILE_FONT_ATTRIBUTE, MOBILE_FONT_EVENT, MOBILE_FONT_SIZE_VAR, MOBILE_FONT_MIN, MOBILE_FONT_MAX, redactStatus, compareVersions } from './api.js';
 import { mobileApply } from './mobile/mobile-apply.tsx';
 import { NS as POCKET_NS, zh as POCKET_ZH, en as POCKET_EN } from './pocket-locales.js';
 
@@ -288,8 +288,9 @@ function PocketSettingsTab({ rpcCall, t }) {
   const [error, setError] = useState(null);
   const [tunnelState, setTunnelState] = useState(null); // 隧道进度 {phase, detail, startedAt}
   const [restartNotice, setRestartNotice] = useState(false); // 重启后提示
-  const [updateInfo, setUpdateInfo] = useState(null); // { current, latest, updating, result, startedAt } | null
-  const [isDesktop, setIsDesktop] = useState(false); // DSH Desktop（Electron）环境：更新/重启由桌面版管理
+  const [versionInfo, setVersionInfo] = useState(null); // { current, loaded, restarting, startedAt, error } | null
+  const [restartDismissed, setRestartDismissed] = useState(false); // 「已装新版未重启」横幅被「稍后」关掉
+  const [isDesktop, setIsDesktop] = useState(false); // DSH Desktop（Electron）环境：重启由桌面版管理
   const [now, setNow] = useState(Date.now()); // 每秒 tick，驱动倒计时
   const [pinShown, setPinShown] = useState({}); // 密码明文开关 { lan?: true, public?: true }——默认遮罩
   const [autoReloadFailed, setAutoReloadFailed] = useState(false); // 重启后自动刷新失败
@@ -345,17 +346,22 @@ function PocketSettingsTab({ rpcCall, t }) {
     return undefined;
   }, []);
 
-  // 进行中操作的「已等待 X 秒」倒计时——只在有活跃倒计时（更新/重启进行中、隧道
+  // 进行中操作的「已等待 X 秒」倒计时——只在有活跃倒计时（重启进行中、隧道
   // 连接中）时才挂每秒 tick，操作结束即卸载；空闲设置页不再无条件每秒重渲染
   useEffect(() => {
     const countdownActive =
-      !!((updateInfo?.updating || updateInfo?.restarting) && updateInfo?.startedAt) ||
+      !!(versionInfo?.restarting && versionInfo?.startedAt) ||
       !!(tunnelState?.startedAt && ['downloading', 'starting', 'registering'].includes(tunnelState?.phase ?? ''));
     if (!countdownActive) return;
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
-  }, [updateInfo, tunnelState]);
+  }, [versionInfo, tunnelState]);
   const elapsed = (startedAt) => (startedAt ? Math.max(0, Math.floor((now - startedAt) / 1000)) : 0);
+  // 缓存用量的人读格式：设置页只需要「12.3 MB」这种量级，不追求精确单位。
+  const fmtBytes = (bytes) => {
+    const n = Number(bytes) || 0;
+    return n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`;
+  };
 
   const call = async (endpoint, payload) => {
     // 30s 上限：隧道半开时 rpc.call 可能永远不回来，导致按钮永久 disabled、只在重启时
@@ -417,7 +423,7 @@ function PocketSettingsTab({ rpcCall, t }) {
         // 新进程确认起来了：显示一次「已重启」，清掉旧的更新横幅（单状态，不并存），
         // 然后自动刷新页面加载新代码——不用用户手动刷新
         setRestartNotice(true);
-        setUpdateInfo(null);
+        setVersionInfo(null);
         if (!sessionStorage.getItem('dshp-auto-reloaded')) {
           sessionStorage.setItem('dshp-auto-reloaded', '1');
           waitForHostThenReload();
@@ -453,81 +459,65 @@ function PocketSettingsTab({ rpcCall, t }) {
     try { sessionStorage.removeItem('dshp-auto-reloaded'); } catch { /* 忽略 */ }
   }, []);
 
-  // 版本检测：host 当前版本 vs npm registry latest（registry 带 CORS *）
-  // 两种情况显示横幅：① 有新版可更新；② 磁盘已更新但进程还是旧代码（重启生效）
-  // cache: 'no-store' —— registry 响应带缓存头，浏览器会缓存旧版本号导致「小版本不提示」
-  // 周期重查（每 5 分钟）：npm registry 的 /latest 走 CDN 边缘缓存，刚发布后打开页面
-  // 可能拿到旧版本号——周期性重查让更新提示在缓存刷新后自动出现，不用重开页面。
-  // 桌面端（isDesktop）：更新/重启由 DSH Desktop 管理，这里不做版本检测、不显示更新横幅
+  // 版本信息：只回答一个问题——磁盘上是新版本、进程还跑着旧代码吗？
+  //   current = 磁盘 package.json 的版本（重跑 add 装完立刻变）
+  //   loaded  = 本进程启动时加载的版本
+  // 更新契约只有一条：重跑 README 里的 add 命令装包，再重启 dsh web 生效。插件内不
+  // 探测 npm registry（npm 上的 dsh-pocket 不是本 fork，版本号与本仓无关），也没有
+  // 一键更新（dsh plugin update 会把上游代码盖在本地修改上）。
+  // 桌面端（isDesktop）：重启由 DSH Desktop 管理，不探测、不显示横幅。
   useEffect(() => {
     if (isDesktop) return;
     let alive = true;
     const check = async () => {
-      // 手机端切后台时定时器本就会被节流；显式跳过，避免标签页恢复瞬间打一次外网请求。
+      // 切后台时不打 RPC，回前台由 visibilitychange 补一次
       if (document.hidden) return;
       try {
         const v = await call(POCKET_ENDPOINTS.version, {});
-        const meta = await (await fetch('https://registry.npmjs.org/dsh-pocket/latest', { cache: 'no-store' })).json();
         if (!alive) return;
-        const latest = typeof meta?.version === 'string' ? meta.version : null;
-        const upstreamRepo = typeof meta?.repository === 'string' ? meta.repository : meta?.repository?.url ?? null;
-        // fork/分支安装（repository 与 npm 上游不同源）不比 npm 版本：版本号滞后是常态，
-        // 横幅会永远挂着；且一键更新会把上游代码盖在本地修改上。只保留「已更新未重启」本地分支。
-        const npmManaged = isSameRepo(v.repository ?? null, upstreamRepo);
-        if (npmManaged && latest && v.current && compareVersions(latest, v.current) > 0) {
-          setUpdateInfo({ current: v.current, latest, updating: false, result: null });
-        } else if (v.current && v.loaded && compareVersions(v.current, v.loaded) > 0) {
-          // 已更新未重启：显示「已更新，重启生效」+ 重启按钮
-          setUpdateInfo({ current: v.current, latest: v.current, updating: false, result: 'ok', updated: true });
-        }
-      } catch { /* 网络失败静默 */ }
+        // 只刷新版本号，保留进行中的重启状态：旧进程仍能应答这次轮询时
+        // 不能把「重启中…（Ns）」的计时和错误清掉。
+        setVersionInfo((prev) => ({
+          current: v.current ?? null,
+          loaded: v.loaded ?? null,
+          restarting: prev?.restarting === true,
+          startedAt: prev?.startedAt,
+          error: prev?.error,
+        }));
+      } catch { /* 宿主暂时连不上：保留上一次读数，回前台再查 */ }
     };
     const onVisible = () => { if (!document.hidden) void check(); };
     document.addEventListener('visibilitychange', onVisible);
     check();
-    const t = setInterval(check, 15 * 60 * 1000);
     return () => {
       alive = false;
-      clearInterval(t);
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, [isDesktop]);
 
-  // 重启宿主（更新生效必需：刷新页面不会重载服务端代码）
+  // 装了新版但进程还跑着旧代码——唯一需要提示的更新场景（重启才读得到新代码）。
+  // 重启后新进程读到的 loaded 等于 current，横幅自动消失。
+  const needsRestart = !!versionInfo?.current && !!versionInfo?.loaded
+    && compareVersions(versionInfo.current, versionInfo.loaded) > 0;
+
+  // 重启宿主（加载新代码的唯一方式：刷新页面只重载前端，服务端还是旧进程）
   const restartPocket = async () => {
-    setUpdateInfo((u) => ({ ...(u ?? {}), restarting: true, startedAt: Date.now() }));
+    setVersionInfo((v) => ({ ...(v ?? {}), restarting: true, startedAt: Date.now(), error: null }));
     try {
       // 宿主 500ms 后自杀，RPC 响应可能来不及送达 → 3 秒超时兜底，别让按钮永远卡「重启中…」
       await Promise.race([
         call(POCKET_ENDPOINTS.restart, {}),
         new Promise((_, rej) => setTimeout(() => rej(new Error('restart requested (no reply within 3s)')), 3000)),
       ]);
-      setUpdateInfo((u) => ({ ...(u ?? {}), restarting: true, result: 'ok' }));
+      setVersionInfo((v) => ({ ...(v ?? {}), restarting: true }));
     } catch (err) {
       // 网络断连/超时同样视为「已请求重启」——旧进程即将退出，等新进程起来后刷新即可
       const msg = String(err?.message ?? '');
       if (/connection|socket|fetch|network|abort|cancelled|ECONN|disconnect|closed|timeout/i.test(msg)) {
-        setUpdateInfo((u) => ({ ...(u ?? {}), restarting: true, result: 'ok' }));
+        setVersionInfo((v) => ({ ...(v ?? {}), restarting: true }));
         return;
       }
-      setUpdateInfo((u) => ({ ...(u ?? {}), restarting: false, result: 'fail', output: err.message }));
-    }
-  };
-
-  // 一键更新：调宿主 dsh plugin update（成功后宿主自动重启生效，用户只点一次）
-  const runUpdate = async () => {
-    setUpdateInfo((u) => ({ ...(u ?? {}), updating: true, result: null, startedAt: Date.now() }));
-    try {
-      const r = await call(POCKET_ENDPOINTS.update, {});
-      setUpdateInfo((u) => ({
-        ...(u ?? {}),
-        updating: false,
-        result: r.ok ? 'ok' : 'fail',
-        autoRestart: r.autoRestart === true,
-        output: r.output ?? r.error,
-      }));
-    } catch (err) {
-      setUpdateInfo((u) => ({ ...(u ?? {}), updating: false, result: 'fail', output: err.message }));
+      setVersionInfo((v) => ({ ...(v ?? {}), restarting: false, error: err.message }));
     }
   };
 
@@ -680,6 +670,19 @@ function PocketSettingsTab({ rpcCall, t }) {
       const px = Number(r.mobileFontSize) || 0;
       patchStatus({ mobileFontSize: px });
       applyMobileFontSize(px);
+    } catch (err) {
+      setError(err.message);
+    }
+  });
+
+  // 代理侧缓存（评审 §3.4）：清空静态资源转码缓存与会话列表瘦身缓存。
+  // 缓存只是中间结果，清掉只会让下一次加载变慢，所以不做二次确认；
+  // 用量随下一次 status 轮询刷新（status.cache），这里顺手用返回值立即纠正。
+  const clearCache = () => withPending('cache', async () => {
+    try {
+      const r = await call(POCKET_ENDPOINTS.cacheClear, {});
+      patchStatus({ cache: r.cache });
+      showToast(fmt(t, 'cacheCleared', { mb: ((Number(r.freedBytes) || 0) / 1024 / 1024).toFixed(1) }));
     } catch (err) {
       setError(err.message);
     }
@@ -1037,36 +1040,23 @@ function PocketSettingsTab({ rpcCall, t }) {
         Btn({ variant: 'quiet', mini: true, onClick: () => setRestartNotice(false) }, t('ok'))),
     }) : null,
 
-    // 更新提示——琥珀色提示条（有新版本/更新中/已更新待重启，单状态不并存；桌面端不渲染）
-    // 公网访客不渲染：服务端已拒绝公网走 update/restart（forbidden），露出按钮只会
-    // 让用户点了报错；更新/重启属于本机能力。
-    !isDesktop && !publicView && updateInfo ? Alert({ kind: 'warn', icon: Ico.download,
-      title: updateInfo.updated
-        ? fmt(t, 'updatedRestart', { ver: updateInfo.current })
-        : updateInfo.result === 'ok'
-          ? (updateInfo.autoRestart ? fmt(t, 'updateAutoRestarting', { ver: updateInfo.latest }) : fmt(t, 'updatedOk', { ver: updateInfo.latest }))
-          : updateInfo.result === 'fail'
-            ? t('updateFailedTitle')
-            : fmt(t, 'updateAvailable', { ver: updateInfo.latest }),
+    // 已装新版但进程还跑着旧代码——唯一的更新相关提示（插件内没有一键更新；
+    // 更新方式写在页脚，指向 README 的说明）。公网访客不渲染：服务端已拒绝公网
+    // 走 restart（forbidden），露出按钮只会让人点了报错——重启是本机能力。
+    !isDesktop && !publicView && needsRestart && !restartDismissed ? Alert({ kind: 'warn', icon: Ico.refresh,
+      title: fmt(t, 'updatedRestart', { ver: versionInfo.current }),
       children: h('div', { className: 'dshp-hint', style: { marginTop: 2 } },
-        updateInfo.updating
-          ? fmt(t, 'updatingDetail', { s: elapsed(updateInfo.startedAt) })
-          : updateInfo.restarting
-            ? fmt(t, 'restartingDetail', { s: elapsed(updateInfo.startedAt) })
-            : updateInfo.result === 'ok'
-              ? (updateInfo.autoRestart ? t('updatedAutoDetail') : t('updatedRestartDetail'))
-              : updateInfo.result === 'fail' ? fmt(t, 'updateFailed', { err: errText(updateInfo.output) || t('unknownError') })
-                : fmt(t, 'versionRange', { cur: updateInfo.current, latest: updateInfo.latest })),
+        versionInfo.restarting
+          ? fmt(t, 'restartingDetail', { s: elapsed(versionInfo.startedAt) })
+          : versionInfo.error
+            ? fmt(t, 'restartFailed', { err: errText(versionInfo.error) || t('unknownError') })
+            : t('updatedRestartDetail')),
       extra: h('div', { className: 'dshp-inline', style: { marginTop: 8 } },
-        updateInfo.result !== 'ok'
-          ? Btn({ variant: 'primary', mini: true, icon: Ico.download, onClick: runUpdate, disabled: updateInfo.updating }, updateInfo.updating ? t('updating') : fmt(t, 'updateTo', { ver: updateInfo.latest }))
-          : updateInfo.autoRestart
-            ? Btn({ variant: 'ghost', mini: true, disabled: true }, t('restartingNow'))
-            : Btn({ variant: 'primary', mini: true, icon: Ico.refresh, onClick: restartPocket, disabled: updateInfo.restarting }, updateInfo.restarting ? t('restarting') : t('restartNow')),
-        // 「稍后」只隐藏横幅；下次版本检查（15 分钟/回到前台）会重新提示，不会漏掉更新
-        !updateInfo.updating && !updateInfo.restarting
-          ? Btn({ variant: 'ghost', mini: true, onClick: () => setUpdateInfo(null) }, t('later'))
-          : null),
+        versionInfo.restarting
+          ? Btn({ variant: 'ghost', mini: true, disabled: true }, t('restartingNow'))
+          : Btn({ variant: 'primary', mini: true, icon: Ico.refresh, onClick: restartPocket }, t('restartNow')),
+        // 「稍后」只隐藏本次横幅：不改任何状态，下次打开设置页会重新判 needsRestart
+        versionInfo.restarting ? null : Btn({ variant: 'ghost', mini: true, onClick: () => setRestartDismissed(true) }, t('later'))),
     }) : null,
 
     // ── 局域网 ────────────────────────────────────────────────────────────────
@@ -1120,7 +1110,11 @@ function PocketSettingsTab({ rpcCall, t }) {
                     },
                     h('option', { value: '' }, t('lanAddressAuto')),
                     (status.lanCandidates || []).map((ip) => h('option', { key: ip, value: ip }, ip))))) : null,
-              }))
+              }),
+              // 评审 §5.3 #8：局域网直连不是安全上下文，明确标成「调试口径」，
+              // 别让人把它当成长期地址（无离线/推送，PIN 走明文 HTTP）。
+              h('div', { className: 'dshp-hint' }, t('lanDebugHint')),
+            )
             : h('div', { className: 'dshp-hint' }, t('lanStarting'))),
     }),
 
@@ -1166,6 +1160,21 @@ function PocketSettingsTab({ rpcCall, t }) {
           })),
     }),
 
+    // ── 代理缓存：用量 + 清空（评审 §3.4「一个预算、一个开关」）──────────────
+    // 数据来自 status.cache（每次轮询都带），不另开 effect；旧宿主/桩环境没有
+    // cache 字段时整张卡不渲染——显示「0 KB」会让人以为缓存坏了。
+    status?.cache ? Card({
+      key: 'cache', icon: Ico.refresh, title: t('cacheTitle'), sub: t('cacheSub'),
+      children: Row({
+        label: fmt(t, 'cacheUsage', { used: fmtBytes(status.cache.bytes), budget: fmtBytes(status.cache.budgetBytes) }),
+        desc: fmt(t, 'cacheEntries', { n: status.cache.entries ?? 0 }),
+        control: Btn({
+          variant: 'ghost', mini: true, icon: Ico.trash,
+          onClick: clearCache, disabled: pending.cache === true,
+        }, t('cacheClear')),
+      }),
+    }) : null,
+
     // ── 维护：恢复出厂设置（最底部，避免误触）────────────────────────────────
     Card({
       key: 'reset', icon: Ico.trash, title: t('resetFactory'), sub: t('resetIntro'), danger: true,
@@ -1174,8 +1183,14 @@ function PocketSettingsTab({ rpcCall, t }) {
         : Btn({ variant: 'danger', mini: true, onClick: () => setResetOpen(true), disabled: pending.reset === true }, t('resetGo')),
     }),
 
-    // 页脚署名行：开发者 · Star · 反馈
+    // 页脚署名行：版本 · 更新方法 · 开发者 · Star · 反馈
+    // 更新只有一条路（重跑 README 的 add 命令再重启 dsh web），所以这里给说明链接
+    // 而不是一键更新按钮；versionInfo 拿不到时（宿主刚起/RPC 失败）就只留说明链接。
     h('footer', { className: 'dshp-footer' },
+      versionInfo?.current ? h('span', { title: t('updateHint') }, fmt(t, 'versionLine', { ver: versionInfo.current })) : null,
+      versionInfo?.current ? h('span', null, '·') : null,
+      h('a', { href: 'https://github.com/daha1216/dsh-pocket#-怎么用', target: '_blank', rel: 'noreferrer', title: t('updateHint') }, t('updateDocLink')),
+      h('span', null, '·'),
       h('span', null, t('developer')),
       h('span', null, '·'),
       h('a', { href: 'https://github.com/daha1216/dsh-pocket', target: '_blank', rel: 'noreferrer', title: t('starAsk') }, t('starCta')),

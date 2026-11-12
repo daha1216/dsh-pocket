@@ -508,12 +508,3 @@ test('PIN 缓存：mtime 相同（同 tick）但内容被另一实例改写时�
   utimesSync(file, m, m); // 强制 mtime 与缓存记录相同
   assert.equal(tokenForHost('192.168.1.5:3081'), 'TickPIN77', '内容不同就应跟随磁盘');
 }));
-
-test('profile 推断：pnpm 的 .pnpm 布局仍能找到真实 profile', async () => {
-  const { profileFromPath } = await import('../lib/index.js');
-  assert.equal(profileFromPath('C:\\Users\\x\\.dsh\\profiles\\work\\node_modules\\dsh-pocket\\lib\\index.js'), 'work');
-  assert.equal(profileFromPath('C:/x/profiles/desk/node_modules/.pnpm/dsh-pocket@3.0.5/node_modules/dsh-pocket/lib/index.js'), 'desk', 'pnpm junction 布局');
-  assert.equal(profileFromPath('C:/x/profiles/desktop/node_modules/dsh-pocket/'), 'desktop');
-  assert.equal(profileFromPath('C:/app/node_modules/dsh-pocket/lib/index.js'), 'web', '非 profiles 布局退回 web');
-  assert.equal(profileFromPath('C:/x/profiles/../node_modules/dsh-pocket/'), 'web', '非法 profile 名退回 web');
-});

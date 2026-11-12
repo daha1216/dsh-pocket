@@ -780,7 +780,7 @@ test('RPC：version 返回磁盘版本 current 与启动版本 loaded', async ()
   const conn = fakeCtxConnection();
   installPocketRpc({ connection: conn }, {
     service,
-    runUpdate: { currentVersion: () => '1.0.15', loadedVersion: () => '1.0.14', perform: async () => ({ ok: true }) },
+    version: { current: () => '1.0.15', loaded: () => '1.0.14' },
     log: { error() {}, warn() {} },
   });
 
@@ -792,94 +792,134 @@ test('RPC：version 返回磁盘版本 current 与启动版本 loaded', async ()
   await service.dispose();
 });
 
-test('RPC：version 返回 repository（安装来源仓库），旧 runUpdate 形状降级为 null', async () => {
+test('RPC：version 只回本地两个版本号，不再下沉安装来源（更新契约收敛）', async () => {
   const internals = stubInternals();
   const service = createPocketService({ dshPort: 3080, port: 3081, internals, getTunnelConfig: namedTunnelConfig });
   const conn = fakeCtxConnection();
   installPocketRpc({ connection: conn }, {
     service,
-    runUpdate: {
-      currentVersion: () => '2.10.6',
-      loadedVersion: () => '2.10.6',
-      currentRepository: () => 'git+https://github.com/daha1216/dsh-pocket.git',
-      perform: async () => ({ ok: true }),
-    },
+    version: { current: () => '2.10.6', loaded: () => '2.10.6' },
     log: { error() {}, warn() {} },
   });
   const v = await conn.handler(POCKET_ENDPOINTS.version, {});
-  assert.equal(v.value.repository, 'git+https://github.com/daha1216/dsh-pocket.git');
+  assert.deepEqual(Object.keys(v.value).sort(), ['current', 'loaded'], '版本端点只回本地两个版本号');
+  assert.equal('repository' in v.value, false, '不再回安装来源：更新只走重跑 add，前端不需要它');
 
+  // 没注入 version（旧调用面）时降级为 null，不抛错
   const conn2 = fakeCtxConnection();
-  installPocketRpc({ connection: conn2 }, {
-    service,
-    runUpdate: { currentVersion: () => '1.0.0', loadedVersion: () => '1.0.0', perform: async () => ({ ok: true }) },
-    log: { error() {}, warn() {} },
-  });
+  installPocketRpc({ connection: conn2 }, { service, log: { error() {}, warn() {} } });
   const v2 = await conn2.handler(POCKET_ENDPOINTS.version, {});
-  assert.equal(v2.value.repository, null);
+  assert.equal(v2.value.current, null);
+  assert.equal(v2.value.loaded, null);
 
   await service.dispose();
 });
 
-test('RPC：update 对 fork/分支安装拦截一键更新，registry 不可达时放行', async () => {
+test('RPC：cache.stats / cache.clear 串联代理缓存，status 也带用量', async () => {
+  // 评审 §3.4：缓存要在设置页可观测、可清空。代理层是唯一事实源，
+  // RPC 只做转接：status 带用量让卡片常驻，清空回释放量让页面能提示。
+  const internals = stubInternals();
+  const service = createPocketService({ dshPort: 3080, port: 3081, internals, getTunnelConfig: namedTunnelConfig });
+  const conn = fakeCtxConnection();
+  let bytes = 3 * 1024 * 1024;
+  const cleared = [];
+  const cacheStub = {
+    stats: () => ({
+      bytes,
+      entries: bytes > 0 ? 4 : 0,
+      budgetBytes: 36 * 1024 * 1024,
+      immutable: { bytes, entries: 3, budgetBytes: 24 * 1024 * 1024 },
+      sessionList: { bytes: 0, entries: 1, budgetBytes: 12 * 1024 * 1024 },
+    }),
+    clear: () => {
+      const freed = bytes;
+      bytes = 0;
+      cleared.push(freed);
+      return { freedBytes: freed, bytes: 0, entries: 0 };
+    },
+  };
+  installPocketRpc({ connection: conn }, { service, cache: cacheStub, log: { error() {}, warn() {} } });
+
+  const s = await conn.handler(POCKET_ENDPOINTS.status, {});
+  assert.equal(s.ok, true);
+  assert.equal(s.value.cache.bytes, 3 * 1024 * 1024, 'status 带上缓存用量，设置页据此渲染卡片');
+
+  const stats = await conn.handler(POCKET_ENDPOINTS.cacheStats, {});
+  assert.equal(stats.ok, true);
+  assert.deepEqual(stats.value.cache, cacheStub.stats(), 'cache.stats 原样回代理层统计');
+
+  const clear = await conn.handler(POCKET_ENDPOINTS.cacheClear, {});
+  assert.equal(clear.ok, true);
+  assert.equal(clear.value.freedBytes, 3 * 1024 * 1024, '回释放量，设置页据此提示');
+  assert.deepEqual(cleared, [3 * 1024 * 1024], 'clear 只调一次');
+  assert.equal(clear.value.cache.bytes, 0, '清空后回最新用量');
+  assert.equal(clear.value.cache.entries, 0);
+
+  await service.dispose();
+});
+
+test('RPC：cache.clear 对公网访客也开放（只让下次加载变慢，不改配置不夺权限）', async () => {
+  const internals = stubInternals();
+  const service = createPocketService({ dshPort: 3080, port: 3081, internals, getTunnelConfig: namedTunnelConfig });
+  const conn = fakeCtxConnection();
+  let cleared = 0;
+  installPocketRpc({ connection: conn }, {
+    service,
+    cache: { stats: () => ({ bytes: 0, entries: 0, budgetBytes: 1 }), clear: () => { cleared += 1; return { freedBytes: 0 }; } },
+    log: { error() {}, warn() {} },
+  });
+
+  // 第四个参数是 originHeader：公网来源仍应放行（不属于「改配置」类操作）
+  const pub = await conn.handler(POCKET_ENDPOINTS.cacheClear, {}, undefined, 'public');
+  assert.equal(pub.ok, true, '公网访客清缓存不应被 forbidden 拦下');
+  assert.equal(cleared, 1);
+  assert.equal(pub.value.freedBytes, 0);
+
+  await service.dispose();
+});
+
+test('RPC：没有注入 cache 时降级为 null / 0，不抛错', async () => {
+  const internals = stubInternals();
+  const service = createPocketService({ dshPort: 3080, port: 3081, internals, getTunnelConfig: namedTunnelConfig });
+  const conn = fakeCtxConnection();
+  installPocketRpc({ connection: conn }, { service, log: { error() {}, warn() {} } });
+
+  const s = await conn.handler(POCKET_ENDPOINTS.status, {});
+  assert.equal(s.ok, true);
+  assert.equal(s.value.cache, null, '缺注入给 null，客户端据此不渲染缓存卡片');
+
+  const stats = await conn.handler(POCKET_ENDPOINTS.cacheStats, {});
+  assert.equal(stats.ok, true);
+  assert.equal(stats.value.cache, null);
+
+  const clear = await conn.handler(POCKET_ENDPOINTS.cacheClear, {});
+  assert.equal(clear.ok, true);
+  assert.equal(clear.value.freedBytes, 0, '缺注入时释放量为 0 而不是 NaN');
+  assert.equal(clear.value.cache, null);
+
+  await service.dispose();
+});
+
+test('RPC：一键更新端点已下线（pocket.update → Unknown endpoint），且不再探测 npm registry', async () => {
   const internals = stubInternals();
   const service = createPocketService({ dshPort: 3080, port: 3081, internals, getTunnelConfig: namedTunnelConfig });
   const realFetch = globalThis.fetch;
-  const makeRunUpdate = () => {
-    const calls = [];
-    return {
-      calls,
-      currentVersion: () => '2.10.6',
-      loadedVersion: () => '2.10.6',
-      currentRepository: () => 'git+https://github.com/daha1216/dsh-pocket.git',
-      perform: async (profile) => { calls.push(profile); return { ok: true }; },
-    };
-  };
+  const touched = [];
   try {
-    // ① npm 上游 repository 与本地不同源 → 拦截，perform 不得执行
-    globalThis.fetch = async () => ({ json: async () => ({ version: '2.11.0', repository: { url: 'git+https://github.com/shaobeichen/dsh-pocket.git' } }) });
-    {
-      const runUpdate = makeRunUpdate();
-      const conn = fakeCtxConnection();
-      installPocketRpc({ connection: conn }, { service, runUpdate, log: { error() {}, warn() {} } });
-      const r = await conn.handler(POCKET_ENDPOINTS.update, { profile: 'web' });
-      assert.equal(r.ok, false);
-      assert.match(r.error.message, /fork\/分支安装/);
-      assert.deepEqual(runUpdate.calls, [], 'fork 不得执行一键更新');
-    }
-    // ② 同源（归一化后一致）→ 放行
-    globalThis.fetch = async () => ({ json: async () => ({ version: '2.11.0', repository: { url: 'https://github.com/daha1216/dsh-pocket' } }) });
-    {
-      const runUpdate = makeRunUpdate();
-      const conn = fakeCtxConnection();
-      installPocketRpc({ connection: conn }, { service, runUpdate, log: { error() {}, warn() {} } });
-      const r = await conn.handler(POCKET_ENDPOINTS.update, { profile: 'web' });
-      assert.equal(r.ok, true);
-      assert.deepEqual(runUpdate.calls, ['web']);
-    }
-    // ③ registry 不可达 → 放行（一键更新需要联网，离线时按钮也不出现）
-    globalThis.fetch = async () => { throw new Error('ENOTFOUND'); };
-    {
-      const runUpdate = makeRunUpdate();
-      const conn = fakeCtxConnection();
-      installPocketRpc({ connection: conn }, { service, runUpdate, log: { error() {}, warn() {} } });
-      const r = await conn.handler(POCKET_ENDPOINTS.update, { profile: 'web' });
-      assert.equal(r.ok, true);
-      assert.deepEqual(runUpdate.calls, ['web']);
-    }
+    globalThis.fetch = async (url) => { touched.push(String(url)); throw new Error('ENOTFOUND'); };
+    const conn = fakeCtxConnection();
+    installPocketRpc({ connection: conn }, { service, log: { error() {}, warn() {} } });
+    const u = await conn.handler('pocket.update', { profile: 'web' });
+    assert.equal(u.ok, false);
+    assert.equal(u.error.code, 'bad-request');
+    assert.match(u.error.message, /Unknown endpoint: pocket\.update/);
+    const v = await conn.handler(POCKET_ENDPOINTS.version, {});
+    assert.equal(v.ok, true, '版本端点本地可答');
+    assert.deepEqual(touched, [], '插件不访问 npm registry（更新只走重跑 add）');
   } finally {
     globalThis.fetch = realFetch;
     await service.dispose();
   }
-});
-
-test('isSameRepo/normalizeRepoUrl：fork 判定（更新横幅常显案）', async () => {
-  const { isSameRepo, normalizeRepoUrl } = await import('../client/api.js');
-  assert.equal(normalizeRepoUrl('git+https://github.com/Shaobeichen/DSH-POCKET.git/'), 'https://github.com/shaobeichen/dsh-pocket');
-  assert.equal(isSameRepo('git+https://github.com/daha1216/dsh-pocket.git', 'git+https://github.com/shaobeichen/dsh-pocket.git'), false);
-  assert.equal(isSameRepo('git+https://github.com/daha1216/dsh-pocket.git', 'https://github.com/daha1216/dsh-pocket'), true);
-  assert.equal(isSameRepo(null, 'https://github.com/shaobeichen/dsh-pocket'), false);
-  assert.equal(isSameRepo('https://github.com/x/y', ''), false);
 });
 
 test('lib/index.js 模块可加载，apply 可调用（防模块级 ReferenceError 回归）', () => withHome(async () => {
@@ -903,7 +943,7 @@ test('lib/index.js 模块可加载，apply 可调用（防模块级 ReferenceErr
   // apply 内部用 ctx.effect 注册清理，返回值不是契约；这里只验证不抛错
   mod.apply(ctx, {}, {
     service: stubService,
-    runUpdate: { currentVersion: () => '1.0.20', loadedVersion: () => '1.0.20', perform: async () => ({ ok: true }) },
+    version: { current: () => '1.0.20', loaded: () => '1.0.20' },
     restart: () => ({ helperPid: 1, logOut: '', logErr: '' }),
     restartNotice: async () => null,
   });
@@ -1040,14 +1080,14 @@ test('expectedDigestFor：Homebrew bottle 永不拿 GitHub 的 digest 校验（�
   assert.equal(expectedDigestFor({ verifyDigest: true }, official), official, 'GitHub 资产/镜像用官方 digest');
 });
 
-test('桌面端（desktop=true）：update/restart 关闭，status 带标志，正常功能不受影响', async () => {
+test('桌面端（desktop=true）：restart 关闭，status 带标志，正常功能不受影响', async () => {
   const internals = stubInternals();
   const service = createPocketService({ dshPort: 3080, port: 3081, internals, getTunnelConfig: namedTunnelConfig });
   const conn = fakeCtxConnection();
   installPocketRpc({ connection: conn }, {
     service,
     desktop: true,
-    runUpdate: { currentVersion: () => '1.4.0', loadedVersion: () => '1.4.0', perform: async () => ({ ok: true }) },
+    version: { current: () => '1.4.0', loaded: () => '1.4.0' },
     restart: () => ({ helperPid: 1, logOut: '', logErr: '' }),
     log: { error() {}, warn() {} },
   });
@@ -1058,10 +1098,10 @@ test('桌面端（desktop=true）：update/restart 关闭，status 带标志，�
   assert.equal(s.ok, true);
   assert.equal(s.value.desktop, true, 'status 标记桌面端');
 
-  // 更新被关闭
-  const u = await conn.handler(POCKET_ENDPOINTS.update, {});
-  assert.equal(u.ok, false, '桌面端更新不可用');
-  assert.match(u.error.message, /DSH Desktop/, '提示由桌面版管理');
+  // 一键更新端点整体下线（不再有桌面端分支）：按未知端点拒绝
+  const u = await conn.handler('pocket.update', {});
+  assert.equal(u.ok, false, '一键更新端点已下线');
+  assert.match(u.error.message, /Unknown endpoint: pocket\.update/);
 
   // 重启被关闭
   const r = await conn.handler(POCKET_ENDPOINTS.restart, {});
@@ -1368,8 +1408,7 @@ test('RPC：局域网密码独立于公网；lanTokenRefresh 刷新并返回新�
     [POCKET_ENDPOINTS.tunnelStart, { disclaimer: true }],
     [POCKET_ENDPOINTS.tunnelStop, {}],
     [POCKET_ENDPOINTS.tunnelSetConfig, { mode: 'named', hostname: 'evil.example.com' }],
-    // 更新会拉 npm 包并重启宿主：公网访客点一下就能打断服务/换掉供应链，必须同样拒绝
-    [POCKET_ENDPOINTS.update, {}],
+    // 重启会掐掉宿主服务：公网访客点一下就能让电脑上的 dsh web 停下，必须同样拒绝
     [POCKET_ENDPOINTS.restart, {}],
   ]) {
     const r = await conn.handler(endpoint, payload, undefined, 'public');

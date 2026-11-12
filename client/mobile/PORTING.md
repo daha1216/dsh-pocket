@@ -66,9 +66,30 @@ node --check。产物 `client/client.js` 由 esbuild 打包 upstream/ + 适配�
    （`ctx.inject([...], cb)` 懒加载，如 inputTriggers/remote.workspaceFiles）不进
    静态表，宿主 0.2.0-rc.1 原生支持。
 4. **激活冒烟**：`node client\repro-activate.mjs`（桩环境直跑 bundle 的 apply()，
-   应打印 `apply() completed` + 42 effects + locale NS 清单；NS 重名/漏 inject
+   应打印 `apply() completed` + 47 effects + locale NS 清单；NS 重名/漏 inject
    一律当场炸）。比「重启后拿手机试」快得多。
 5. **重打下方「upstream/ 内的 pocket 手工补丁」清单**——sync 会整目录覆盖，丢了会静默回归。
+6. **重算锚点台账**：`npm run anchors:gen`（sync 增删锚点后不重算，契约测试红）；宿主升级
+   还要先 `npm run anchors:dump`，详见下方「锚点台账与宿主升级 triage」。
+
+## 锚点台账与宿主升级 triage
+
+手机层的 170 个 `[class*="…"]` 锚点集中登记在 `client/mobile/anchors.ts`，由
+`scripts/gen-anchors.mjs` 从「源码里的锚点 × 宿主真实类名快照（`test/fixtures/host-classes.json`）」
+生成 —— 不要手改。宿主升级后按这个顺序走：
+
+1. `npm run anchors:dump` 重抽本机 DSH Desktop（app.asar）里选择器位的真实类名；
+2. `npm run anchors:gen` 重算台账，diff 里直接看出哪些锚点从 host 掉进 legacy；
+3. `npm run anchors:report` 控制台列出 legacy / external 明细及各自的落点（usedIn）；
+4. `npm run test:anchors` 现抽一遍并逐条核活（需要本机装着 DSH Desktop）。
+
+`ANCHOR_AREAS` 把锚点按源码文件分组：宿主重构某块 DOM 时通常是一整片同时掉，先看
+哪个模块掉得最多，再决定补更稳的选择器（优先 data-* / 结构选择器）还是删掉已无用的规则。
+哈希换代**不需要**改名——子串匹配天然扛住，台账状态会自己从 legacy 翻回 host；只有宿主
+改了 localName 词形（新类名与旧类名只差词形、整族一起掉）才用
+`npm run anchors:rename -- <旧片段> <新片段>` 一次改全仓（默认只打印，`--apply` 才写盘并
+自动重算台账）。契约测试 `test/anchors-contract.test.js` 钉住「台账 == 重算结果」与
+「分组 == 实际落点」，源码增删锚点后不重新生成就是红。
 
 ## upstream/ 内的 pocket 手工补丁（sync 覆盖后必须重打）
 
@@ -100,7 +121,8 @@ node --check。产物 `client/client.js` 由 esbuild 打包 upstream/ + 适配�
 **3 条已被上游吸收（免打）**：
 - #9 base.css 三处 hover 包 `@media (hover: hover)` —— 上游现为 4 处（多了
   downloads/quick-settings 两个新按钮）。
-- #8③ preview-full-toggle 的 hover 包裹 —— 上游 compat.css 已自带。
+- #8③ preview-full-toggle 的 hover 包裹 —— 上游 compat.css 已自带（该按钮已于 2026-11-12
+  随 aionui 集成删除，见 #17）。
 - #12 reasoning-defaults 退避 —— 该文件上游 v3.2.0 已退休（旧记录，本轮再次确认无需打）。
 
 **14 条补丁 → 重打落点（2026-11-03 实录）**：
@@ -123,15 +145,46 @@ node --check。产物 `client/client.js` 由 esbuild 打包 upstream/ + 适配�
   composer-tight 块之前（新上游把钉底等旧规则整段删了，需整块移植）。
 - #8 `styles/compat.css.ts` — ①opPanel `z-index: 60`；②cardShots
   `overscroll-behavior-x: contain`（③已被上游吸收）。
-- #10 dvh 双行回退 — compat 4 处（explorer sheet、preview sheet、preview 全屏、模式菜单）
+- #10 dvh 双行回退 — compat 1 处（模式菜单；explorer/preview 两列与预览全屏已随 #17 删除）
   + layout 3 处（team-action 面板、_panel 族 -96px、-200px）。`--dsh-web-mobile-vh`
   变量式两处上游自带回退语义免打。
 - #13 每-flush 查询缓存批 — ①`effects/stats-line.ts` mark() 的锚缓存（cachedAnchor +
   dispose 清空；上游 mark() 重构为 viewportHandler 注册后的快路径，补丁挂同一处）；
   ②`effects/panel-exit.ts` panelRowActiveEl 模块级缓存；③`effects/overlay-backdrop-fab.ts`
   heroActiveEl 缓存 + dispose 清空；④`effects/aionui-compat.ts` colCache 两列缓存 +
-  dispose 清空。
+  dispose 清空（该效果已随 #17 删除，此项仅存档）。
 - #14 `effects/session-menu.ts` — body 观察者 chat-flow 整批早退（与 #2 同文件，一并打）。
+- #15（2026-11-12 新增）`effects/composer-keyboard-lift.ts` — **整份删除**。上游 #149 的 iOS
+  键盘抬升 2026-10-31 起就已停用（`index.tsx` 里留 `void installComposerKeyboardLift` 一行占位），
+  帧数据显示它和引擎自己的滚动纠正互相拉扯（seat 578→283→560、conv 8572↔8587 每帧来回），
+  而引擎单独工作时座位落在可见带内；评审报告把它列为死路径，文件与占位一并删除。
+  **同步后必须再删一次**（sync 会把文件从上游拷回来），并确认 `index.tsx` 没有重新出现
+  import 与调用；`effects/composer-clearance.ts`、`core/composer-clearance.ts` 里指向它的
+  注释同样要清掉。
+- #16（2026-11-12 新增）`--dsha-mobile-visible-vh` 自适应发布 — **新文件**
+  `core/visible-band-publish.ts`（纯判据，零 DOM）+ `effects/viewport-meta.ts` 的
+  `syncStableViewportHeight()` 改写。评审 §3.3 要求变量跟手（键盘动画期间逐帧变），但
+  2026-10-31 owner 手机实测逐帧发布会让整个 app 每帧重排约 20 次、会话列表白屏 1-2s，
+  所以当时改成了「停稳才发布」。折中是：默认逐帧直写；同时量帧节拍，连续 3 帧超过 32ms
+  就判定这台设备扛不住，本次会话余下时间退回停稳发布（每次过渡只重排一次），降级单向
+  不回升。消费者（提问卡全屏带）仍然只在停稳后收到 `dsh-mobile-visible-band` 事件；
+  `--dsha-mobile-viewport-top` 改为去重直写（全仓暂无消费者）。
+  **同步后必须重打**：`core/visible-band-publish.ts` 会被 sync 删掉，viewport-meta 会被
+  上游版本覆盖（旧行为是「只在两帧稳定后写变量」）；契约断言在
+  `test/upstream-v323-port.test.js` 与 `test/visible-band.test.js`。
+- #17（2026-11-12 新增）aionui / dsh-web-ui explorer-preview 集成 — **整层删除**。评审
+  §2.5 把它列为死路径（本机 profile 从未装过 dsh-web-ui）：`effects/aionui-compat.ts`
+  （chevron 关标记、preview sheet 标记、伪装 Windows 桌面绕套件 Android 检查）、
+  `effects/preview-fullscreen.ts`（预览全屏切换按钮）、`effects/reconciler-adapter.ts` 的
+  三个任务注册与三条 attributeFilter、`phone-chrome.ts` dispose 的三个标记清理、
+  `styles/compat.css.ts` 的两列 sheet 几何/全屏/抽屉让位/hover/reduced-motion、
+  `styles/base.css.ts` 的 `dsh-web-mobile-sheet-up` 关键帧、`styles/misc.css.ts` 的平板
+  居中与桌面隐藏项、`i18n/locales.ts` 的 previewFullscreen/previewExitFullscreen、pocket
+  附加层的 explorer 可用性探测（issue #48）与其 POCKET_EXTRA_CSS 隐藏规则、debug 探针
+  两行，全部移除。文件浏览只剩宿主官方右侧栏（`data-sidebar-right-expand` /
+  `-toggle`）；dsh-web-ui 的 task-board / ssh 兼容块**保留**。
+  **同步后需复查**：sync 会把这些文件与样式整段拷回。删完跑 `node scripts/gen-anchors.mjs`
+  （锚点台账计数会变）与全量测试；`effects/AGENTS.md` 与 `upstream/AGENTS.md` 的索引已同步。
 
 **历史对账基线：v3.2.0 (473a78b)（已被 2026-11-03 的 main @2cf9061 取代，见上一节）。**
 当时相对 v3.1.0 的 14 条补丁：#12
@@ -180,12 +233,12 @@ characterData 脏键取代）、#4③ dispose 清注入（上游 injected Set）
    inset 计两遍（哈希代际变化时静默 no-op）。
 8. `styles/compat.css.ts` — opPanel 补 `z-index: 60 !important`；cardShots 横滚容器补
    `overscroll-behavior-x: contain !important`；preview-full-toggle 的 :hover 包入
-   `@media (hover: hover)`。
+   `@media (hover: hover)`（该按钮已随 #17 删除，这半句仅存档）。
 9. `styles/base.css.ts` — 三处 :hover（toggle/files、session-log、fab）包入
    `@media (hover: hover)`（:active 拆出保留），触屏点后不再粘滞灰底。
 10. dvh 全量补 vh 回退双行（vh 行在前、dvh 行在后；iOS<15.4 无 dvh 引擎整条丢弃 dvh
-    声明）：`compat.css.ts` explorer sheet（height/max-height）、preview sheet
-    （height/max-height）、preview 全屏（height）、agent-preset 菜单（max-height）；
+    声明）：`compat.css.ts` agent-preset 菜单（max-height；explorer/preview 两列与预览全屏
+    已随 #17 删除）；
     `layout.css.ts` header `_menu`（max-height）、`_panel` 族（max-height calc-96px）、
     team-action 面板（max-height calc-200px）。
  11. `effects/phone-chrome.ts` — frame 引用缓存加 isConnected 短路：
@@ -213,9 +266,8 @@ characterData 脏键取代）、#4③ dispose 清注入（上游 injected Set）
     - `effects/overlay-backdrop-fab.ts` — heroPhase() 的 `[data-phase="active"]`
       （ensure 每趟最多调两次），闭包缓存 + dispose 清空；注意别覆盖 #1 的
       frame-null 清理补丁；
-    - `effects/aionui-compat.ts` — sheet-rise-replay ensure 的两列
-      `[data-aionui-explorer-col]`/`[data-aionui-preview-col]`，闭包 colCache +
-      dispose 清空。
+    - `effects/aionui-compat.ts` — sheet-rise-replay ensure 的两列 colCache（该效果已随
+      #17 删除，此项仅存档）。
 14. `effects/session-menu.ts` — body 全树 MutationObserver 补 chat-flow 整批早退
     （照抄 installed-list 的过滤形态）：整批 records 全在 `[data-chat-flow]` 内
     直接 return，不跑 scheduleInject 也不跑 removedMenu 判定——会话菜单是 body 级
@@ -309,10 +361,7 @@ characterData 脏键取代）、#4③ dispose 清注入（上游 injected Set）
 ## pocket 附加层（适配器 mobile-apply.tsx 负责，上游没有的）
 
 1. **布局门控（issue #74）**：`?dsh-layout=` > localStorage > auto。desktop → 整段 mobile 不挂。
-2. **explorer 可用性标记（issue #48）**：官方 DSH 无 dsh-web-ui/aionui 列；探测
-   `[data-aionui-explorer-col]` 存在与否 → `data-mobile-nav-explorer="0|1"`，
-   配 POCKET_EXTRA_CSS 隐藏死掉的「文件浏览」入口。
-3. **fileGuard（issue #17）**：拦文件链接点击、注入「复制」按钮（走 pocket RPC fileRead）、
+2. **fileGuard（issue #17）**：拦文件链接点击、注入「复制」按钮（走 pocket RPC fileRead）、
    隐藏「添加工作区」。依赖的 CSS 规则（copy-file 按钮样式、aria-label 隐藏）也搬进了
    POCKET_EXTRA_CSS（上游样式表没有这些）。
 
@@ -330,11 +379,10 @@ characterData 脏键取代）、#4③ dispose 清注入（上游 injected Set）
 1. **断点三处统一为上游 MOBILE_QUERY**：`(max-width: 1023px) and (pointer: coarse)`——
    上游 JS 效果（phone-chrome MOBILE_QUERY）、上游样式主 gate（原有裸 `(max-width:768px)`
    宽度臂已按下方补丁清单收窄）、pocket 的 narrowMQ（mobile-apply.tsx，驱动 auto 判定 /
-   fileGuard / explorer 探测 / zoom-lock）现在同口径。此前 pocket 只看宽度：桌面浏览器
+   fileGuard / zoom-lock）现在同口径。此前 pocket 只看宽度：桌面浏览器
    窄窗会误判成 mobile（fileGuard 拦文件链接弹「手机上无法打开」、隐藏「添加工作区」）。
    真机 iPhone/安卓不受影响。
-2. **`?dsh-layout=mobile` 强制模式部分降级**：pocket 附加层（fileGuard、explorer 探测）仍会
-   强制挂载（resolveLayout 走 narrow mock 恒真）；但上游的样式与效果按 MOBILE_QUERY 门控，
+2. **`?dsh-layout=mobile` 强制模式部分降级**：pocket 附加层（fileGuard）仍会强制挂载（resolveLayout 走 narrow mock 恒真）；但上游的样式与效果按 MOBILE_QUERY 门控，
    在鼠标指针的桌面浏览器上不会强制出移动布局（旧移植可以）。真机上强制 mobile 不受影响
    （本来就是 coarse pointer）。`?dsh-layout=desktop`（主要用法：宽屏手机/平板强制电脑布局）
    不受影响。

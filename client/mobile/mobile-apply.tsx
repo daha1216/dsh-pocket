@@ -8,21 +8,21 @@
 //
 // 上游负责：样式、词典、phone-chrome、reconciler 基建 + 7 任务（overlay backdrop+FAB、
 // stats-line、git-chip、settings-toolbar、preview、sheet-rise）、侧栏滑动手势（v2.3 #16/#37）、
-// 子代理芯片触控（v2.2）、抽屉点会话自动收起（v2.2 #32）、aionui 兼容、debug 徽章、
+// 子代理芯片触控（v2.2）、抽屉点会话自动收起（v2.2 #32）、debug 徽章、
 // 两个 slots（会话头 toggle + 抽屉底部 footer）。
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import { apply as upstreamApply } from './upstream/index.tsx'
 import { startFileGuard } from './fileGuard.ts'
 import { resolveLayout, persistLayoutFromUrl } from './layout-mode.mjs'
-import { createSettlingGuard, createFreezeDetector, resolveLinkVerdict, SETTLING_STALE_MS } from './settling-watchdog.mjs'
+import { createSettlingGuard, createFreezeDetector, resolveLinkVerdict, createLinkLiveness, SETTLING_STALE_MS, LINK_TICK_MS, LINK_PROBE_TIMEOUT_MS } from './settling-watchdog.mjs'
 import { POCKET_RPC_CHANNEL, POCKET_ENDPOINTS, MOBILE_RIGHTBAR_ATTRIBUTE, MOBILE_RIGHTBAR_EVENT, MOBILE_PINCH_ZOOM_ATTRIBUTE, MOBILE_PINCH_ZOOM_EVENT, MOBILE_FONT_ATTRIBUTE, MOBILE_FONT_EVENT, MOBILE_FONT_SIZE_VAR, MOBILE_FONT_MIN, MOBILE_FONT_MAX } from '../api.js'
 // H4：fileGuard 的用户可见文案迁入词典（client/pocket-locales.js，NS='pocket'）。
 // 这里只导入命名空间 id；词典本体由 client/index.jsx 统一注册（bind 是惰性取词，
 // 注册顺序在 mobileApply 之后也不影响）。
 import { NS as POCKET_NS } from '../pocket-locales.js'
 
-/** Pocket 专属样式补充——上游样式表无法携带的宿主事实（官方 DSH 无 aionui 套件等）。
- * issue #17 / #48 段落从 v1.0.0 时代移植件继承。 */
+/** Pocket 专属样式补充——上游样式表无法携带的宿主事实（官方 DSH 的刘海、键盘期
+ * 布局、文件链接形态等）。issue #17 段落从 v1.0.0 时代移植件继承。 */
 const POCKET_EXTRA_CSS = `/* pocket 控件/门控样式：刻意不加媒体查询——mobileApply 启动时写入的
      body[data-dsh-pocket-layout] 就是门（desktop 布局在写入之后才早退，选择器
      天然不命中；?dsh-layout=mobile 强制移动的宽桌面也依赖这些规则，宽度媒体
@@ -45,14 +45,6 @@ const POCKET_EXTRA_CSS = `/* pocket 控件/门控样式：刻意不加媒体查�
   body[data-dsh-pocket-pinch-zoom="off"],
   body[data-dsh-pocket-pinch-zoom="off"] [data-mobile-nav="frame"] [class*="scrollBody"] {
     touch-action: pan-y !important;
-  }
-
-  /* ---------- 宿主没有 aionui explorer 列时隐藏「文件浏览」入口（issue #48） ----------
-     官方 DeepSeek Harness 不带 dsh-web-ui；explorer 列存在与否由下方探测 effect
-     标到 frame 上（data-mobile-nav-explorer）。没有列时这两个入口点了没反应。 */
-  body[data-dsh-pocket-layout="mobile"] [data-mobile-nav-explorer="0"] [data-mobile-nav="files"],
-  body[data-dsh-pocket-layout="mobile"] [data-mobile-nav-explorer="0"] [data-mobile-nav="explorer"] {
-    display: none !important;
   }
 
   /* ---------- 隐藏「添加工作区」入口（issue #17 修正：手机上配工作区无意义） ----------
@@ -227,7 +219,7 @@ const POCKET_EXTRA_CSS = `/* pocket 控件/门控样式：刻意不加媒体查�
      手改必丢——零手改原则），只能在 pocket 层以同特异性 + 后加载 + !important 压过。
      为何这一段（与本文件其它段不同）套媒体查询：被覆盖的上游规则本身全部住在
      (max-width:1023px) and (pointer:coarse) 臂内，覆盖必须与被覆盖同臂——否则
-     断点翻宽后上游已回退桌面布局（aionui 列恢复网格列、delete-dialog 卸载），
+     断点翻宽后上游已回退桌面布局（delete-dialog 卸载），
      这里的 left/right !important 却残留，会把桌面网格列拽离原位。竖屏/无刘海
      设备 env() 恒 0，全部零位移。 */
   @media (max-width: 1023px) and (pointer: coarse) {
@@ -249,22 +241,6 @@ const POCKET_EXTRA_CSS = `/* pocket 控件/门控样式：刻意不加媒体查�
     /* b) FAB（上游 base.css.ts left:10px）：max() 保证无刘海时仍是 10px。 */
     [data-mobile-nav="fab"] {
       left: max(10px, env(safe-area-inset-left, 0px)) !important;
-    }
-    /* c) 底部 sheet/面板：上游 base.css.ts 的 delete-dialog 与 compat.css.ts 的
-       explorer/preview 两列 sheet 全是 left/right:8px。全屏预览态（compat.css.ts
-       的三标记 + full 选择器，特异性更高）不受影响。fileGuard 的长按 fallback
-       面板是内联样式，在 fileGuard.ts 里直接写同款 max()。 */
-    /* 回归修复：aionui 两列选择器单独加 html 前缀提特异性——上游 compat.css 对
-       同名选择器写有同特异性 left/right:8px !important，且其 style 标签用
-       setTimeout(0) 把自己重排到 head 末尾（同特异性 + !important 对拼时后加载
-       者胜，纯赌顺序），赌输则本覆盖整条失效。html 前缀加一档特异性后无论谁
-       排在后都稳赢。delete-dialog 不加前缀：上游 base.css 对它没有同值竞争，
-       !important 已稳赢，无需陪绑。 */
-    [data-aionui-explorer-col],
-    html [data-aionui-explorer-col],
-    html [data-aionui-preview-col] {
-      left: max(8px, env(safe-area-inset-left, 0px)) !important;
-      right: max(8px, env(safe-area-inset-right, 0px)) !important;
     }
 
     /* ---------- M3 键盘期 overlay 协调 ----------
@@ -369,8 +345,33 @@ const POCKET_EXTRA_CSS = `/* pocket 控件/门控样式：刻意不加媒体查�
       min-width: 44px !important;
       min-height: 44px !important;
     }
+
+    /* ---------- 键盘期禁过渡（2026-11-12 评审 §5.3 #4：键盘弹完布局才跟上） ----------
+       键盘动画期间可见带每帧都在变，上游/宿主给 frame、滚动区、composer 座位写的
+       transition（padding/height/transform）会把「一帧的位移」拖成 100-300ms 的追赶：
+       真机观感就是键盘已经弹完、布局还在慢慢挪。只在键盘开态短路过渡（属性由下方
+       --dshp-kb 写入方同点维护）；收起后原样保留，静态布局一行没动。 */
+    html[data-dshp-kb="open"] [data-mobile-nav="frame"],
+    html[data-dshp-kb="open"] [data-conversation-scroll],
+    html[data-dshp-kb="open"] [data-composer-seat],
+    html[data-dshp-kb="open"] [class*="_composerSeat"] {
+      transition: none !important;
+    }
   }
 }`
+
+/** pocket 词典取词（NS='pocket'）。bind 是惰性查询：词典由 client/index.jsx 注册，
+ *  晚于 mobileApply 也不影响。取词失败一律回退到内置中文——提示类文案宁可少一种
+ *  语言，也不能因为词典缺席变成一条空白横幅。 */
+function pocketText(ctx: ClientContext, key: string, fallback: string): string {
+  try {
+    const get = ctx.locale.bind(POCKET_NS) as unknown as (key: string) => unknown
+    const value = get(key)
+    return typeof value === 'string' && value.length > 0 ? value : fallback
+  } catch {
+    return fallback
+  }
+}
 
 /**
  * Mobile-adaptive shell, pocket adapter half.
@@ -394,7 +395,7 @@ export function mobileApply(ctx: ClientContext): void {
   const layout = resolveLayout({ urlValue, stored, narrowMatch: narrowMQ.matches });
   document.body?.setAttribute('data-dsh-pocket-layout', layout);
   if (layout === 'desktop') return;
-  // 强制 mobile：pocket 附加层（fileGuard、explorer 探测）永远挂；auto 模式
+  // 强制 mobile：pocket 附加层（fileGuard）永远挂；auto 模式
   // 挂载时按真实窄屏判断。M8：附加层效果统一走下方 armOnNarrow（随 narrowMQ
   // change 动态装卸）；强制态的假 narrow 恒 true 且 change 监听为 no-op，行为不变。
   let narrow: MediaQueryList = narrowMQ
@@ -431,9 +432,9 @@ export function mobileApply(ctx: ClientContext): void {
   }
 
   // ---- M8：pocket 附加层随断点装卸 ----
-  // 此前 narrow 只在启动求值一次，三个附加效果（zoom lock、explorer 标记、
-  // fileGuard）一锤定音——iPad 旋转跨 1024px 后 fileGuard/zoom-lock/explorer
-  // 标记全部残留（旧注释自嘲「旋转后需刷新生效」）。上游 installMobileEffect
+  // 此前 narrow 只在启动求值一次，附加效果（zoom lock、settling/链路看门狗、
+  // fileGuard）一锤定音——iPad 旋转跨 1024px 后 fileGuard/zoom-lock 全部
+  // 残留（旧注释自嘲「旋转后需刷新生效」）。上游 installMobileEffect
   // （phone-chrome.ts）用 matchMedia change 动态装卸，pocket 对齐同款模式：
   // change 回调里按 matches 挂/卸子资源（子清理函数保存好，复用各 effect 的
   // 既有 dispose 逻辑，不留任何监听/注入物/标记残留）。
@@ -727,40 +728,6 @@ export function mobileApply(ctx: ClientContext): void {
     }
   })
 
-  // explorer 可用性标记（issue #48）：上游假定宿主装了 dsh-web-ui（aionui 列），
-  // 官方 DSH 没有。探测列存在与否标到 frame 上，配 POCKET_EXTRA_CSS 隐藏死按钮。
-  // M8：随 narrowMQ change 动态装卸（断点翻宽即撤标记，不再残留）。
-  armOnNarrow('dsh-pocket: explorer availability (issue #48)', () => {
-    const frame = (): HTMLElement | null => document.querySelector('[data-mobile-nav="frame"]')
-    let raf = 0
-    const check = () => {
-      raf = 0
-      const has = document.querySelector('[data-aionui-explorer-col]') !== null ? '1' : '0'
-      const el = frame()
-      if (el !== null && el.getAttribute('data-mobile-nav-explorer') !== has) el.setAttribute('data-mobile-nav-explorer', has)
-    }
-    check()
-    const timer = window.setTimeout(check, 1500) // 宿主懒渲染：稍后再查一次
-    const schedule = (): void => { if (raf === 0) raf = requestAnimationFrame(check) }
-    const observer = new MutationObserver((mutations) => {
-      // 只关心结构变化（explorer 列的出现/消失）。流式输出期间每个 token 都是
-      // 文本节点增删，若不区分，流式全程每帧都要为这个几乎不变的标记跑两次
-      // 全文档 querySelector——纯文本突变直接跳过。
-      for (const m of mutations) {
-        for (const n of m.addedNodes) { if (n.nodeType !== 3) { schedule(); return } }
-        for (const n of m.removedNodes) { if (n.nodeType !== 3) { schedule(); return } }
-      }
-    })
-    observer.observe(document.body, { childList: true, subtree: true })
-    return () => {
-      window.clearTimeout(timer)
-      if (raf !== 0) cancelAnimationFrame(raf)
-      observer.disconnect()
-      // 标记属性随 frame 存活跨插件重载，卸载时不留 pocket 专属残留
-      frame()?.removeAttribute('data-mobile-nav-explorer')
-    }
-  })
-
   ctx.effect(() => {
     const tag = document.createElement('style')
     tag.dataset.plugin = 'dsh-pocket'
@@ -770,7 +737,7 @@ export function mobileApply(ctx: ClientContext): void {
     return () => {
       tag.remove()
     }
-  }, 'dsh-pocket: mobile extra styles (issue #17/#48)')
+  }, 'dsh-pocket: mobile extra styles (issue #17)')
 
   // ---- settling 看门狗（2026-10-28 反馈：宿主重连后输入框会消失）----
   // 完整根因与判据推导见 settling-watchdog.mjs 的文件头：宿主在 [data-phase=settling]
@@ -786,7 +753,7 @@ export function mobileApply(ctx: ClientContext): void {
   //   - repair：先 connection.reconnect() 换掉可能已死的 socket，再调宿主自带的
   //     Session.resync()（作废在途 open 并重建），让 openState 真正走回 open。
   //     typeof 守卫，宿主形状变化就跳过，退回纯 CSS 兜底。
-  // 与 fileGuard / explorer 同走 armOnNarrow：这是手机壳层的补偿，宽屏桌面布局
+  // 与 fileGuard 同走 armOnNarrow：这是手机壳层的补偿，宽屏桌面布局
   // 下不掺和宿主自身的会话加载节奏。
   armOnNarrow('dsh-pocket: settling watchdog (host reconnect leaves composer hidden)', () => {
     const STALE_ATTR = 'data-dshp-settling-stale';
@@ -1052,23 +1019,22 @@ export function mobileApply(ctx: ClientContext): void {
     };
   }, 'dsh-pocket: settling watchdog (host reconnect leaves composer hidden)')
 
-  // ---- 链路看门狗（2026-11-09 反馈：宿主断开后页面不会自己回来）----
+  // ---- 链路看门狗（2026-11-09 反馈：宿主断开后页面不会自己回来；2026-11-12 评审提速）----
   // 上面那条只看 [data-phase=settling]，覆盖不到「页面停在断线态」这一类：宿主只在
   // socket 的 close 事件上重连，而 iOS 主屏 PWA 被冻结、宿主进程重启、隧道抖动都可能
   // 让 close 回调根本不执行，socket 于是「已死但 readyState 仍是 1」——画面停在断线
-  // 前那一刻，用户只能手动刷新。
-  // 这条兜底只看链路状态本身：前台且连续 DISCONNECT_STALE_MS 判定为 down，就主动
-  // connection.reconnect()。退避按 6/12/24/60s 递进且不封顶尝试次数，只要还在前台就
-  // 一直试；恢复后立刻归零。后台完全不动作（省电，也不跟宿主自己的退避抢节奏），
-  // 切回前台那一刻立即评估一次——冻结回来后往往正是这里救回来的。
+  // 前那一刻，用户只能手动刷新（同一个成因见 settling-watchdog.mjs 文件头）。
+  //
+  // 旧实现要等状态判据连续 12s 为 down 才动手（最坏 16s），对静默断线完全无感。现在
+  // 两条路并行，判定与退避全部委托给 settling-watchdog.mjs 的 createLinkLiveness（有单测）：
+  //   1) 每 LINK_TICK_MS 读一次状态快照（同步、便宜）：宿主自己察觉到的断线 0.5s 内重连；
+  //   2) 前台每 LINK_PING_MS 打一次 pocket.status：收到任何响应都算活着，只有传输层
+  //      抛错/超时才判死——静默断线最坏 2.9s 内发现（评审验收线 < 3s）。
+  // 后台完全不动作（省电，也不跟宿主自己的退避抢节奏），切回前台立刻评估一次。
   armOnNarrow('dsh-pocket: link watchdog (silent disconnect never recovers)', () => {
-    const CHECK_MS = 4000;
-    const STALE_MS = 12000;
-    const BACKOFF_MS = [6000, 12000, 24000, 60000];
-    let downSince = 0;
-    let attempts = 0;
-    let lastAttemptAt = Number.NEGATIVE_INFINITY;
+    const liveness = createLinkLiveness();
     let disposed = false;
+    let probeTimer = 0;
 
     const now = (): number => performance.now();
 
@@ -1096,34 +1062,97 @@ export function mobileApply(ctx: ClientContext): void {
       } catch { /* 连接层不可用：交回宿主自身的退避 */ }
     };
 
-    const evaluate = (): void => {
-      if (disposed) return;
-      const at = now();
-      if (!linkDown()) {
-        downSince = 0;
-        attempts = 0;
-        lastAttemptAt = Number.NEGATIVE_INFINITY;
-        return;
+    // ---- 断线横幅（2026-11-12 评审 §5.3 #2：断线 16s 无任何提示）----
+    // 看门狗以前只默默重连：用户看到的是一条永远不动的旧消息，不知道页面已经
+    // 在自救。这里把 liveness 的判定投影成一条顶部胶囊——只在状态跳变时改 DOM
+    // （每 tick 重写 textContent 会让读屏软件反复播报），恢复后留 1.4s 再摘。
+    // pointer-events:none：横幅不能挡住任何可点区域（尤其顶栏的返回/抽屉）。
+    let banner: HTMLDivElement | null = null
+    let bannerDown = false
+    let bannerBackTimer = 0
+    const ensureBanner = (): HTMLDivElement => {
+      if (banner !== null && banner.isConnected) return banner
+      banner = document.createElement('div')
+      banner.setAttribute('data-mobile-nav', 'link-banner')
+      banner.setAttribute('role', 'status')
+      banner.setAttribute('aria-live', 'polite')
+      banner.style.cssText = "position:fixed;left:50%;top:calc(env(safe-area-inset-top, 0px) + 10px);transform:translateX(-50%);z-index:2147483600;max-width:calc(100vw - 32px);padding:7px 14px;border-radius:999px;font:13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.22);pointer-events:none;white-space:nowrap;text-align:center"
+      document.body.appendChild(banner)
+      return banner
+    }
+    const paintBanner = (text: string, tone: 'down' | 'back'): void => {
+      const el = ensureBanner()
+      el.textContent = text
+      el.style.background = tone === 'down' ? 'rgba(185,28,28,.96)' : 'rgba(21,128,61,.96)'
+      el.style.display = 'block'
+    }
+    const removeBanner = (): void => {
+      window.clearTimeout(bannerBackTimer)
+      bannerBackTimer = 0
+      banner?.remove()
+      banner = null
+      bannerDown = false
+    }
+    const syncBanner = (): void => {
+      if (disposed) return
+      const down = liveness.isDown()
+      if (down === bannerDown) return
+      bannerDown = down
+      if (down) {
+        window.clearTimeout(bannerBackTimer)
+        bannerBackTimer = 0
+        paintBanner(pocketText(ctx, 'linkDown', '连接已断开，正在自动重连…'), 'down')
+      } else {
+        paintBanner(pocketText(ctx, 'linkBack', '✅ 已重新连接'), 'back')
+        bannerBackTimer = window.setTimeout(removeBanner, 1400)
       }
-      if (downSince === 0) { downSince = at; return; }
-      if (at - downSince < STALE_MS) return;
-      if (document.visibilityState !== 'visible') return;
-      const gap = BACKOFF_MS[Math.min(attempts, BACKOFF_MS.length - 1)];
-      if (at - lastAttemptAt < gap) return;
-      attempts += 1;
-      lastAttemptAt = at;
-      tryReconnect();
+    }
+
+    /** 一次探活。调用与超时赛跑（探活通道不支持 AbortSignal 时也不会永久挂住）。
+     *  宿主没给 rpc 通道（旧宿主/降级）时无法探活，按「活着」处理——缺失的能力不能
+     *  当成断线证据，否则老宿主上会重连到天荒地老。 */
+    const probe = (): void => {
+      const finish = (alive: boolean): void => {
+        if (disposed) return;
+        window.clearTimeout(probeTimer);
+        probeTimer = 0;
+        liveness.noteProbe(alive, now());
+        syncBanner();
+      };
+      probeTimer = window.setTimeout(() => finish(false), LINK_PROBE_TIMEOUT_MS);
+      try {
+        const rpc = (ctx.connection as unknown as {
+          rpc?: { call?: (channel: string, endpoint: string, payload: unknown) => unknown };
+        })?.rpc;
+        if (typeof rpc?.call !== 'function') { finish(true); return; }
+        // 只关心「有没有回包」：业务错误（ok:false）同样证明链路活着。
+        void Promise.resolve(rpc.call(POCKET_RPC_CHANNEL, POCKET_ENDPOINTS.status, {}))
+          .then(() => finish(true), () => finish(false));
+      } catch { finish(false); }
     };
 
-    const timer = window.setInterval(evaluate, CHECK_MS);
+    const tick = (): void => {
+      if (disposed) return;
+      const at = now();
+      const visible = document.visibilityState === 'visible';
+      liveness.noteState(linkDown(), at);
+      if (liveness.shouldReconnect(at, visible)) tryReconnect();
+      if (liveness.shouldProbe(at, visible)) probe();
+      syncBanner();
+    };
+
+    const timer = window.setInterval(tick, LINK_TICK_MS);
     const onVisibility = (): void => {
-      if (document.visibilityState === 'visible') evaluate();
+      if (document.visibilityState === 'visible') tick();
     };
     document.addEventListener('visibilitychange', onVisibility);
-    evaluate();
+    tick();
     return () => {
       disposed = true;
       window.clearInterval(timer);
+      window.clearTimeout(probeTimer);
+      removeBanner();
+      liveness.reset();
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, 'dsh-pocket: link watchdog (silent disconnect never recovers)')
@@ -1200,6 +1229,153 @@ export function mobileApply(ctx: ClientContext): void {
       seatEl = null
       root.style.removeProperty('--dshp-kb')
       root.removeAttribute('data-dshp-kb')
+    }
+  })
+
+  // ---- 首次进入引导（2026-11-12 评审 §5.3 #7：初次打开不知道这是什么）----
+  // 一条一次性的说明卡，只回答三个问题：我在看什么、抽屉怎么开、断线会不会自己
+  // 回来。看过就按浏览器记在 localStorage（不跟账号），隐私模式下写失败就干脆
+  // 不弹——宁可少一次引导，也不能每次打开都重来。点「知道了」或 12s 自动消失
+  // 都算看过；卡片不进宿主 DOM 树，不参与 React 渲染。
+  armOnNarrow('dsh-pocket: first-visit tips', () => {
+    const KEY = 'dsh-pocket:first-visit-tips:v1'
+    let seen = true
+    try { seen = window.localStorage.getItem(KEY) !== null } catch { /* 隐私模式：不弹 */ }
+    if (seen) return () => {}
+    const markSeen = (): void => {
+      try { window.localStorage.setItem(KEY, '1') } catch { /* 配额不足：下次再弹，不影响使用 */ }
+    }
+    let card: HTMLDivElement | null = null
+    let closeTimer = 0
+    const dismiss = (): void => {
+      markSeen()
+      window.clearTimeout(closeTimer)
+      closeTimer = 0
+      card?.remove()
+      card = null
+    }
+    card = document.createElement('div')
+    card.setAttribute('data-mobile-nav', 'first-visit-tips')
+    card.setAttribute('role', 'dialog')
+    card.setAttribute('aria-label', pocketText(ctx, 'tipsTitle', '这是电脑上 DSH 的手机界面'))
+    card.style.cssText = "position:fixed;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom, 0px) + 76px);z-index:2147483500;max-width:420px;margin:0 auto;padding:14px 16px;border-radius:14px;background:rgba(17,24,39,.97);color:#f9fafb;font:13px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.3)"
+    const title = document.createElement('div')
+    title.textContent = pocketText(ctx, 'tipsTitle', '这是电脑上 DSH 的手机界面')
+    title.style.cssText = 'font-weight:600;font-size:14px;margin-bottom:6px'
+    const body = document.createElement('div')
+    body.textContent = pocketText(ctx, 'tipsBody', '与电脑实时同步，不是另一个应用。\n· 右滑（或点左上角）打开会话抽屉\n· 断线会自动重连，不用手动刷新\n· 字号、键盘、右边栏都在设置页「手机访问」里')
+    body.style.cssText = 'white-space:pre-line;color:#d1d5db'
+    const ok = document.createElement('button')
+    ok.type = 'button'
+    ok.textContent = pocketText(ctx, 'tipsDismiss', '知道了')
+    ok.style.cssText = "margin-top:10px;padding:7px 12px;border:1px solid rgba(255,255,255,.28);border-radius:8px;background:transparent;color:#fff;font:13px/1.3 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;cursor:pointer"
+    ok.addEventListener('click', dismiss)
+    card.append(title, body, ok)
+    document.body.appendChild(card)
+    closeTimer = window.setTimeout(dismiss, 12_000)
+    return () => {
+      window.clearTimeout(closeTimer)
+      card?.remove()
+      card = null
+    }
+  })
+
+  // ---- 回到底部胶囊（2026-11-12 评审 §5.3 #3：长会话向上翻后回不去）----
+  // 不碰宿主列表结构（近似虚拟化是 Phase 2 的事）：只在离底 > 280px 时给一个
+  // 一键回底。滚动区用宿主稳定标记 [data-conversation-scroll]（多会话并存时取
+  // 可见实例），胶囊挂在 composer 座位上方——座位随键盘上抬时它也一起上移。
+  // 位置只在「要显示」时才量 rect；隐藏态零 DOM 操作（流式输出期间不产生抖动）。
+  armOnNarrow('dsh-pocket: back to bottom pill', () => {
+    const AWAY_PX = 280
+    let pill: HTMLButtonElement | null = null
+    let raf = 0
+    let shown = false
+    const visibleScroller = (): HTMLElement | null => {
+      const nodes = document.querySelectorAll<HTMLElement>('[data-conversation-scroll]')
+      for (const node of Array.from(nodes)) {
+        if (node.getClientRects().length > 0) return node
+      }
+      return null
+    }
+    /** 胶囊底边离视口底的距离：座位可见时贴着它上方 12px（键盘/安全区自适应），
+     *  座位缺席（hero 态还没渲染）时退回固定 92px。 */
+    const pillBottom = (): number => {
+      const seat = Array.from(document.querySelectorAll<HTMLElement>('[data-composer-seat]'))
+        .find(el => el.getClientRects().length > 0) ?? null
+      if (seat === null) return 92
+      return Math.max(12, window.innerHeight - seat.getBoundingClientRect().top + 12)
+    }
+    const ensurePill = (): HTMLButtonElement => {
+      if (pill !== null && pill.isConnected) return pill
+      pill = document.createElement('button')
+      pill.type = 'button'
+      pill.setAttribute('data-mobile-nav', 'back-to-bottom')
+      pill.setAttribute('aria-label', pocketText(ctx, 'backToBottom', '回到底部'))
+      pill.textContent = '↓'
+      pill.style.cssText = "position:fixed;right:14px;z-index:2147483400;width:40px;height:40px;border-radius:50%;border:1px solid rgba(0,0,0,.08);background:rgba(255,255,255,.96);color:#111827;font:18px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.18);display:none;align-items:center;justify-content:center;padding:0;cursor:pointer;-webkit-tap-highlight-color:transparent"
+      pill.addEventListener('click', () => {
+        const el = visibleScroller()
+        if (el !== null) {
+          try {
+            el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+          } catch {
+            el.scrollTop = el.scrollHeight
+          }
+        }
+        hide()
+      })
+      document.body.appendChild(pill)
+      return pill
+    }
+    const hide = (): void => {
+      if (!shown) return
+      shown = false
+      if (pill !== null) pill.style.display = 'none'
+    }
+    /** 落位只在「要显示」与视口变化时跑：滚动帧里量 rect 会和宿主滚动抢主线程，
+     *  胶囊跟着滚动只做显隐切换（display 一写即可，不参与布局计算）。 */
+    const place = (): void => {
+      if (pill === null) return
+      const bottom = `${pillBottom()}px`
+      if (pill.style.bottom !== bottom) pill.style.bottom = bottom
+    }
+    const update = (): void => {
+      raf = 0
+      if (document.visibilityState !== 'visible') { hide(); return }
+      const el = visibleScroller()
+      if (el === null || el.scrollHeight - el.scrollTop - el.clientHeight <= AWAY_PX) { hide(); return }
+      const node = ensurePill()
+      if (shown) return
+      place()
+      node.style.display = 'flex'
+      shown = true
+    }
+    const onViewport = (): void => {
+      place()
+      schedule()
+    }
+    const schedule = (): void => { if (raf === 0) raf = requestAnimationFrame(update) }
+    const onScroll = (event: Event): void => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      if (target.closest('[data-conversation-scroll]') !== null) schedule()
+    }
+    document.addEventListener('scroll', onScroll, { capture: true, passive: true })
+    window.addEventListener('resize', onViewport)
+    window.visualViewport?.addEventListener('resize', onViewport)
+    // 兜底轮询（1.2s）：换会话、流式追加后 scrollTop 不变时也会漏掉上面的事件。
+    // 只读 scrollTop/scrollHeight 与一次 querySelectorAll，不写 DOM、不触发动画。
+    const timer = window.setInterval(schedule, 1200)
+    schedule()
+    return () => {
+      if (raf !== 0) cancelAnimationFrame(raf)
+      window.clearInterval(timer)
+      document.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', onViewport)
+      window.visualViewport?.removeEventListener('resize', onViewport)
+      pill?.remove()
+      pill = null
+      shown = false
     }
   })
 

@@ -252,3 +252,113 @@ export function createFreezeDetector({ gapMs = FREEZE_GAP_MS, intervalMs = 1000 
   };
   return { tick, reset, intervalMs };
 }
+
+// ---- 链路探活（2026-11-12，评审 §3.3 / §5.3 #2：断线感知 < 3s）----
+//
+// resolveLinkVerdict 只能识别「宿主自己察觉到的断线」。iOS 主屏 PWA 被冻结、宿主进程
+// 重启、隧道抖动都可能让 socket 静默死亡而快照一直报 usable（推导见文件头）。旧兜底是
+// 「状态判据连续 12s 为 down 才重连」，既慢（最坏 16s）又对静默断线完全无效。
+//
+// 这里把「何时探活、何时重连」做成纯状态机，DOM 与 RPC 留在 mobile-apply.tsx：
+//   - 两条证据并行：状态快照（同步读，便宜，几百毫秒内就能重连）与探活结果（每次要发
+//     一条 RPC）。探活的判据是「有没有收到响应」而不是响应内容——pocket.status 回业务
+//     错误也证明链路活着，只有传输层抛错/超时才证明它死了。
+//   - 一次探活失败即判死：误判的代价是多一次重连（宿主立刻重连，几百毫秒），漏判的代价
+//     是用户对着死页面等。探活超时给到 900ms，是这条空载荷 RPC 正常往返的十倍以上。
+//   - 判死后立即重连（用户已经等了一个探活周期），之后按 2/4/8/15/30s 退避；链路确认
+//     恢复后归零。
+//   - 后台完全不动作：定时器被系统节流，探活也没有意义，而且不与宿主自身的退避抢节奏。
+// 最坏感知时延 = LINK_PING_MS + LINK_TICK_MS + LINK_PROBE_TIMEOUT_MS ≈ 2.9s。
+
+/** 前台探活间隔（毫秒）。 */
+export const LINK_PING_MS = 1500;
+
+/** 单次探活超时：传输层没回应就算死。 */
+export const LINK_PROBE_TIMEOUT_MS = 900;
+
+/** 状态快照轮询间隔：同步读，比探活密——宿主自己察觉到的断线不必等下一次探活。 */
+export const LINK_TICK_MS = 500;
+
+/** 重连退避（毫秒）：首轮立即重连，之后递进；探活确认恢复后归零。 */
+export const LINK_BACKOFF_MS = [2000, 4000, 8000, 15000, 30000];
+
+/**
+ * 链路活性判定器。所有方法都接收外部时刻（毫秒，单调即可），便于假时钟单测。
+ *
+ * 两条证据的优先级是刻意的：
+ *   - 快照说断线 → 就是断线（宿主自己也这么认为，它已经在重连；这里只是加速）；
+ *   - 快照说没问题但探活失败 → 也是断线（静默断线的主路径）；
+ *   - 探活成功只能清掉「探活那份证据」，快照仍报 down 时保留判定——否则「快照滞后 +
+ *     探活正常」会在两者之间来回翻转，造成重连风暴。
+ */
+export function createLinkLiveness({ pingMs = LINK_PING_MS, backoffMs = LINK_BACKOFF_MS } = {}) {
+  let stateDown = false;
+  let probeDead = false;
+  /** null = 没有断线判定。不能用 0 当哨兵：调用方的时钟可能就从 0 开始。 */
+  let downSince = null;
+  let attempts = 0;
+  let lastProbeAt = Number.NEGATIVE_INFINITY;
+  let probeInFlight = false;
+  let lastReconnectAt = Number.NEGATIVE_INFINITY;
+
+  const forget = () => {
+    downSince = null;
+    attempts = 0;
+    lastReconnectAt = Number.NEGATIVE_INFINITY;
+  };
+
+  /** 登记一次链路快照（同步判据）。 */
+  const noteState = (down, now) => {
+    stateDown = down === true;
+    if (stateDown) {
+      if (downSince === null) downSince = now;
+      return;
+    }
+    // 静默断线期间快照一直报 usable，绝不能让它把探活证据冲掉（那条路只由 noteProbe 清）。
+    if (!probeDead && downSince !== null) forget();
+  };
+
+  /** 此刻该不该发一次探活；返回 true 时已记账（in-flight 期间不重发）。 */
+  const shouldProbe = (now, visible) => {
+    if (visible !== true || probeInFlight) return false;
+    if (now - lastProbeAt < pingMs) return false;
+    lastProbeAt = now;
+    probeInFlight = true;
+    return true;
+  };
+
+  /** 登记探活结果。alive 的语义是「收到了响应」，不是「响应是成功」。 */
+  const noteProbe = (alive, now) => {
+    probeInFlight = false;
+    if (alive === true) {
+      probeDead = false;
+      if (!stateDown && downSince !== null) forget();
+      return;
+    }
+    probeDead = true;
+    if (downSince === null) downSince = now;
+  };
+
+  /** 此刻该不该重连（含退避）；返回 true 时已记账 attempts / lastReconnectAt。 */
+  const shouldReconnect = (now, visible) => {
+    if (visible !== true || downSince === null) return false;
+    const gap = backoffMs[Math.min(attempts, backoffMs.length - 1)];
+    if (now - lastReconnectAt < gap) return false;
+    attempts += 1;
+    lastReconnectAt = now;
+    return true;
+  };
+
+  /** 当前判定（供 UI 用，不参与决策）。 */
+  const isDown = () => downSince !== null;
+
+  const reset = () => {
+    stateDown = false;
+    probeDead = false;
+    probeInFlight = false;
+    lastProbeAt = Number.NEGATIVE_INFINITY;
+    forget();
+  };
+
+  return { noteState, shouldProbe, noteProbe, shouldReconnect, isDown, reset };
+}

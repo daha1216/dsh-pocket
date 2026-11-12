@@ -53,8 +53,9 @@ DSH Pocket 就是干这个的：**装上它，同一 WiFi 下手机扫个码，�
 | 📱 移动端适配           | 窄屏自动变抽屉布局（移植 dsh-web-mobile，MIT）：侧栏抽屉、会话全宽、状态栏安全区、触控优化                                                                                         |
 | 🧭 可选右边栏           | 手机端显示原生右边栏入口；普通手机可在设置中关闭以保持紧凑，折叠屏展开后可更方便地同时使用终端底栏和右边栏                                                                         |
 | 📏 手机端字号           | 默认「跟随桌面」，桌面改字号时手机同步变化；选择**具体字号（12–22px）**后才独立，不影响桌面「字号大小」 |
-| 📁 文件浏览             | 移动端「文件浏览」入口需要宿主提供 explorer 面板（dsh-web-ui 组件）；官方 DSH 未内置时入口自动隐藏，不会出现"点了没反应"                                                           |
+| 📁 文件浏览             | 移动端「文件浏览」入口直接用宿主自己的右侧栏：点一下展开文件树，再点一下收起，不需要额外装组件 |
 | 🗜️ 传输压缩             | 大 JSON 响应自动 gzip/brotli（长会话 17MB → ~1MB，brotli 质量 6：快且省流量），手机加载更快、更省流量                                                                              |
+| 🧹 代理缓存             | 静态资源转码结果与会话列表瘦身结果共用一个 **36 MB** 内存预算；设置页「代理缓存」可查看用量并一键**清空缓存**（手机端页面异常时可先清空） |
 | 🔁 隧道自动恢复         | 仅恢复此前开启且配置完整的命名隧道；旧 Quick Tunnel 标记不会恢复随机隧道，未配置时公网保持关闭 |
 | 🧩 单包安装             | 一个 npm 包、一个设置页，没有核心/适配器要分开装；局域网无需公网配置，公网需要自己的 Cloudflare 账号、域名和 Tunnel Token |
 
@@ -112,12 +113,6 @@ npx @deepseek-ai/dsh web
 
 > 更新到新版本：重新执行上面的 `add` 命令即可（GitHub 地址不带 tag，装到的是默认分支最新提交）。想锁版本就写成 `github:daha1216/dsh-pocket#v3.0.12`，之后更新时把 tag 换成新版本号再 `add` 一次。
 
-### CLI 公网访问
-
-`dsh-pocket` 不带 `--public` 时只提供局域网访问。使用 `dsh-pocket --public` 前，必须先在设置页保存自己的固定域名与 Tunnel Token，且 **CLI 与配置时的 DSH 必须使用同一个 `DSH_HOME`**；配置缺失时不会创建公网隧道。
-
-Cloudflare 域名路由的 **Service 必须指向 CLI 的实际监听端口**（默认 3081；例如 `dsh-pocket --public --port 3082` 对应 `http://127.0.0.1:3082`）。不要让插件代理与 CLI 争用同一端口，也不要把路由指向 DSH 原始 Web 端口。CLI 的访问密码独立于插件设置：默认每次运行生成，可用 `--pin <值>` 或 `DSH_POCKET_PIN=<值>` 自行设定。
-
 ## ⚠️ 安全（必读）
 
 - **DSH 能执行你电脑上的代码**。**局域网**二维码/URL 配上独立 **8 位密码**才是钥匙（密码**默认开启**，可关——关闭后局域网扫码直连，仅同一网络设备可访问），**请勿把局域网二维码、URL 或密码发给别人**
@@ -136,11 +131,10 @@ Cloudflare 域名路由的 **Service 必须指向 CLI 的实际监听端口**（
 - **自建反向代理（nginx/traefik/Caddy）指向 3081 时**：请让反代保留 `X-Forwarded-For` / `X-Real-IP` / `Forwarded` 任一请求头——代理看到「本机来源 + 转发头」会强制按公网要求密码；`ssh -R`/`socat` 这类不注入头的纯端口转发会让流量看起来是纯本机，请只在可信网络里用，或在转发层自己加认证
 - 局域网模式不暴露公网，只有同一网络内的设备能访问
 - 适合个人自用；插件公网密码存本机 `$DSH_HOME/dsh-pocket/token`（不随启停或重启自动换新），局域网密码存 `$DSH_HOME/dsh-pocket/token-lan`（设置页手动刷新），开关、自定义标记及公网配置存 `$DSH_HOME/dsh-pocket/settings.json`
-- **CLI 模式（命令行直跑 `dsh-pocket`）也有密码**（issue #90 修复前这条路是无认证的）：默认随机生成 8 位密码，打印在终端、并已内嵌进二维码（**扫码体验不变**），手动敲地址时需要填写，本机访问免密。`--pin <值>` 或 `DSH_POCKET_PIN=<值>` 自定义（至少 8 位，前后空白会被去掉）；`--no-auth` 可关闭，**不推荐**——那等于把能执行代码的 DSH 裸暴露给任何能连上该端口的人；`--public` 与 `--no-auth` **不能同时使用**（否则固定域名会变成无密码的公网入口，CLI 会拒绝启动）
 
 ## 💻 DSH Desktop（桌面版）
 
-- 桌面版里 dsh-pocket 的**扫码同屏**正常可用；**更新/重启由桌面版管理**（插件内这两项自动停用）
+- 桌面版里 dsh-pocket 的**扫码同屏**正常可用；**重启由桌面版管理**（插件内的重启按钮自动停用）
 - ⚠️ 桌面端 **advanced 模式**暂不支持手机访问（该模式禁用网页布局、手机拿不到 layout 服务，会白屏）——请切回 **compatibility** 模式后重启；advanced 模式下手机打开会看到明确的提示层
 
 ## 🩹 常见问题（别踩的坑）
@@ -151,7 +145,7 @@ Cloudflare 域名路由的 **Service 必须指向 CLI 的实际监听端口**（
 | `ERR_PNPM_ADDING_TO_ROOT`                   | pnpm 9 对 workspace 根的限制：安装/更新命令**末尾加 `-w`**（`--workspace-root`）                                                                                                                                                                                                                                                                        |
 | 装完/更新了但界面没变化                     | **必须重启 `dsh web`** 才生效；运行中的进程仍加载旧代码                                                                                                                                                                                                                                                                                                 |
 | `listen EADDRINUSE ... :3081`               | 旧 dsh-pocket 进程还占着端口：macOS/Linux `lsof -ti :3081 \| xargs kill -9`；Windows `netstat -ano \| findstr :3081`（找 LISTENING 的 PID）→ `taskkill /PID <PID> /F`，后重试                                                                                                                                                                           |
-| 想换端口（issue #70）                       | 插件模式：在 `$DSH_HOME/dsh-pocket/settings.json` 写 `"proxyPort": 3082` 后重启 `dsh web`。CLI 模式：`dsh-pocket --port 3082`。端口被占会报 `EADDRINUSE`，杀掉旧进程或换一个端口                                                                                                                                                                        |
+| 想换端口（issue #70）                       | 插件模式：在 `$DSH_HOME/dsh-pocket/settings.json` 写 `"proxyPort": 3082` 后重启 `dsh web`。端口被占会报 `EADDRINUSE`，杀掉旧进程或换一个端口                                                                                                                                                                        |
 | 想给访客一个临时密码                        | 暂不支持：issue #69 的「临时访问 PIN」功能已在 2.6.x 移除（撤销时会崩）。现在分享访问：把主密码或 `?token=<主密码>` 链接发给对方，用完在设置页点「刷新」换掉即可                                                                                                                                                                                        |
 | Linux 服务器装不上 cloudflared（issue #45） | 远程 Linux 国内/企业网下所有 CDN 源（GitHub/ghproxy/gh.ddlc/gh-proxy）都连不上时：在服务器上手动装 `cloudflared`（如 `apt install cloudflared`、`dnf install cloudflared`、或下载 tgz 解压到任意目录），然后在 `$DSH_HOME/dsh-pocket/settings.json` 加 `"cloudflaredPath": "/path/to/cloudflared"`，重启 `dsh web` 后插件直接调用它，**不再走自动下载** |
 | 装完提示 `incompatible-version`             | 本插件要求 DSH **0.2.0-rc.1 ~ 0.2.x**：`dsh --version` 确认版本，升级 DSH，或用 `dsh plugin allow-version` 加一次性豁免 |
@@ -209,11 +203,11 @@ Cloudflare 域名路由的 **Service 必须指向 CLI 的实际监听端口**（
 | `lib/index.js`       | 插件入口：自动起代理 + 注册 RPC + 访问密码管理（公网 8 位，不随启停或重启自动换新；局域网独立 8 位可手动刷新/开关）+ 局域网访问总开关 + 桌面端环境适配 |
 | `lib/settings.mjs`   | 设置持久化：局域网访问总开关（默认开启）+ 局域网密码开关（默认开启）存 `$DSH_HOME/dsh-pocket/settings.json`                                                                        |
 | `lib/service.mjs`    | 服务：代理生命周期（端口自适应）、用户自配命名隧道（完整配置与有效标记才恢复）、状态快照（含二维码） |
-| `lib/proxy.mjs`      | 改头反向代理：Host/Origin → loopback，HTTP + WebSocket 透传 + polyfill 注入 + gzip/brotli 压缩 + 按 Host 区分的访问令牌认证（公网必验；局域网按开关）+ 局域网关闭时拦截局域网 Host |
+| `lib/proxy.mjs`      | 改头反向代理入口（`createPocketProxy`）：请求/升级编排、注入、瘦身、压缩与缓存接线；对外导出面保持不变 |
+| `lib/proxy/`         | 代理内部模块：`inject`（polyfill/SW 注入）、`cache`（统一预算的两级缓存）、`hosts`（Host 分级与改写）、`auth`（PIN/cookie/限速）、`handshake`、`pages`（登录/拦截页）、`ws`（心跳与帧边界） |
 | `lib/tunnel.mjs`     | cloudflared：多镜像源下载（清华优先）/自适应多线程/用用户的 Tunnel Token 启动命名隧道（HTTP/2） |
 | `lib/web-rpc.js`     | loopback RPC：`status` / `tunnel.start` / `tunnel.stop` / `lan.setEnabled` / `version` / `update` / `restart`                                                                      |
 | `client/`            | 设置页「手机访问」+ 移动端适配（dsh-web-mobile 移植）                                                                                                                              |
-| `bin/dsh-pocket.mjs` | CLI：局域网/公网模式，打印 URL + 二维码                                                                                                                                            |
 
 ## 🛠 开发
 

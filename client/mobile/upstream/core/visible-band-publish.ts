@@ -1,0 +1,84 @@
+// 可见带（--dsha-mobile-visible-vh）的发布策略：跟手发布，还是停稳后发布？
+//
+// 这个变量由 effects/viewport-meta.ts 维护，壳层高度（styles/layout.css.ts 里
+// [data-mobile-nav="frame"] 的 height）与提问卡全屏带直接拿它排版。两件相互冲突的
+// 现场事实把它变成一个必须运行时决策的取舍：
+//
+//   - 跟手才对（2026-11-12 评审 §3.3）：键盘抬起/收起的 250-300ms 里变量落后于
+//     visualViewport，壳层高度就只能在动画结束后跳一下，用户看到的是「键盘动完页面
+//     才闪一下」。
+//   - 代价也是真的（2026-10-31 owner 手机实测）：:root 上的自定义属性会让整个文档
+//     重新计算样式，逐帧发布时整个 app 每帧重排约 20 次，会话列表白屏 1-2 秒。不是
+//     所有设备都扛得住，而且哪台扛得住事先测不出来——只能运行时量。
+//
+// 所以默认逐帧直写，同时量帧节拍：连续几帧被重排明显拖长，就判定这台设备扛不住，
+// 本次会话余下时间退回「停稳后发布」（每次键盘过渡只重排一次）。降级是**单向**的
+// （恢复逐帧要等下一次页面加载），换来的是行为可预测——不会在动画中途来回切。
+//
+// 这里只有判据，不碰 DOM、不知道变量叫什么；接线在 viewport-meta.ts，约束与背景见
+// effects/AGENTS.md 的「viewport-meta.ts 禁止改成 installer」一节。
+
+/** 一帧的预算（≈30fps）：不超过它说明重排没有把过渡拖慢。 */
+export const FRAME_BUDGET_MS = 32
+
+/** 连续几帧超预算才认定设备扛不住：单帧抖动（GC、别的标签页）不算。 */
+export const STUTTER_LIMIT = 3
+
+/** 两次过渡之间的最长间隔：超过它就当作新一轮过渡，节拍重新计数。 */
+export const BURST_IDLE_MS = 240
+
+export interface BandPublishGovernor {
+  /** 登记一帧「过渡中」（调用方只在还没停稳时调）。返回是否仍在逐帧发布。 */
+  noteFrame(now: number): boolean
+  /** 登记「已经停稳」：清掉节拍，但不恢复降级。 */
+  noteSettled(): void
+  isLive(): boolean
+  reset(): void
+}
+
+export function createBandPublishGovernor({
+  frameBudgetMs = FRAME_BUDGET_MS,
+  stutterLimit = STUTTER_LIMIT,
+  burstIdleMs = BURST_IDLE_MS,
+}: {
+  frameBudgetMs?: number
+  stutterLimit?: number
+  burstIdleMs?: number
+} = {}): BandPublishGovernor {
+  let live = true
+  let previous = 0
+  let stutters = 0
+
+  const noteFrame = (now: number): boolean => {
+    if (!live) return false
+    if (previous === 0 || now - previous > burstIdleMs) {
+      previous = now
+      stutters = 0
+      return true
+    }
+    const gap = now - previous
+    previous = now
+    if (gap <= frameBudgetMs) {
+      stutters = 0
+      return true
+    }
+    stutters += 1
+    if (stutters >= stutterLimit) live = false
+    return live
+  }
+
+  const noteSettled = (): void => {
+    previous = 0
+    stutters = 0
+  }
+
+  const isLive = (): boolean => live
+
+  const reset = (): void => {
+    live = true
+    previous = 0
+    stutters = 0
+  }
+
+  return { noteFrame, noteSettled, isLive, reset }
+}

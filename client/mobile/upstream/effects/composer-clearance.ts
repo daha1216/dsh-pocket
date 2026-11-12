@@ -32,8 +32,7 @@ import { getFrame } from '../platform/frame.ts'
  * `data-mobile-nav-composer-tight` then lets the seat outrank the header and
  * drops the seat's secondary rows so the editing row fits. No transform, no
  * inline styles on host nodes: a lift would be wrong here (the seat is already
- * bottom-pinned; the covered part is its top) — that is why
- * composer-keyboard-lift.ts stays iOS-only and is not touched.
+ * bottom-pinned; the covered part is its top).
  *
  * Why not a CSS media query: the trigger is `header height + seat height >
  * visible band`, and all three depend on the device, the IME and the draft
@@ -48,7 +47,7 @@ import { getFrame } from '../platform/frame.ts'
  * host unmount).
  *
  * DOM contract (audit on host upgrades): the seat is the host-owned hashed
- * `_composerSeat` (the same substring composer-keyboard-lift.ts anchors), the
+ * `_composerSeat`, the
  * header is the host header class `wSkVaW_header` (not a bare `header`: the
  * ask-question card renders its own header inside the seat, pitfalls §提问卡
  * 顶栏误伤), and the secondary row the CSS drops is `[data-composer-dock]`

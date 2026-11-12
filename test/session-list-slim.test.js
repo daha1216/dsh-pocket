@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { createServer, request as httpRequest } from 'node:http';
 import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 
-import { createPocketProxy } from '../lib/proxy.mjs';
+import { CACHE_BUDGET, clearProxyCaches, createPocketProxy, proxyCacheStats } from '../lib/proxy.mjs';
 
 const FAT_KEYS = ['contextHeaders', 'retrace/forkmap', 'retrace/versions', 'turnOutline'];
 // watcherInsights 故意不在剥离清单里：dsh-watcher 的统计面板直接扫 session/list 的
@@ -202,6 +202,42 @@ test('session/list 瘦身：rpcId 不同的同一次调用仍命中缓存，且�
     // 命中在响应阶段（要等上游响应头才决定瘦身），所以上游各打一次；
     // 省下的是整包解压 + 40MB JSON 解析/重序列化。
     assert.equal(up.hits.length, 2);
+  } finally {
+    await proxy.close();
+    up.server.close();
+  }
+});
+
+test('缓存可观测、可清空：proxyCacheStats 报用量，clearProxyCaches 释放后仍能瘦身', async () => {
+  // 评审 §3.4：三层缓存要统一预算，且必须能观测、能从设置页清空。
+  // 这里验证三件事：命中后统计确实有量；清空回报释放量并归零；清空不是功能开关。
+  const up = await fakeSessionListUpstream();
+  const proxy = await createPocketProxy({ port: 0, host: '127.0.0.1', upstream: { host: '127.0.0.1', port: up.port } });
+  try {
+    clearProxyCaches(); // 同文件前面的用例会留下条目，先归零，断言才有意义
+    const payload = { payload: { marker: 'clearable' } };
+    const first = await postSessionList(proxy.port, payload);
+    const second = await postSessionList(proxy.port, payload);
+    assert.equal(first.headers['x-dsh-pocket-slim-cache'], undefined);
+    assert.equal(second.headers['x-dsh-pocket-slim-cache'], 'hit');
+
+    const before = proxyCacheStats();
+    assert.ok(before.sessionList.entries >= 1, '命中后列表缓存应有条目');
+    assert.ok(before.sessionList.bytes > 0, '命中后列表缓存应有字节数');
+    assert.equal(before.sessionList.budgetBytes, CACHE_BUDGET.sessionListBytes, '设置页显示的预算来自 CACHE_BUDGET');
+    assert.ok(before.bytes >= before.sessionList.bytes, '总用量是两层缓存之和');
+
+    const freed = clearProxyCaches();
+    assert.equal(freed.freedBytes, before.bytes, '回报释放量 = 清空前的总用量');
+    const after = proxyCacheStats();
+    assert.deepEqual([after.bytes, after.entries], [0, 0], '清空后归零');
+
+    const third = await postSessionList(proxy.port, payload);
+    assert.equal(third.headers['x-dsh-pocket-slim-cache'], undefined, '清空后第一次必然未命中');
+    const values = third.json.result.value.items[0].projections.values;
+    for (const key of FAT_KEYS) assert.equal(values[key], undefined, `清空后仍应剥 ${key}`);
+    for (const key of KEPT_FAT_KEYS) assert.ok(values[key], `清空后仍应保留 ${key}`);
+    assert.ok(proxyCacheStats().sessionList.bytes > 0, '瘦身缓存应重新建立');
   } finally {
     await proxy.close();
     up.server.close();

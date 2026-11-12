@@ -39,9 +39,9 @@
 - 任务只在移动断点激活时跑，每动画帧合并一次。`stats-line` 保持 `scopes: ['*', 'characterData']`——
   树键因为它的槽随树重建，文本键因为 TPS 更新可能以原地 `nodeValue` 改写到达。**加键安全；删掉树键
   正是这行要防的失效模式**。
-- 已注册任务：`frame-marker`、`header-metrics`、`preview-fullscreen-toggle`、`preview-close-sync`、
-  `sheet-rise-replay`、`file-viewer-open-marker`、`stats-line`、`overlay-backdrop-fab`、`panel-back-exit`、
-  `drawer-session-log`、`image-lightbox-zoom`、`question-fullscreen`（后两个由各自效果在移动档自注册）。
+- 已注册任务：`frame-marker`、`header-metrics`、`file-viewer-open-marker`、`stats-line`、
+  `overlay-backdrop-fab`、`panel-back-exit`、`drawer-session-log`、`drawer-quick-settings`、
+  `image-lightbox-zoom`、`question-fullscreen`（最后一个由它自己的效果在移动档自注册）。
 
 ## 分层与依赖
 
@@ -61,9 +61,8 @@
 同步）；misc.css.ts 的桌面隐藏块是它的精确补集，必须保持未安装形态。
 
 CSS 写在 `styles/`，不写进组件文件；保留拼接顺序与完整 CSS 注释/分段边界。**该顺序是行为契约，不是
-排版偏好**：aionui 探索器/预览两列的平板档「居中不铺满」压在 compat 的铺满规则之上（两者同 (0,1,0)
-且都 `!important`，只靠 misc 在后分胜负——把顺序翻过来就退回铺满，用 `order-flip.mjs`
-复现）。
+排版偏好**：compat 自述「有意覆盖 layout」，misc 又压在 compat 之上做桌面隐藏与平板收窄；同特异性同
+`!important` 时只靠拼接顺序分胜负——把顺序调换就换赢家（用 `order-flip.mjs` 复现）。
 
 ## 选择器与 DOM 标记
 
@@ -73,7 +72,6 @@ CSS 写在 `styles/`，不写进组件文件；保留拼接顺序与完整 CSS �
 `[class*="_treeRow"]`，区分目录/文件时排除 `[class*="_treeArrowEmpty"]`。
 
 DOM 标记即跨模块状态契约：`data-mobile-nav="frame"`、`data-sidebar-collapsed`、
-`data-aionui-explorer-open`、`data-aionui-preview-open`、`data-mobile-preview-full`、
 `data-mobile-nav="stats"`、`data-mobile-nav="stats-ring"` + overlay 体系五标记（`stats-ring-reserve` /
 `stats-tps-reserve` / `stats-tps` / `stats-ring-dock` / `stats-tps-row`，#104）、`data-file-viewer-open`
 （dsh-file-viewer 兼容布局的 frame 级门，锚 `.dsfv-panel`）、`data-mobile-nav="session-delete"`

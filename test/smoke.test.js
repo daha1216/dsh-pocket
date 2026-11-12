@@ -128,21 +128,29 @@ test('公网免责声明（issue #31）：bundle 含弹框与勾选逻辑，RPC 
   assert.ok(clientSrc.includes('disclaimer: true'), '开启公网带免责声明确认参数');
 });
 
-test('文件浏览（issue #48）：宿主无 aionui explorer 时隐藏入口；点 Files 关抽屉', async () => {
+test('文件浏览（2026-11-12）：只走宿主官方右侧栏，点 Files 关抽屉', async () => {
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../client/client.js', import.meta.url), 'utf8');
-  // 检测逻辑：frame 打 data-mobile-nav-explorer 标记
-  assert.ok(src.includes('data-mobile-nav-explorer'), '存在 explorer 可用性检测标记');
-  // 隐藏 CSS：无 explorer 时隐藏 files/explorer 入口
-  assert.ok(src.includes('[data-mobile-nav-explorer="0"] [data-mobile-nav="files"]'), '无 explorer 隐藏 header Files');
-  assert.ok(src.includes('[data-mobile-nav-explorer="0"] [data-mobile-nav="explorer"]'), '无 explorer 隐藏 drawer 入口');
-  // 点 Files 关闭抽屉（抽屉 z600 会盖住 explorer sheet，且 sheet 外点击会被吃掉）
+  const helper = readFileSync(new URL('../client/mobile/upstream/components/open-files-panel.ts', import.meta.url), 'utf8');
+  // 右栏开关：面板关闭时只有 expand，打开后只剩 toggle（0.1.5 实测）
+  assert.ok(helper.includes("'[data-sidebar-right-expand]'"), '用宿主右侧栏展开按钮');
+  assert.ok(helper.includes("'[data-sidebar-right-toggle]'"), '用宿主右侧栏收起按钮');
+  assert.ok(!helper.includes('aionui'), '不再回退第三方 explorer 列（#17）');
+  // 点 Files 关闭抽屉（抽屉 z600 会盖住右栏，且面板外点击会被吃掉）
   assert.ok(src.includes('[data-mobile-nav="files"]'), 'Files 纳入抽屉内导航关闭');
 });
 
-test('Windows 更新 spawn（PR #54）：performUpdate 的 spawn 必须带 shell 选项', async () => {
+test('更新契约（2026-11-12）：不探测 npm registry，也不代跑 dsh plugin update', async () => {
   const { readFileSync } = await import('node:fs');
-  const src = readFileSync(new URL('../lib/index.js', import.meta.url), 'utf8');
-  const seg = src.slice(src.indexOf("spawn('dsh'"), src.indexOf('spawn(\'dsh\')') + 500);
-  assert.ok(src.includes("shell: process.platform === 'win32'"), 'spawn 带 shell: win32（npm shim ENOENT / Node22 EINVAL）');
+  const files = {
+    'lib/index.js': readFileSync(new URL('../lib/index.js', import.meta.url), 'utf8'),
+    'lib/web-rpc.js': readFileSync(new URL('../lib/web-rpc.js', import.meta.url), 'utf8'),
+    'client/client.js': readFileSync(new URL('../client/client.js', import.meta.url), 'utf8'),
+  };
+  for (const [name, text] of Object.entries(files)) {
+    assert.equal(text.includes('registry.npmjs.org'), false, name + ' 不再访问 npm registry（npm 上的 dsh-pocket 不是本 fork）');
+    assert.equal(text.includes('update --latest'), false, name + ' 不再代跑一键更新（更新只走重跑 add）');
+  }
+  assert.equal(files['lib/index.js'].includes('performUpdate'), false, 'lib/index.js 没有一键更新的 spawn 实现');
+  assert.equal(files['lib/web-rpc.js'].includes('POCKET_ENDPOINTS.update'), false, 'web-rpc 不再注册 pocket.update 端点');
 });

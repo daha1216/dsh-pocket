@@ -22,10 +22,9 @@
 // 会退出，下一次 resize 又进来 —— 一个自激的状态机。
 
 /** How far the page scroll offset and the visual viewport's offsetTop may drift before the
- *  screen-space model counts as unverified. Same value and reasoning as
- *  composer-keyboard-lift.ts's CHANNEL_TOLERANCE_PX, restated here because
- *  core/ may not import effects/ (layer direction) and the tolerance is part
- *  of this module's fail-open contract, not of that effect. */
+ *  screen-space model counts as unverified. The tolerance is part of this module's
+ *  fail-open contract: when the two scroll channels disagree, the layout model no
+ *  longer describes the screen, so the marker must not be trusted. */
 export const SCROLL_CHANNEL_TOLERANCE_PX = 24
 
 /** Occlusion is only real from 1px on: sub-pixel overlap is rect rounding, not

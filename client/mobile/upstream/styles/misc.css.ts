@@ -316,7 +316,7 @@ export const MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
    On wider but still sub-desktop viewports (foldables, tablet portrait,
    desktop-mode tall windows) the same full-bleed sheet leaves content
    clustered at the left edge with a large dead zone on the right. Cap and
-   center the modal sheets and the aionui bottom sheets instead. */
+   center the modal sheets instead. */
 @media (min-width: 768px) and (max-width: 1023px) and (pointer: coarse) {
   /* Centered, never edge-to-edge — for the modal shapes below, not for every
      modal dialog. Covered: modals that are not sheet-shaped, plus sheet-shaped
@@ -334,17 +334,6 @@ export const MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
     margin-right: auto !important;
     width: min(calc(100vw - 32px), 720px) !important;
     max-width: min(calc(100vw - 32px), 720px) !important;
-  }
-
-  /* The dsh-web-ui explorer / preview bottom sheets: same treatment — keep
-     the mobile bottom-sheet behavior, but stop them spanning the full width. */
-  [data-aionui-explorer-col],
-  [data-aionui-preview-col] {
-    left: 0 !important;
-    right: 0 !important;
-    width: min(calc(100vw - 32px), 720px) !important;
-    margin-left: auto !important;
-    margin-right: auto !important;
   }
 
   /* Settings sections (e.g. Agent presets) often carry a desktop max-width
@@ -382,7 +371,6 @@ export const MISC_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
   [data-mobile-nav="session-log-wrap"],
   [data-mobile-nav="quick-settings"],
   [data-mobile-nav="quick-settings-wrap"],
-  [data-mobile-nav="preview-full-toggle"],
   [data-mobile-nav="question-expand"] {
     display: none !important;
   }

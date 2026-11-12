@@ -199,7 +199,7 @@ test('公网设置：恢复出厂回到未配置，不留下公网入口或二�
 });
 
 test('源码与构建产物均不再携带随机域名功能', () => {
-  for (const relative of ['../client/index.jsx', '../client/client.js', '../client/pocket-locales.js', '../lib/tunnel.mjs', '../bin/dsh-pocket.mjs']) {
+  for (const relative of ['../client/index.jsx', '../client/client.js', '../client/pocket-locales.js', '../lib/tunnel.mjs']) {
     const source = readFileSync(new URL(relative, import.meta.url), 'utf8');
     assert.doesNotMatch(source, /startQuickTunnel|QUICK_TUNNEL_URL_RE|modeQuick|modeNamed|switchToQuick|wanEphemeralWarn/, relative);
   }

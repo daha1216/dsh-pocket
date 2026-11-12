@@ -25,8 +25,7 @@
 // 树里、也不占它的 childNodes 参照位置，所以既不会被摘掉，也不会让宿主卸载时
 // removeChild 失败（pitfalls §搬宿主 React 节点 说的是搬走**宿主节点**，方向相反）。
 // 宿主整体重建卡头时我们的节点随之消失，由 reconciler 任务 `scopes:['*']` 的 ensure
-// 幂等重挂——与 effects/drawer-quick-settings.ts、effects/preview-fullscreen.ts 同一
-// 形状。绝对定位方案被否决：多一层定位包含块、卡高变化要重算坐标、还要自己管 z 序，
+// 幂等重挂——与 effects/drawer-quick-settings.ts 同一形状。绝对定位方案被否决：多一层定位包含块、卡高变化要重算坐标、还要自己管 z 序，
 // 收益只是少一次 appendChild。
 //
 // 与 issue #245 的紧凑态（`data-mobile-nav-composer-tight`）共存：
@@ -91,8 +90,8 @@ const VISIBLE_VH_VAR = '--dsha-mobile-visible-vh'
 const HEADER_H_VAR = '--mobile-nav-header-h'
 
 /** Expand = corners out, collapse = corners in, same 16-grid / 1.5-stroke
- *  language as the host's own card icons (and as preview-fullscreen.ts). The
- *  two are swapped by CSS on the frame marker, so the JS never rewrites markup. */
+ *  language as the host's own card icons. The two are swapped by CSS on the
+ *  frame marker, so the JS never rewrites markup. */
 const ICONS = [
   '<svg class="dsh-web-mobile-question-expand" viewBox="0 0 16 16" fill="none" aria-hidden="true">',
   '<path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',

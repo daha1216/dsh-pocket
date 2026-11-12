@@ -1,6 +1,7 @@
 // v3.2.3 吸收批次（#260）源码不变量钉子（2026-11-05）。
 // 上游 tests 的源码审计式断言按 pocket 树路径改写，覆盖四块：
-//   visible-band 常量与 viewport-meta 停稳发布、session-focus-guard 观察窗口化、
+//   visible-band 常量与 viewport-meta 自适应发布（逐帧直写 / 停稳降级 + 停稳事件）、
+//   session-focus-guard 观察窗口化、
 //   question-fullscreen 双缓存 + 卡滚动 + VISIBLE_BAND 订阅、layout.css.ts
 //   死锚修复（data-question-key 作用域 + 无 Mbwy4a 存活选择器）与
 //   question-card-single-scroll @patch 块。
@@ -18,11 +19,17 @@ test('visible-band.ts exports the published event name verbatim', () => {
   assert.match(src, /VISIBLE_BAND_EVENT = 'dsh-mobile-visible-band'/);
 });
 
-test('viewport-meta publishes the band var only after two equal frames', () => {
+test('viewport-meta: band var follows the keyboard, the settle event fires once (2026-11-12)', () => {
   const src = upstream('effects/viewport-meta.ts');
-  assert.match(src, /pendingVisibleFrames >= 2/);
   assert.match(src, /import \{ VISIBLE_BAND_EVENT \} from '\.\.\/platform\/visible-band\.ts'/);
-  assert.match(src, /dispatchEvent\(new CustomEvent\(VISIBLE_BAND_EVENT/);
+  assert.match(src, /import \{ createBandPublishGovernor \} from '\.\.\/core\/visible-band-publish\.ts'/);
+  // 逐帧直写（跟手）与停稳写（弱设备降级）两条路径都在；两帧门控只留给了事件与降级，
+  // 不能再出现在变量写入上（那会让 live 路径名存实亡）。
+  assert.match(src, /if \(publish\.isLive\(\)\) \{\s*\n\s*writeBand\(bandValue\)/);
+  assert.match(src, /else if \(settled\) \{\s*\n\s*writeBand\(bandValue\)/);
+  assert.doesNotMatch(src, /pendingVisibleFrames/);
+  assert.match(src, /if \(settled && bandValue !== settledValue\) \{/);
+  assert.match(src, /dispatchEvent\(new CustomEvent\(VISIBLE_BAND_EVENT\)\)/);
 });
 
 test('session-focus-guard: input observer is window-scoped', () => {
