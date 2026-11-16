@@ -37,7 +37,7 @@ export interface AnchorRecord {
 }
 
 /**
- * 全部锚点，按片段字典序。现状快照：118 host / 25 legacy / 27 external。
+ * 全部锚点，按片段字典序。现状快照：122 host / 26 legacy / 27 external。
  */
 export const ANCHORS: readonly AnchorRecord[] = [
   { fragment: 'GTtnTq_modeSelector', status: 'legacy', note: '旧宿主哈希族；现行宿主已无同名片段' },
@@ -58,6 +58,7 @@ export const ANCHORS: readonly AnchorRecord[] = [
   { fragment: '_7KE1Ra_trigger', status: 'legacy', note: '旧宿主哈希族；现行同类名前缀：A6Bq1a / Ag-ohG', usedIn: ['mobile/upstream/debug.ts', 'mobile/upstream/effects/model-menu-anchor.ts', 'mobile/upstream/styles/layout.css.ts'] },
   { fragment: '_actions', status: 'host', usedIn: ['mobile/upstream/styles/layout.css.ts', 'mobile/upstream/styles/misc.css.ts'] },
   { fragment: '_add', status: 'host', note: '≤3 字符：本体过泛，命中不代表语义有效', usedIn: ['mobile/upstream/effects/composer-plus-toggle.ts', 'mobile/upstream/styles/layout.css.ts'] },
+  { fragment: '_approval', status: 'host' },
   { fragment: '_boardHeader', status: 'external', note: 'dsh-web-ui explorer/preview（本机未安装，无法实证）' },
   { fragment: '_body', status: 'host', usedIn: ['mobile/upstream/effects/question-fullscreen.ts', 'mobile/upstream/styles/layout.css.ts'] },
   { fragment: '_bubble', status: 'host' },
@@ -70,7 +71,7 @@ export const ANCHORS: readonly AnchorRecord[] = [
   { fragment: '_chip', status: 'host' },
   { fragment: '_columns', status: 'external', note: 'dsh-web-ui explorer/preview（本机未安装，无法实证）' },
   { fragment: '_composerSeat', status: 'host', usedIn: ['mobile/mobile-apply.tsx', 'mobile/upstream/effects/composer-clearance.ts', 'mobile/upstream/effects/question-fullscreen.ts', 'mobile/upstream/effects/sidebar-swipe.ts', 'mobile/upstream/styles/layout.css.ts'] },
-  { fragment: '_composerStack', status: 'host', usedIn: ['mobile/upstream/effects/stats-line.ts', 'mobile/upstream/platform/composer-anchor.ts', 'mobile/upstream/styles/compat.css.ts', 'mobile/upstream/styles/misc.css.ts'] },
+  { fragment: '_composerStack', status: 'host', usedIn: ['mobile/mobile-apply.tsx', 'mobile/upstream/effects/stats-line.ts', 'mobile/upstream/platform/composer-anchor.ts', 'mobile/upstream/styles/compat.css.ts', 'mobile/upstream/styles/misc.css.ts'] },
   { fragment: '_copyable', status: 'legacy', note: '旧宿主片段：现行宿主已无' },
   { fragment: '_count', status: 'host' },
   { fragment: '_crumb', status: 'host', usedIn: ['mobile/upstream/effects/panel-exit.ts', 'mobile/upstream/styles/layout.css.ts'] },
@@ -87,6 +88,7 @@ export const ANCHORS: readonly AnchorRecord[] = [
   { fragment: '_disclosure', status: 'host' },
   { fragment: '_dock', status: 'host', usedIn: ['mobile/upstream/effects/sidebar-swipe.ts', 'mobile/upstream/styles/layout.css.ts'] },
   { fragment: '_dot', status: 'host', note: '≤3 字符：本体过泛，命中不代表语义有效' },
+  { fragment: '_drawer', status: 'host' },
   { fragment: '_eyebrow', status: 'host' },
   { fragment: '_fieldInput', status: 'host' },
   { fragment: '_float', status: 'host' },
@@ -94,7 +96,7 @@ export const ANCHORS: readonly AnchorRecord[] = [
   { fragment: '_footerActions', status: 'host' },
   { fragment: '_frame', status: 'host', usedIn: ['mobile/mobile-apply.tsx', 'mobile/upstream/effects/question-fullscreen.ts', 'mobile/upstream/styles/layout.css.ts'] },
   { fragment: '_grow', status: 'host' },
-  { fragment: '_header', status: 'host', usedIn: ['mobile/upstream/styles/layout.css.ts', 'mobile/upstream/styles/misc.css.ts'] },
+  { fragment: '_header', status: 'host', usedIn: ['mobile/mobile-apply.tsx', 'mobile/upstream/styles/layout.css.ts', 'mobile/upstream/styles/misc.css.ts'] },
   { fragment: '_headerActions', status: 'host', usedIn: ['mobile/upstream/effects/question-fullscreen.ts', 'mobile/upstream/styles/layout.css.ts', 'mobile/upstream/styles/misc.css.ts'] },
   { fragment: '_headerCorner', status: 'host' },
   { fragment: '_headerHidden', status: 'external', note: 'dsh-web-ui explorer/preview（本机未安装，无法实证）' },
@@ -134,14 +136,16 @@ export const ANCHORS: readonly AnchorRecord[] = [
   { fragment: '_rowOpen', status: 'host', usedIn: ['mobile/upstream/effects/plugin-card-tap.ts', 'mobile/upstream/styles/layout.css.ts'] },
   { fragment: '_runningDivider', status: 'host' },
   { fragment: '_scroll', status: 'host', usedIn: ['mobile/upstream/styles/layout.css.ts', 'mobile/upstream/styles/misc.css.ts'] },
-  { fragment: '_scrollBody', status: 'host' },
+  { fragment: '_scrollBody', status: 'host', usedIn: ['mobile/mobile-apply.tsx', 'mobile/upstream/styles/layout.css.ts'] },
   { fragment: '_search', status: 'host' },
   { fragment: '_searchInline', status: 'external', note: 'dsh-web-ui explorer/preview（本机未安装，无法实证）' },
   { fragment: '_searchRow', status: 'host' },
   { fragment: '_section', status: 'host' },
   { fragment: '_sep', status: 'host', note: '≤3 字符：本体过泛，命中不代表语义有效' },
   { fragment: '_separator', status: 'host' },
-  { fragment: '_sessionRow', status: 'host' },
+  { fragment: '_sessionRow', status: 'host', usedIn: ['mobile/mobile-apply.tsx', 'mobile/upstream/effects/session-menu.ts'] },
+  { fragment: '_sheet', status: 'host' },
+  { fragment: '_sidebar', status: 'host' },
   { fragment: '_sidebarCol', status: 'host', usedIn: ['mobile/upstream/styles/layout.css.ts', 'mobile/upstream/styles/misc.css.ts'] },
   { fragment: '_sprite', status: 'external', note: 'dsh-web-ui explorer/preview（本机未安装，无法实证）' },
   { fragment: '_stack', status: 'host' },
@@ -154,6 +158,7 @@ export const ANCHORS: readonly AnchorRecord[] = [
   { fragment: '_textDocument', status: 'external', note: 'dsh-web-ui explorer/preview（本机未安装，无法实证）' },
   { fragment: '_timeEnd', status: 'external', note: 'dsh-web-ui explorer/preview（本机未安装，无法实证）' },
   { fragment: '_title', status: 'host', usedIn: ['mobile/upstream/effects/drawer-close.ts', 'mobile/upstream/effects/session-menu.ts', 'mobile/upstream/styles/compat.css.ts', 'mobile/upstream/styles/layout.css.ts'] },
+  { fragment: '_titleBar', status: 'legacy', note: '旧宿主片段：现行宿主已无' },
   { fragment: '_titleCluster', status: 'host', usedIn: ['mobile/upstream/debug.ts', 'mobile/upstream/styles/layout.css.ts'] },
   { fragment: '_titleRow', status: 'host', usedIn: ['mobile/upstream/styles/compat.css.ts', 'mobile/upstream/styles/layout.css.ts'] },
   { fragment: '_toolbar', status: 'host' },
@@ -223,11 +228,20 @@ export function anchorsWithStatus(status: AnchorStatus): string[] {
  */
 export const ANCHOR_AREAS: Readonly<Record<string, readonly string[]>> = {
   'mobile/mobile-apply.tsx': [
+    '_approval',
     '_card',
     '_centerCol',
     '_composerSeat',
+    '_composerStack',
     '_copyable',
+    '_drawer',
     '_frame',
+    '_header',
+    '_scrollBody',
+    '_sessionRow',
+    '_sheet',
+    '_sidebar',
+    '_titleBar',
     '_viewArea',
     'scrollBody',
   ],

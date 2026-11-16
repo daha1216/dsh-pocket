@@ -54,9 +54,11 @@ What it looks like — the phone shows the exact same UI as your computer, live:
 | 🧭 Optional right sidebar    | Shows the native right-sidebar entry on mobile; disable it for a compact phone header or keep it available alongside the terminal dock on an unfolded display                                                                                                                     |
 | 📏 Mobile font size          | Defaults to "Follow desktop", so desktop font changes also affect the phone. Choose a **specific size (12–22px)** for independent mobile text sizing without changing the desktop setting |
 | 📁 File browser              | The mobile "Files" entry opens the host's own right sidebar: tap to expand the file tree, tap again to collapse — no extra component needed |
+| 📱 Lightweight view          | A phone-only standalone page (its address lives in Settings → Phone access): read conversations, send messages, answer approvals — **no host UI to load**, so it is much faster on weak links and old phones; add it to the home screen. The host UI stays the default entry and both share the same data |
 | 🗜️ Transfer compression      | Large JSON responses are gzip/brotli'd on the fly (17MB session history → ~1MB; brotli quality 6: fast and bandwidth-friendly) — faster loads, less mobile data                                                                                                                   |
 | 🧹 Proxy cache               | Transcoded assets and slimmed session lists share a single **36 MB** memory budget; Settings shows usage and offers one-click **Clear cache** (try it first if the phone page misbehaves) |
 | 🔁 Tunnel auto-restore       | Only previously enabled, fully configured named tunnels are restored. Old Quick Tunnel markers do not restore random tunnels; public access stays off without configuration |
+| 🧪 Usage probe               | Keeps a **local-only** record of how the phone is used (time per screen, tap areas, reconnect delays, host class-name breakage, device environment) to decide where the mobile UI goes next; **no message content, never uploaded**; switch it off or clear it in Settings |
 | 🧩 Single-package install    | One npm package, one settings tab — no core/adapter split. LAN needs no public configuration; public access requires your own Cloudflare account, domain and Tunnel Token |
 
 ## 🚀 Usage
@@ -112,6 +114,16 @@ The public address is your configured hostname and **does not change on restart*
 **Upgrade compatibility:** old Quick Tunnel enable/restore markers do not restore random tunnels; public access stays off without configuration. Complete existing Named Tunnel hostname/Token configurations remain usable. Only a previously enabled named tunnel with a restore marker and complete configuration auto-restores after a DSH restart. A factory reset stops public access and clears the hostname, Token and restore marker; public access stays off until configured again.
 
 > Upgrading: re-run the `add` command above (the GitHub address carries no tag, so it installs the latest commit on the default branch). To pin a version, write `github:daha1216/dsh-pocket#v3.0.12` instead, and re-`add` with the new tag when you want to move.
+
+### Lightweight view (phone-only page)
+
+Settings → Phone access → "Lightweight view" shows the address (the public hostname when public access is on, otherwise the LAN address). Tap "Open lightweight view" to use it on the phone, or add it to the home screen and launch it like a small standalone app.
+
+Every open signs the page in to the host automatically (no need to open the main UI first), so a first launch from the home screen, a long-unused app, or an expired session all just work.
+
+It **does not load the host UI** and does exactly three things: read sessions and messages, send a message, answer approvals. On a weak link, an old phone, or when you just want a quick look, it is far faster than the full interface. The host UI remains the default entry (you can always go back — the offline banner has an "open main UI" link), and both read and write the same session data. Approvals are first-come-first-served: once answered on the computer the card disappears on the phone.
+
+> The lightweight view does not patch host code: it reads the host's own `/api` endpoints and answers approvals over the host's own remote-event channel. It only covers read + send + approve; model selection, attachments, search and user-question approvals still belong to the host UI.
 
 ## ⚠️ Security (read first)
 
@@ -184,6 +196,13 @@ Such tools take over all traffic and often cut cloudflared's tunnel-edge connect
 2. Enable a proxy (system proxy / Clash etc.) and click "Enable anywhere" again
 3. Manually download the binary into `$DSH_HOME/dsh-pocket/bin/` (`$DSH_HOME` is usually `~/.dsh`, on Windows `%USERPROFILE%\.dsh`; name it `cloudflared` (add `.exe` on Windows) **or** the release asset name — both are recognized)
 
+## 🧪 Usage probe (data decides the next mobile UI)
+
+Every 5 minutes the phone appends a summary packet to `$DSH_HOME/dsh-pocket/probe.jsonl`: time per screen, tap areas, session switches/sends, link drops and reconnect delays, scroll frame drops, how many host class names still resolve (an early warning for host upgrades breaking styles), and the device environment (iOS version, standalone PWA, viewport and safe areas). **Local file only — no message content, no network requests.**
+
+- **Switch and usage**: Settings → Phone access → "Usage probe" (off by default — turn it on when you actually want the numbers); switch it off, inspect its size, or clear it at any time.
+- **Report**: `node scripts/probe-report.mjs --days 7` (add `--json` for machines). It reports the read / approve / send split, panel tap density, reconnect percentiles and top missing anchors, then gives a verdict — "lightweight view is enough", "host UI is still required" or "collect more" — which is the data behind the Phase 2 route decision.
+
 ## 🗂 Architecture (single package)
 
 | File                 | Purpose                                                                                                                                                                                                                      |
@@ -193,6 +212,9 @@ Such tools take over all traffic and often cut cloudflared's tunnel-edge connect
 | `lib/service.mjs`    | Service: proxy lifecycle (port auto-fallback), user-configured named tunnel (restore requires complete configuration and a valid marker), status snapshot (with QR data URLs) |
 | `lib/proxy.mjs`      | Header-rewriting proxy entry (`createPocketProxy`): request/upgrade orchestration, injection, slimming, compression and cache wiring; public exports unchanged |
 | `lib/proxy/`         | Proxy internals: `inject` (polyfills/service worker), `cache` (two-tier caches under one budget), `hosts` (Host classification/rewrite), `auth` (PIN/cookie/rate limit), `handshake`, `pages` (login/block pages), `ws` (heartbeat and frame boundaries) |
+| `lib/lite/`         | Lightweight view (review §7.1 route A): `assets.mjs` serves the page straight from the proxy; `index.html`/`app.css`/`app.js`/`manifest.webmanifest` are the page itself and `session.mjs` mints the host session cookie before serving it. Data only goes through the host `/api`, outside the host HTML-injection path |
+| `lib/probe.mjs`      | Usage-probe sink: whitelist validation, throttling, 8 MB rotation, clear; the collector lives in `client/mobile/probe-core.mjs` (pure logic, unit-tested) |
+| `scripts/probe-report.mjs` | Turns the probe log into a weekly report and a "lightweight view vs host UI" verdict |
 | `lib/tunnel.mjs`     | cloudflared: multi-mirror download (Tsinghua first) / adaptive parallel / start a named tunnel with the user's Tunnel Token (HTTP/2) |
 | `lib/web-rpc.js`     | Loopback RPC: `status` / `tunnel.start` / `tunnel.stop` / `lan.setEnabled` / `version` / `restart`                                                                                                                           |
 | `client/`            | "Phone access" settings tab + mobile adaptation (dsh-web-mobile port)                                                                                                                                                        |
@@ -202,7 +224,8 @@ Such tools take over all traffic and often cut cloudflared's tunnel-edge connect
 ```sh
 npm install
 node client/build.mjs   # rebuild after editing client/
-npm test                # proxy / auth / compression / tunnel / service / RPC / settings (109 tests)
+npm test                # proxy / auth / compression / tunnel / service / RPC / settings / anchors / probe / lightweight view (430 tests)
+node scripts/probe-report.mjs --days 7   # weekly mobile usage report (data: $DSH_HOME/dsh-pocket/probe.jsonl)
 ```
 
 **Want to try your changes locally without publishing?** Point the installed plugin at your local checkout with a symlink and restart dsh web. Full steps (including switching back to the npm release) are in [LOCAL-DEV.md](./LOCAL-DEV.md).

@@ -16,6 +16,36 @@ import { startFileGuard } from './fileGuard.ts'
 import { resolveLayout, persistLayoutFromUrl } from './layout-mode.mjs'
 import { createSettlingGuard, createFreezeDetector, resolveLinkVerdict, createLinkLiveness, SETTLING_STALE_MS, LINK_TICK_MS, LINK_PROBE_TIMEOUT_MS } from './settling-watchdog.mjs'
 import { POCKET_RPC_CHANNEL, POCKET_ENDPOINTS, MOBILE_RIGHTBAR_ATTRIBUTE, MOBILE_RIGHTBAR_EVENT, MOBILE_PINCH_ZOOM_ATTRIBUTE, MOBILE_PINCH_ZOOM_EVENT, MOBILE_FONT_ATTRIBUTE, MOBILE_FONT_EVENT, MOBILE_FONT_SIZE_VAR, MOBILE_FONT_MIN, MOBILE_FONT_MAX } from '../api.js'
+// 使用探针（评审 §7.1）：采集层在这里，纯判定/限界在 probe-core.mjs（有单测），
+// 落盘在宿主 lib/probe.mjs。锚点台账用来体检宿主类名有没有失效。
+import {
+  PROBE_STATE_KEY,
+  PROBE_FLUSH_MS,
+  PROBE_SAMPLE_MS,
+  PROBE_PERSIST_MS,
+  PROBE_ANCHOR_INTERVAL_MS,
+  PROBE_LINK_EVENT,
+  PROBE_MAX_PACKET_BYTES,
+  createProbeState,
+  noteEnv,
+  noteSurface,
+  noteClick,
+  noteCount,
+  noteLinkDown,
+  noteLinkRecover,
+  noteLinkProbe,
+  noteLinkOffline,
+  noteFrames,
+  noteAnchorAudit,
+  noteError,
+  noteFreeze,
+  snapshotPacket,
+  resetProbeState,
+  serializeProbeState,
+  parseProbeState,
+  packetBytes,
+} from './probe-core.mjs'
+import { ANCHORS } from './anchors.ts'
 // H4：fileGuard 的用户可见文案迁入词典（client/pocket-locales.js，NS='pocket'）。
 // 这里只导入命名空间 id；词典本体由 client/index.jsx 统一注册（bind 是惰性取词，
 // 注册顺序在 mobileApply 之后也不影响）。
@@ -1038,6 +1068,14 @@ export function mobileApply(ctx: ClientContext): void {
 
     const now = (): number => performance.now();
 
+    // 使用探针的链路样本从这里来：看门狗已经知道「何时判死、何时恢复、探过几次」，
+    // 探针不必自己再打一次 RPC（尤其不该在断线时制造额外流量）。事件只在本文件
+    // 两个 arm 之间流转，不对外暴露。
+    const notifyProbe = (detail: { kind: 'down' | 'recover' | 'probe'; ms?: number }): void => {
+      try { document.dispatchEvent(new CustomEvent(PROBE_LINK_EVENT, { detail })); } catch { /* 旧 WebView 不支持构造 */ }
+    };
+    let downAt = 0;
+
     /** 与 settling 看门狗同一个判据来源：generation 存在时以它的有无为准（断连瞬间
      *  变 undefined、重连后换新 id），缺失的代际退化看 state。 */
     const linkDown = (): boolean => {
@@ -1101,8 +1139,13 @@ export function mobileApply(ctx: ClientContext): void {
       if (down) {
         window.clearTimeout(bannerBackTimer)
         bannerBackTimer = 0
+        downAt = now()
+        notifyProbe({ kind: 'down' })
         paintBanner(pocketText(ctx, 'linkDown', '连接已断开，正在自动重连…'), 'down')
       } else {
+        // 恢复耗时是「最坏体验」的直接证据：横幅只显示 1.4s，但探针要记下真实毫秒数。
+        notifyProbe({ kind: 'recover', ms: downAt === 0 ? 0 : Math.round(now() - downAt) })
+        downAt = 0
         paintBanner(pocketText(ctx, 'linkBack', '✅ 已重新连接'), 'back')
         bannerBackTimer = window.setTimeout(removeBanner, 1400)
       }
@@ -1117,6 +1160,7 @@ export function mobileApply(ctx: ClientContext): void {
         window.clearTimeout(probeTimer);
         probeTimer = 0;
         liveness.noteProbe(alive, now());
+        notifyProbe({ kind: 'probe' });
         syncBanner();
       };
       probeTimer = window.setTimeout(() => finish(false), LINK_PROBE_TIMEOUT_MS);
@@ -1156,6 +1200,344 @@ export function mobileApply(ctx: ClientContext): void {
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, 'dsh-pocket: link watchdog (silent disconnect never recovers)')
+
+  // ---- 使用探针（2026-11-12 评审 §7.1：先用真实数据决定 Phase 2 走 A 还是 B）----
+  // 只回答一个问题：「手机上 80% 的时间在做什么」——读消息、打字发送、批审批、
+  // 看文件、翻设置各占多少秒，链路断开多久才回来，宿主类名有没有失效。做完这轮
+  // 就可以整段删掉（连同 probe-core.mjs / lib/probe.mjs / 设置页卡片）。
+  // 不含任何消息内容：键入只记字符数，错误只记 160 字以内一条，锚点只记片段名。
+  // 数据先落本机 localStorage（iOS 主屏 PWA 被系统杀掉后从这里续上），每 5 分钟经
+  // pocket.probe.report 交给宿主追加一行 JSONL（$DSH_HOME/dsh-pocket/probe.jsonl）；
+  // 设置页可看用量、可关掉。宿主不可达时继续累计（有上限），不排队重试。
+  armOnNarrow('dsh-pocket: usage probe (2026-11-12)', () => {
+    const storage = ((): Storage | null => {
+      try {
+        const probe = '__dshp_probe__';
+        window.localStorage.setItem(probe, '1');
+        window.localStorage.removeItem(probe);
+        return window.localStorage;
+      } catch { return null; } // 隐私模式/配额满：退化为「本次会话内存」
+    })();
+
+    let state = ((): ReturnType<typeof createProbeState> => {
+      try { return parseProbeState(storage?.getItem(PROBE_STATE_KEY) ?? null) ?? createProbeState(Date.now()); }
+      catch { return createProbeState(Date.now()); }
+    })();
+    let disposed = false;
+    let enabled = true;
+    let lastFlushAt = 0;
+    let surface = 'read';
+    let lastSurface = 'read';
+    let lastSample = 0;
+
+    const save = (): void => {
+      if (storage === null) return;
+      try { storage.setItem(PROBE_STATE_KEY, serializeProbeState(state)); } catch { /* 配额满：丢掉本地副本 */ }
+    };
+
+    // ---- 环境快照（只记第一次；之后方向变化由视角字段单独记）----
+    // 安全区借一个一次性元素读 env()：这些值决定「刘海/Home 条有没有被按住」，
+    // 是解释「为什么某个 PWA 上布局不一样」的必要上下文。
+    const safeInsets = (): { top: number; bottom: number; left: number; right: number } => {
+      try {
+        const el = document.createElement('div');
+        el.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;' +
+          'padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)';
+        (document.body ?? document.documentElement).appendChild(el);
+        const cs = window.getComputedStyle(el);
+        const px = (value: string): number => Math.round(Number.parseFloat(value) || 0);
+        const insets = { top: px(cs.paddingTop), right: px(cs.paddingRight), bottom: px(cs.paddingBottom), left: px(cs.paddingLeft) };
+        el.remove();
+        return insets;
+      } catch { return { top: 0, right: 0, bottom: 0, left: 0 }; }
+    };
+
+    const envSnapshot = (host: string): Record<string, unknown> => {
+      const nav = navigator as Navigator & { standalone?: boolean; platform?: string };
+      const iosMatch = /(?:iPhone|iPad|iPod).*?OS (\d+)[._](\d+)/.exec(nav.userAgent)
+        ?? /OS (\d+)[._](\d+) like Mac OS X/.exec(nav.userAgent);
+      const displayMode = ((): string => {
+        try {
+          if (window.matchMedia('(display-mode: standalone)').matches) return 'standalone';
+          if (window.matchMedia('(display-mode: fullscreen)').matches) return 'fullscreen';
+          return 'browser';
+        } catch { return 'browser'; }
+      })();
+      const vv = window.visualViewport;
+      const insets = safeInsets();
+      return {
+        standalone: nav.standalone === true || displayMode === 'standalone',
+        displayMode,
+        ios: iosMatch === null ? '' : `${iosMatch[1]}.${iosMatch[2]}`,
+        host,
+        platform: typeof nav.platform === 'string' ? nav.platform : '',
+        dpr: Number(window.devicePixelRatio) || 0,
+        screenW: Math.round(window.screen?.width ?? 0),
+        screenH: Math.round(window.screen?.height ?? 0),
+        viewportW: Math.round(vv?.width ?? window.innerWidth),
+        viewportH: Math.round(vv?.height ?? window.innerHeight),
+        safeTop: insets.top,
+        safeBottom: insets.bottom,
+        safeLeft: insets.left,
+        safeRight: insets.right,
+      };
+    };
+
+    // ---- 表面判定（每秒一次）----
+    // 优先级 = 「此刻用户最可能在跟谁打交道」：面板盖住内容时算面板，键盘聚焦时算打字。
+    const COMPOSER_ZONE = '[class*="_composerSeat"],[class*="_composerStack"],[data-composer-seat]';
+    const SCROLL_ZONE = '[data-conversation-scroll],[class*="_scrollBody"]';
+    const composerFocused = (): boolean => {
+      const el = document.activeElement;
+      if (!(el instanceof HTMLElement)) return false;
+      if (el.isContentEditable) return true;
+      if (el.tagName !== 'TEXTAREA' && el.tagName !== 'INPUT') return false;
+      return el.closest(COMPOSER_ZONE) !== null;
+    };
+    const currentSurface = (): string => {
+      if (document.querySelector('[data-dshp-section]') !== null) return 'settings';
+      if (document.querySelector('[data-sidebar-right-toggle]') !== null) return 'files';
+      if (document.querySelector('[class*="_approval"]') !== null) return 'approve';
+      if (composerFocused()) return 'type';
+      return 'read';
+    };
+
+    const sample = (): void => {
+      if (disposed || !enabled) return;
+      const at = performance.now();
+      const visible = document.visibilityState === 'visible';
+      if (lastSample !== 0 && visible) {
+        const dt = Math.round(at - lastSample);
+        // 节拍晚了 3s 以上 = 系统冻结或主线程卡死：先记冻结，再只补 1s 的停留——
+        // 把整段冻结算成「在读消息」会把最重要的一个数字（冻结了多久）洗掉。
+        if (dt > 3000) {
+          noteFreeze(state, dt - PROBE_SAMPLE_MS);
+          noteSurface(state, surface, PROBE_SAMPLE_MS);
+        } else {
+          noteSurface(state, surface, dt);
+        }
+      }
+      surface = currentSurface();
+      if (visible && surface === 'approve' && lastSurface !== 'approve') noteCount(state, 'approvals');
+      lastSurface = surface;
+      lastSample = at;
+    };
+
+    // ---- 点击落点 ----
+    const clickArea = (target: EventTarget | null): string => {
+      const el = target instanceof Element ? target : null;
+      if (el === null) return 'other';
+      if (el.closest('[data-dshp-section]') !== null) return 'settings';
+      if (el.closest('[class*="_approval"]') !== null) return 'approve';
+      if (el.closest('[data-sidebar-right-toggle],[data-sidebar-right-expand]') !== null) return 'files';
+      if (el.closest(COMPOSER_ZONE) !== null) return 'composer';
+      if (el.closest(SCROLL_ZONE) !== null) return 'conversation';
+      if (el.closest('[data-mobile-nav]') !== null) return 'nav';
+      if (el.closest('header,[class*="_titleBar"],[class*="_header"]') !== null) return 'header';
+      if (el.closest('[class*="_sessionRow"],[data-sidebar],[class*="_sidebar"],[class*="_drawer"],[class*="_sheet"]') !== null) return 'panel';
+      return 'other';
+    };
+    const onClick = (event: Event): void => {
+      noteClick(state, clickArea(event.target));
+      // 会话切换（点侧栏里的一条会话）是多会话使用强度的直接证据。
+      const el = event.target instanceof Element ? event.target : null;
+      if (el !== null && el.closest('[class*="_sessionRow"]') !== null) noteCount(state, 'sessions');
+    };
+
+    // ---- 滚动与帧（只统计滚动期，避免把待机 rAF 算进性能）----
+    const scrollTops = new WeakMap<Element, number>();
+    let frameRaf = 0;
+    let lastFrame = 0;
+    let scrollActiveUntil = 0;
+    const frameLoop = (at: number): void => {
+      if (disposed) { frameRaf = 0; return; }
+      if (lastFrame !== 0) noteFrames(state, 1, at - lastFrame > 50 ? 1 : 0);
+      lastFrame = at;
+      if (performance.now() < scrollActiveUntil) frameRaf = requestAnimationFrame(frameLoop);
+      else { frameRaf = 0; lastFrame = 0; }
+    };
+    const noteScrollActivity = (): void => {
+      scrollActiveUntil = performance.now() + 800;
+      if (frameRaf === 0 && !disposed) { lastFrame = 0; frameRaf = requestAnimationFrame(frameLoop); }
+    };
+    const onScroll = (event: Event): void => {
+      const el = event.target;
+      if (!(el instanceof HTMLElement)) return;
+      if (el.matches(SCROLL_ZONE) === false && el.closest(SCROLL_ZONE) === null) return;
+      const prev = scrollTops.get(el);
+      scrollTops.set(el, el.scrollTop);
+      noteScrollActivity();
+      if (prev === undefined) return;
+      const delta = Math.abs(el.scrollTop - prev);
+      if (delta > 0) noteCount(state, 'scrollPx', Math.min(delta, 20000));
+    };
+
+    // ---- 键入与发送 ----
+    // 发送的可靠信号不是「按了 Enter」（宿主快捷键可改），而是「框里的字被清空」：
+    // Enter 发送、点发送按钮、语音转写提交最终都走到这一步。
+    const prevText = new WeakMap<Element, string>();
+    const textOf = (el: HTMLElement): string => {
+      if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) return el.value ?? '';
+      return el.textContent ?? '';
+    };
+    const onInput = (event: Event): void => {
+      const el = event.target;
+      if (!(el instanceof HTMLElement) || el.closest(COMPOSER_ZONE) === null) return;
+      const value = textOf(el);
+      const prev = prevText.get(el) ?? '';
+      prevText.set(el, value);
+      if (value.length > prev.length) noteCount(state, 'chars', value.length - prev.length);
+      if (prev.trim() !== '' && value.trim() === '') noteCount(state, 'sends');
+    };
+
+    // ---- 锚点体检（每 5 分钟一遍）----
+    // 单遍扫 DOM 收全部 class token，再在拼好的字符串上做 includes：118 个片段逐个
+    // querySelectorAll 会把体检本身变成新的卡顿源。
+    const hostFragments = ANCHORS.filter((anchor) => anchor.status === 'host').map((anchor) => anchor.fragment);
+    const auditAnchors = (): void => {
+      if (disposed || !enabled) return;
+      try {
+        const tokens = new Set<string>();
+        for (const el of Array.from(document.querySelectorAll('[class]'))) {
+          const raw = el.getAttribute('class');
+          if (raw === null) continue;
+          for (const token of raw.split(/\s+/)) if (token !== '') tokens.add(token);
+        }
+        const haystack = Array.from(tokens).join(' ');
+        noteAnchorAudit(state, hostFragments.filter((fragment) => haystack.includes(fragment) === false));
+      } catch { /* DOM 形状异常：跳过本轮 */ }
+    };
+
+    // ---- 错误与冻结 ----
+    const onError = (event: ErrorEvent): void => { noteError(state, 'error', event.message); };
+    const onRejection = (event: Event): void => {
+      const reason = (event as Event & { reason?: unknown }).reason;
+      noteError(state, 'rejection', typeof reason === 'string' ? reason : (reason instanceof Error ? reason.message : String(reason ?? '')));
+    };
+    const onOffline = (): void => { noteLinkOffline(state); };
+    const onLink = (event: Event): void => {
+      const detail = (event as CustomEvent<{ kind?: string; ms?: number }>).detail;
+      if (detail?.kind === 'down') noteLinkDown(state, Date.now());
+      else if (detail?.kind === 'recover') noteLinkRecover(state, typeof detail.ms === 'number' ? detail.ms : 0);
+      else if (detail?.kind === 'probe') noteLinkProbe(state);
+    };
+
+    // ---- 上报（RPC 通道缺失时静默跳过，不制造新的故障点）----
+    const rpc = (ctx.connection as unknown as {
+      rpc?: { call?: (channel: string, endpoint: string, payload: unknown) => Promise<unknown> };
+    })?.rpc;
+    const callProbe = (endpoint: string, payload: unknown): Promise<{ ok?: boolean; value?: unknown } | null> => {
+      try {
+        if (typeof rpc?.call !== 'function') return Promise.resolve(null);
+        return Promise.resolve(rpc.call(POCKET_RPC_CHANNEL, endpoint, payload)) as Promise<{ ok?: boolean; value?: unknown }>;
+      } catch { return Promise.resolve(null); }
+    };
+    const flush = (): void => {
+      if (disposed || !enabled) return;
+      lastFlushAt = Date.now();
+      save();
+      const packet = snapshotPacket(state);
+      if (packetBytes(packet) > PROBE_MAX_PACKET_BYTES) {
+        // 长时间离线导致本地累计超过单包上限：清空重来，别让状态无限长。
+        state = resetProbeState(state);
+        save();
+        return;
+      }
+      void callProbe(POCKET_ENDPOINTS.probeReport, { packet }).then((res) => {
+        if (disposed || !enabled) return;
+        const accepted = res?.ok === true && (res.value as { accepted?: boolean } | undefined)?.accepted === true;
+        // 宿主不可达：留到下一拍继续累计，不排队、不重试（探针丢了也无所谓）。
+        if (!accepted) return;
+        state = resetProbeState(state);
+        save();
+      }).catch(() => { /* 同上 */ });
+    };
+
+    const onHide = (): void => {
+      // 隐藏瞬间把「隐藏前那半拍」结算掉，再把基线挪到现在——否则 iOS 切后台
+      // 再回来会把整段后台时间算进 surface。
+      if (document.visibilityState === 'visible') { lastSample = performance.now(); return; }
+      if (lastSample !== 0) noteSurface(state, surface, Math.min(Math.round(performance.now() - lastSample), PROBE_SAMPLE_MS * 2));
+      lastSample = performance.now();
+      save();
+      if (Date.now() - lastFlushAt > 60000) flush();
+    };
+    const onPageHide = (event: PageTransitionEvent): void => {
+      if (event?.persisted === true) noteCount(state, 'bfcache');
+      save();
+      flush();
+    };
+
+    const sampleTimer = window.setInterval(sample, PROBE_SAMPLE_MS);
+    const persistTimer = window.setInterval(save, PROBE_PERSIST_MS);
+    const flushTimer = window.setInterval(flush, PROBE_FLUSH_MS);
+    const anchorTimer = window.setInterval(auditAnchors, PROBE_ANCHOR_INTERVAL_MS);
+
+    let longTaskObserver: PerformanceObserver | null = null;
+    try {
+      const types = (PerformanceObserver as unknown as { supportedEntryTypes?: string[] }).supportedEntryTypes;
+      if (Array.isArray(types) && types.includes('longtask')) {
+        longTaskObserver = new PerformanceObserver((list) => { noteCount(state, 'longtasks', list.getEntries().length); });
+        longTaskObserver.observe({ entryTypes: ['longtask'] });
+      }
+    } catch { longTaskObserver = null; }
+
+    const stop = (persist = true): void => {
+      if (disposed) return;
+      disposed = true;
+      window.clearInterval(sampleTimer);
+      window.clearInterval(persistTimer);
+      window.clearInterval(flushTimer);
+      window.clearInterval(anchorTimer);
+      document.removeEventListener('click', onClick, true);
+      document.removeEventListener('scroll', onScroll, true);
+      document.removeEventListener('input', onInput, true);
+      document.removeEventListener(PROBE_LINK_EVENT, onLink);
+      window.removeEventListener('offline', onOffline);
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('pagehide', onPageHide as EventListener);
+      window.removeEventListener('error', onError);
+      window.removeEventListener('unhandledrejection', onRejection);
+      longTaskObserver?.disconnect();
+      if (frameRaf !== 0) { cancelAnimationFrame(frameRaf); frameRaf = 0; }
+      if (persist) save();
+    };
+
+    noteCount(state, 'loads');
+    document.addEventListener('click', onClick, true);
+    document.addEventListener('scroll', onScroll, true);
+    document.addEventListener('input', onInput, true);
+    document.addEventListener(PROBE_LINK_EVENT, onLink);
+    window.addEventListener('offline', onOffline);
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('pagehide', onPageHide as EventListener);
+    window.addEventListener('error', onError);
+    window.addEventListener('unhandledrejection', onRejection);
+    sample();
+    auditAnchors();
+
+    // 宿主开关与本机版本：开关关掉就整段停采并清掉本地残留；版本是解释锚点
+    // 失效的前提（宿主换代 → 哈希类名全换 → 「缺失」不是 bug 而是已知代价）。
+    void callProbe(POCKET_ENDPOINTS.status, {}).then((res) => {
+      if (disposed || res?.ok !== true) return;
+      const info = (res.value as { probe?: { enabled?: boolean } | null } | undefined)?.probe;
+      if (info !== null && info !== undefined && info.enabled === false) {
+        enabled = false;
+        try { storage?.removeItem(PROBE_STATE_KEY); } catch { /* 忽略 */ }
+        stop(false);
+        return;
+      }
+      void callProbe(POCKET_ENDPOINTS.version, {}).then((vres) => {
+        if (disposed || vres?.ok !== true) return;
+        const v = vres.value as { loaded?: unknown; current?: unknown } | undefined;
+        const host = typeof v?.loaded === 'string' ? v.loaded : (typeof v?.current === 'string' ? v.current : '');
+        state = noteEnv(state, envSnapshot(host) as Parameters<typeof noteEnv>[1]);
+        save();
+      }).catch(() => { /* 版本拿不到不影响采样 */ });
+    }).catch(() => { /* 状态拿不到：按默认开启继续，下一拍上报失败会自然留到下次 */ });
+
+    return () => stop();
+  }, 'dsh-pocket: usage probe (2026-11-12)')
 
   // M3：键盘高度 CSS 变量。iOS 软键盘弹起只收缩 visual viewport（layout viewport
   // 不动），底部锚定的 fixed 弹层（fileGuard 的 toast/长按 fallback 面板、上游

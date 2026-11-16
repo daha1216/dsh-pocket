@@ -163,6 +163,8 @@ const Ico = {
   info: pickIcon(['IconInfoOutlineRegular', 'IconInfoOutline16']),
   check: pickIcon(['IconCheckCircleOutlineRegular', 'IconCheckCircleOutline16']),
   chevron: pickIcon(['IconChevronDownOutlineRegular', 'IconChevronDownOutline16']),
+  // 轻量视图用手机图标；宿主没有这一族时退化成空组件（只是少画一个图标）。
+  lite: pickIcon(['IconSmartphoneOutlineRegular', 'IconDeviceMobileOutlineRegular', 'IconMobileOutline16']),
 };
 
 // 设置页样式（v3）：类名统一 dshp- 前缀，一次性注入 <style>。
@@ -688,6 +690,28 @@ function PocketSettingsTab({ rpcCall, t }) {
     }
   });
 
+  // 使用探针（评审 §7.1）：开关与清空。数据只是本机 JSONL，清掉不影响任何功能；
+  // 关掉后手机端下次拉 status 就会停采并清掉本地残留（端点见 lib/web-rpc.js）。
+  const clearProbe = () => withPending('probe', async () => {
+    try {
+      const r = await call(POCKET_ENDPOINTS.probeClear, {});
+      patchStatus({ probe: r.probe });
+      showToast(fmt(t, 'probeCleared', { mb: ((Number(r.freedBytes) || 0) / 1024 / 1024).toFixed(1) }));
+    } catch (err) {
+      setError(err.message);
+    }
+  });
+
+  const setProbe = (on) => withPending('probe', async () => {
+    try {
+      const r = await call(POCKET_ENDPOINTS.probeSetEnabled, { on });
+      patchStatus({ probe: r.probe });
+      showToast(on ? t('probeEnabledToast') : t('probeDisabledToast'));
+    } catch (err) {
+      setError(err.message);
+    }
+  });
+
   // 局域网访问总开关：关闭后局域网扫码/链接直接失效（公网不受影响）。
   // 切换前弹窗确认（弹窗提醒）；服务端用 setLanEnabled 持久化，代理按 Host 实时拦截。
   const [lanToggleOpen, setLanToggleOpen] = useState(null); // null | true | false（目标 on 状态）
@@ -746,6 +770,9 @@ function PocketSettingsTab({ rpcCall, t }) {
 
   const lanUrl = status?.lanUrl;
   const tunnelUrl = status?.tunnelUrl;
+  // 轻量视图的地址：优先公网（在哪儿都能开），其次局域网（不走隧道，最快），
+  // 最后才用当前 origin——设置页有时是从 127.0.0.1 打开的，那个地址手机连不上。
+  const liteUrl = (tunnelUrl || lanUrl || (typeof location !== 'undefined' ? location.origin : '')) + '/__dsh-pocket/lite';
   // 公网来源（隧道）只能管理自己的密码：隧道开关/配置、局域网开关、恢复出厂
   // 都是本机主人的动作，服务端会回 forbidden，前端据此直接隐藏而不是让用户点了报错。
   const publicView = status?.origin === 'public';
@@ -1118,6 +1145,22 @@ function PocketSettingsTab({ rpcCall, t }) {
             : h('div', { className: 'dshp-hint' }, t('lanStarting'))),
     }),
 
+    // ── 轻量视图：手机专用入口（评审 §7.1 路线 A）────────────────────────────
+    // 代理直出的独立页面：只做「看会话 + 发消息 + 批审批」，不加载宿主 React 界面。
+    // 宿主界面仍然是默认入口（这里不跳转），它坏了才是这一页兜底；两边共用同一份数据。
+    Card({
+      key: 'lite', icon: Ico.lite, title: t('liteTitle'), sub: t('liteHint'),
+      children: h('div', null,
+        Row({
+          label: t('liteAddress'),
+          desc: t('liteAddressHint'),
+          control: Btn({ variant: 'ghost', mini: true, icon: Ico.copy, onClick: async () => showToast(await copyText(liteUrl) ? t('copied') : t('copyFailed')) }, t('copyLink')),
+        }),
+        h('div', { className: 'dshp-hint', style: { wordBreak: 'break-all' } }, liteUrl),
+        h('div', { className: 'dshp-inline', style: { marginTop: 10 } },
+          Btn({ variant: 'primary', mini: true, icon: Ico.lite, onClick: () => { window.open(liteUrl, '_blank', 'noopener'); } }, t('liteOpen')))),
+    }),
+
     // ── 公网 ────────────────────────────────────────────────────────────────
     // 卡片：标题 + 副题 + 总开关（开=已连隧道）；开启经免责声明弹窗确认
     Card({
@@ -1173,6 +1216,31 @@ function PocketSettingsTab({ rpcCall, t }) {
           onClick: clearCache, disabled: pending.cache === true,
         }, t('cacheClear')),
       }),
+    }) : null,
+
+    // ── 使用探针：开关 + 用量 + 清空（评审 §7.1「先探针、后决定 A/B」）──────────
+    // 数据来自 status.probe；旧宿主/桩环境没有 probe 字段时整张卡不渲染。
+    // 探针默认开启但从不联网：它只是把「手机上到底在干什么」写成本机的一行行
+    // JSONL，采完用 scripts/probe-report.mjs 出判定报告，然后这整块就可以删掉。
+    status?.probe && status.origin !== 'public' ? Card({
+      key: 'probe', icon: Ico.info, title: t('probeTitle'), sub: t('probeSub'),
+      children: h('div', null,
+        Row({
+          label: t('probeEnabled'),
+          desc: t('probeEnabledHint'),
+          control: Switch(status.probe.enabled !== false, () => setProbe(status.probe.enabled === false), pending.probe === true, t('probeEnabled')),
+        }),
+        Row({
+          label: fmt(t, 'probeUsage', { used: fmtBytes(status.probe.bytes), budget: fmtBytes(status.probe.maxBytes) }),
+          desc: fmt(t, 'probeWhere', {
+            n: status.probe.packets ?? 0,
+            path: status.probe.path ?? '',
+          }) + (status.probe.lastAt ? ' · ' + fmt(t, 'probeLast', { when: new Date(status.probe.lastAt).toLocaleString() }) : ' · ' + t('probeEmpty')),
+          control: Btn({
+            variant: 'ghost', mini: true, icon: Ico.trash,
+            onClick: clearProbe, disabled: pending.probe === true,
+          }, t('probeClear')),
+        })),
     }) : null,
 
     // ── 维护：恢复出厂设置（最底部，避免误触）────────────────────────────────

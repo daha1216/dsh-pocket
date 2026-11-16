@@ -35,6 +35,10 @@ export const POCKET_ENDPOINTS = Object.freeze({
   // 用户既看不到用量也没有恢复手段。设置页显示「已用 / 预算」并给一个清空按钮。
   cacheStats: 'pocket.cache.stats',
   cacheClear: 'pocket.cache.clear',
+  probeReport: 'pocket.probe.report',
+  probeStats: 'pocket.probe.stats',
+  probeClear: 'pocket.probe.clear',
+  probeSetEnabled: 'pocket.probe.setEnabled',
 });
 
 /** 语义化版本比较：a > b 返回正数，相等 0，a < b 负数（数字段 + 预发布后缀）。 */

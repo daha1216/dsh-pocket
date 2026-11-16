@@ -364,6 +364,36 @@ characterData 脏键取代）、#4③ dispose 清注入（上游 injected Set）
 2. **fileGuard（issue #17）**：拦文件链接点击、注入「复制」按钮（走 pocket RPC fileRead）、
    隐藏「添加工作区」。依赖的 CSS 规则（copy-file 按钮样式、aria-label 隐藏）也搬进了
    POCKET_EXTRA_CSS（上游样式表没有这些）。
+3. **使用探针（2026-11-12，评审 Phase 2 的数据来源）**：`client/mobile/probe-core.mjs`
+   （纯状态机，无 DOM/fs/localStorage）+ `mobile-apply.tsx` 的
+   `armOnNarrow('dsh-pocket: usage probe (2026-11-12)')` 采集 arm + `lib/probe.mjs` 白名单落盘
+   （`$DSH_HOME/dsh-pocket/probe.jsonl`，8 MB 轮转一代）+ RPC
+   `pocket.probe.report/stats/clear/setEnabled`（前三个公网也放行，开关只限本机）+
+   设置页「使用探针」卡 + `scripts/probe-report.mjs` 周报与判定。不采集消息内容、不发网络请求。
+   **同步后确认**：mobile-apply.tsx 是 pocket 文件、sync 不覆盖，但探针 arm 引用了
+   `anchors.ts` 的 ANCHORS 做宿主类名体检；sync 后若上游增删样式锚点，需跑
+   `node scripts/gen-anchors.mjs` 重新生成台账，否则锚点契约测试会因「源码锚点集合 ≠ 台账」失败。
+
+4. **轻量视图（2026-11-12，评审 §7.1 路线 A）**：`lib/lite/`（`assets.mjs` 直出 +
+   `index.html`/`app.css`/`app.js` 页面本体）由代理在 `/__dsh-pocket/lite` 直出，
+   **不经过宿主 HTML 注入链**，所以既不受移动端 polyfill 影响，也不需要同步上游任何文件。
+   页面数据只走宿主自己的 `/api`：`session/list`、`session/state`、`session/events`
+   （`beforeSeq` 排他上界翻页）、`session/prompt`、`session/cancel`；审批走
+   `/api/remote.mux` 开 `$events` 流 + `POST /api/$events/result`
+   （`outcome {kind:'result',value:'allowed-once'|'rejected'}`）。
+   **同步后确认**：宿主若改这几个端点的信封或 args 键（例如把 `_request` 换成别的 wire 名、
+   改 `$events/result` 的 outcome 形状），轻量视图会静默失效（手机上空白或发不出消息），
+   需回头看 `lib/lite/app.js` 并跑 `node --test test/lite-view.test.js`。
+   `assets.mjs` 首次读盘后常驻内存，**改页面文件要重启宿主**才生效（设置页「重启」或重启 dsh web）。
+   **宿主会话握手**：宿主的 `/api` 与 WebSocket 要求 `dsh-auth-*` cookie（`GET /?token=…`
+   换来的），而轻量视图由代理直出、从不经过 `GET /`——所以从主屏幕直接打开的手机没有 cookie，
+   `/api` 全 401（列表空白 + 断线横幅）。修法在 `lib/lite/session.mjs`：直出页面前，代理
+   **每次**都在服务端替浏览器做一次同样的换 cookie（`GET /?token=`，3s 超时，失败 fail open——
+   页面照常直出），把上游 `Set-Cookie` 挂到**页面**响应上（静态资源不挂）。每次都换是有意的：
+   宿主这一跳是现签无状态 cookie（`dsh-client-connection/src/browser-auth.ts` 的 `authorizeIndex`，
+   不在宿主建会话），刷新不涨内存，还能顺带覆盖主屏冷启动、cookie 过期与放置很久再打开。
+   同步后若宿主改了根路径换 cookie 的机制（issue #77 那条，含 303 + cookie 绑定 authority），
+   这里要跟着改；测试见 `test/lite-view.test.js` 的 host handshake 三条。
 
 ## 故意不移植的部分
 

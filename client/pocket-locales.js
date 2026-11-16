@@ -141,6 +141,25 @@ export const zh = {
   'cacheEntries': '共 {n} 个缓存条目（静态资源 + 会话列表）',
   'cacheClear': '清空缓存',
   'cacheCleared': '✅ 已清空缓存，释放 {mb} MB',
+  // 轻量视图（评审 §7.1 路线 A）：手机专用页面，宿主界面仍是默认入口。
+  'liteTitle': '轻量视图（手机专用）',
+  'liteHint': '只看会话、发消息、批审批；不加载宿主界面，弱网和旧手机更快',
+  'liteAddress': '地址',
+  'liteAddressHint': '加到主屏幕就是一个独立的小应用；打不开时随时回到宿主界面，两者共用同一份数据',
+  'liteOpen': '打开轻量视图',
+  // 使用探针（评审 §7.1）：采集在手机浏览器，落盘在本机 JSONL，不联网。
+  'probeTitle': '使用探针',
+  'probeSub': '只在你这台电脑上留一份用量记录，用来决定手机端下一步怎么做',
+  'probeEnabled': '采集使用数据',
+  'probeEnabledHint': '记录各页面停留时长、点击区域、断线恢复耗时、宿主类名失效情况。不含消息内容，不联网。',
+  'probeUsage': '已用 {used} / {budget}',
+  'probeWhere': '{n} 个数据包 · 写入 {path}',
+  'probeLast': '最近一次 {when}',
+  'probeEmpty': '还没有数据',
+  'probeClear': '清空记录',
+  'probeCleared': '✅ 已清空探针记录，释放 {mb} MB',
+  'probeEnabledToast': '已开启使用探针',
+  'probeDisabledToast': '已关闭使用探针（手机端不再上报）',
   // 体验断档（2026-11-12 评审 §5.3）：断线横幅 / 首次进入引导 / 回到底部胶囊 /
   // 局域网「调试模式」标注。文案只由 mobile-apply.tsx 与设置页消费。
   'linkDown': '连接已断开，正在自动重连…',
@@ -291,6 +310,25 @@ export const en = {
   'cacheEntries': '{n} cached entries (assets + session lists)',
   'cacheClear': 'Clear cache',
   'cacheCleared': '✅ Cache cleared, {mb} MB freed',
+  // Lightweight view (review §7.1 route A): a phone-only page; the host UI stays the default entry.
+  'liteTitle': 'Lightweight view (phone)',
+  'liteHint': 'Sessions, sending and approvals only — no host UI, faster on slow or old phones',
+  'liteAddress': 'Address',
+  'liteAddressHint': 'Add it to the home screen for a standalone app; if it misbehaves the host UI is still there, on the same data',
+  'liteOpen': 'Open lightweight view',
+  // Usage probe (review §7.1): collected in the phone browser, stored as a local JSONL; never uploaded.
+  'probeTitle': 'Usage probe',
+  'probeSub': 'Keeps a local usage log so the next step for the phone view can be decided from data',
+  'probeEnabled': 'Collect usage data',
+  'probeEnabledHint': 'Records time per screen, tap areas, reconnect delays and whether host class names still exist. No message content, never uploaded.',
+  'probeUsage': '{used} of {budget} used',
+  'probeWhere': '{n} packets · written to {path}',
+  'probeLast': 'last {when}',
+  'probeEmpty': 'no data yet',
+  'probeClear': 'Clear log',
+  'probeCleared': '✅ Probe log cleared, {mb} MB freed',
+  'probeEnabledToast': 'Usage probe enabled',
+  'probeDisabledToast': 'Usage probe disabled (the phone stops reporting)',
   // Experience gaps (review §5.3): link banner / first-visit tips / back-to-bottom pill /
   // LAN "debug mode" note. Consumed by mobile-apply.tsx and the settings page only.
   'linkDown': 'Disconnected — reconnecting automatically…',
