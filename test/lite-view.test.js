@@ -189,6 +189,34 @@ test('lite: chat paging survives the poll, and the offline banner can actually h
   assert.match(css, /\.banner__link\[hidden\], \.banner__retry\[hidden\] \{ display: none; \}/);
 });
 
+test('lite: the session list is cached, single-flight, and slower when it is big', () => {
+  // 宿主的 session/list 全量返回（实测 2845 个会话约 17 MB、4 秒）。手机上的列表页若照旧
+  // 每 5 秒轮询，等于一直占用移动网络：所以①上一次没回来就不发新的；②成功一次就写裁剪
+  // 缓存，下次打开先出画面；③列表大就降频。
+  assert.match(app, /var LIST_POLL_MS_SLOW = 30000;/);
+  assert.match(app, /var LIST_HEAVY_ITEMS = 400;/);
+  assert.match(app, /if \(state\.listBusy\) return Promise\.resolve\(\);/);
+  assert.match(app, /state\.listPollMs = items\.length >= LIST_HEAVY_ITEMS \? LIST_POLL_MS_SLOW : LIST_POLL_MS;/);
+  assert.match(app, /if \(now - state\.lastListAt >= state\.listPollMs\) loadSessions\(\);/);
+  assert.match(app, /function readListCache\(\)/);
+  assert.match(app, /function writeListCache\(items\)/);
+  assert.match(app, /var cached = readListCache\(\);/);
+  // 缓存只留渲染要用的字段（标题在 projections.values.title 里），否则 17 MB 直接塞进配额。
+  assert.match(app, /function cacheableSummary\(summary\)/);
+  assert.match(app, /item\.projections = \{ values: \{ title: title \} \};/);
+  // localStorage 在隐私模式会抛：读写都不能把页面带崩。
+  assert.match(app, /} catch \(err\) \{ return \[\]; \}/);
+});
+
+test('lite: assets are re-read when the file changes on disk', () => {
+  // 资源常驻内存会让「换了插件版本」或「刚改完页面」的手机一直收到旧脚本，
+  // 只有重启宿主才生效；按 mtime 失效后改完文件刷新手机即可。
+  const assets = readFileSync(here('../lib/lite/assets.mjs'), 'utf8');
+  assert.match(assets, /import \{ readFileSync, statSync \} from 'node:fs';/);
+  assert.match(assets, /mtimeMs = statSync\(file\)\.mtimeMs;/);
+  assert.match(assets, /cached\.mtimeMs === mtimeMs/);
+});
+
 test('lite: the settings tab exposes an address that prefers the public hostname', () => {
   const src = settingsSource();
   // 地址优先级：公网 > 局域网 > 当前 origin。手机上打开设置页时 location.origin 是电脑地址，
