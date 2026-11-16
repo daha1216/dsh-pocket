@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { POCKET_ENDPOINTS } from '../client/api.js';
 import { zh, en } from '../client/pocket-locales.js';
+import { settingsSource } from './helpers/settings-source.js';
 
 const result = await build({
   entryPoints: [fileURLToPath(new URL('../client/index.jsx', import.meta.url))],
@@ -199,8 +200,13 @@ test('公网设置：恢复出厂回到未配置，不留下公网入口或二�
 });
 
 test('源码与构建产物均不再携带随机域名功能', () => {
-  for (const relative of ['../client/index.jsx', '../client/client.js', '../client/pocket-locales.js', '../lib/tunnel.mjs']) {
-    const source = readFileSync(new URL(relative, import.meta.url), 'utf8');
-    assert.doesNotMatch(source, /startQuickTunnel|QUICK_TUNNEL_URL_RE|modeQuick|modeNamed|switchToQuick|wanEphemeralWarn/, relative);
+  const sources = [
+    ['client/index.jsx + client/settings/*', settingsSource()],
+    ['../client/client.js', readFileSync(new URL('../client/client.js', import.meta.url), 'utf8')],
+    ['../client/pocket-locales.js', readFileSync(new URL('../client/pocket-locales.js', import.meta.url), 'utf8')],
+    ['../lib/tunnel.mjs', readFileSync(new URL('../lib/tunnel.mjs', import.meta.url), 'utf8')],
+  ];
+  for (const [label, source] of sources) {
+    assert.doesNotMatch(source, /startQuickTunnel|QUICK_TUNNEL_URL_RE|modeQuick|modeNamed|switchToQuick|wanEphemeralWarn/, label);
   }
 });

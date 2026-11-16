@@ -2,7 +2,7 @@
 // 源码 t()/fmt() 引用的 key 必须都在词典中——防止加字符串时 key 不同步（英文漏翻/白屏 key）。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { settingsSource } from './helpers/settings-source.js';
 
 const { NS, zh, en } = await import('../client/pocket-locales.js');
 
@@ -22,7 +22,7 @@ test('pocket 词典：占位符 {placeholder} 在 zh/en 中一致', () => {
 });
 
 test('pocket 词典：源码 t()/fmt() 引用的 key 都在词典中', () => {
-  const src = readFileSync(new URL('../client/index.jsx', import.meta.url), 'utf8');
+  const src = settingsSource();
   const used = new Set();
   for (const m of src.matchAll(/\bt\('([^']+)'\)/g)) used.add(m[1]);
   for (const m of src.matchAll(/fmt\(t,\s*'([^']+)'/g)) used.add(m[1]);

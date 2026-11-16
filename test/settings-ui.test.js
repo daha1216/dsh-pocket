@@ -6,9 +6,9 @@
 // 只保留图标，用户直接看到一排空白按钮。渲染层不报错，测试也照不到，故用源码契约兜住。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { settingsSource } from './helpers/settings-source.js';
 
-const src = readFileSync(new URL('../client/index.jsx', import.meta.url), 'utf8');
+const src = settingsSource();
 
 test('Btn 必须同时接收位置参数与 props.children', () => {
   assert.match(src, /const Btn = \(props, \.\.\.extraChildren\)/, 'Btn 签名必须接收位置参数 children');

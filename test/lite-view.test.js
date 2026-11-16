@@ -8,6 +8,8 @@ import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 
+import { settingsSource } from './helpers/settings-source.js';
+
 import {
   LITE_PAGE_PATH,
   LITE_ASSET_PREFIX,
@@ -188,13 +190,13 @@ test('lite: chat paging survives the poll, and the offline banner can actually h
 });
 
 test('lite: the settings tab exposes an address that prefers the public hostname', () => {
-  const src = readFileSync(here('../client/index.jsx'), 'utf8');
+  const src = settingsSource();
   // 地址优先级：公网 > 局域网 > 当前 origin。手机上打开设置页时 location.origin 是电脑地址，
   // 不能作为首选（人在外面就连不上）。
   assert.ok(src.includes("const liteUrl = (tunnelUrl || lanUrl || (typeof location !== 'undefined' ? location.origin : '')) + '/__dsh-pocket/lite';"),
     'lite URL must prefer the public hostname, then LAN, then origin');
   assert.ok(src.includes("t('liteOpen')"), 'settings tab must offer an open button');
-  assert.ok(src.includes("h('div', { className: 'dshp-hint', style: { wordBreak: 'break-all' } }, liteUrl)"),
+  assert.ok(src.includes("h('div', { className: 'dshp-hint', style: { wordBreak: 'break-all' } }, s.liteUrl)"),
     'settings tab must show the address itself so it can be copied by hand');
   // 打包产物里也要有这个路径，否则设置页拿到的是旧 bundle。
   const bundle = readFileSync(here('../client/client.js'), 'utf8');

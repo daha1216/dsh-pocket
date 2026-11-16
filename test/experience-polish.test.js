@@ -9,10 +9,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { settingsSource } from './helpers/settings-source.js';
 
 const read = (rel) => readFileSync(new URL(`../${rel}`, import.meta.url), 'utf8');
 const apply = read('client/mobile/mobile-apply.tsx');
-const settings = read('client/index.jsx');
+const settings = settingsSource();
 const proxy = read('lib/proxy.mjs');
 const pages = read('lib/proxy/pages.mjs');
 const { zh, en } = await import('../client/pocket-locales.js');

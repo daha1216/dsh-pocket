@@ -99,7 +99,8 @@ test('client bundle：status 访问必须可选链（回归：1.9.0 白屏——
   // 修复：全部 status?.lanAuthEnabled。此测试防止再次出现裸访问（esbuild 会原样保留 ?.）。
   // 产物默认压缩：局部变量名会被改名，正面断言打在源码上；产物只保留负面断言。
   const { readFileSync } = await import('node:fs');
-  const src = readFileSync(new URL('../client/index.jsx', import.meta.url), 'utf8');
+  const { settingsSource } = await import('./helpers/settings-source.js');
+  const src = settingsSource();
   const bundle = readFileSync(new URL('../client/client.js', import.meta.url), 'utf8');
   assert.ok(src.includes('status?.lanAuthEnabled'), '源码存在可选链访问');
   assert.ok(!/(?<!\?)status\.lanAuthEnabled/.test(src), '源码不允许裸 status.lanAuthEnabled（必须可选链）');
@@ -122,7 +123,8 @@ test('移动导航 backdrop（issue #38 镜像层）：backdrop 标记存在 + �
 test('公网免责声明（issue #31）：bundle 含弹框与勾选逻辑，RPC 必须带 disclaimer 确认', async () => {
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../client/client.js', import.meta.url), 'utf8');
-  const clientSrc = readFileSync(new URL('../client/index.jsx', import.meta.url), 'utf8');
+  const { settingsSource } = await import('./helpers/settings-source.js');
+  const clientSrc = settingsSource();
   assert.ok(src.includes('disclaimer'), 'bundle 含免责声明逻辑');
   // 产物压缩会把 true 改写成 !0，正面断言打在源码上
   assert.ok(clientSrc.includes('disclaimer: true'), '开启公网带免责声明确认参数');

@@ -8,10 +8,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { settingsSource } from './helpers/settings-source.js';
 
 const bundle = readFileSync(new URL('../client/client.js', import.meta.url), 'utf8');
 const apply = readFileSync(new URL('../client/mobile/mobile-apply.tsx', import.meta.url), 'utf8');
-const index = readFileSync(new URL('../client/index.jsx', import.meta.url), 'utf8');
+const index = settingsSource();
 const locales = readFileSync(new URL('../client/pocket-locales.js', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../client/api.js', import.meta.url), 'utf8');
 
