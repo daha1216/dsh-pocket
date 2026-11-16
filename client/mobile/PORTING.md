@@ -7,53 +7,60 @@ pocket 的移动端适配移植自 [dsh-web-mobile](https://github.com/mexiaosqw
 
 ```
 client/mobile/
-  upstream/            ← dsh-web-mobile src/client/** 原样镜像（勿手改！）
+  upstream/            ← 生成物：vendor 快照 + 镜像变换 + patches 重建出来的树（勿手改，改 patches/）
   mobile-apply.tsx     ← pocket 适配器：布局门控 → 调 upstream apply → pocket 附加层
   fileGuard.ts         ← pocket 专属：issue #17 文件链接守卫 + 「复制」按钮
   layout-mode.mjs      ← pocket 专属：issue #74 ?dsh-layout= 强制布局
+  probe-core.mjs       ← pocket 专属：使用探针的浏览器侧核心（默认关）
+  settling-watchdog.mjs
   LICENSE.dsh-web-mobile
   PORTING.md           ← 本文件
+
+vendor/dsh-web-mobile/  ← 上游源码快照（tag 原样，仅换行统一 LF）+ UPSTREAM.json（repo/tag/commit + 逐文件 sha256）
+patches/                ← 本地补丁集（31 个 .patch）+ MANIFEST.json（顺序、行数、sha256）
+scripts/upstream.mjs    ← check / apply / regen / bump
+scripts/lib/upstream-transform.mjs  ← 镜像变换 T0/T1/T2（与补丁分开，免得每条补丁都带一遍改名）
 ```
 
-**原则：`upstream/` 里零手改。** 所有 pocket 特有逻辑都住在适配器和 pocket 专属文件里。
-上游的一切（样式、手势、reconciler、slots 组件）都从 upstream/ 原样打包。
+**`upstream/` 是生成物，不是手改的地方。** 它由 `vendor/dsh-web-mobile/` 快照经三条镜像变换、
+再打上 `patches/*.patch` 得到；`npm run upstream:check` 会在临时目录重跑这条流水线并与
+`upstream/` 逐字节比对，不一致就点名到文件。想改 upstream 行为：改 `upstream/` →
+`npm run upstream:regen` 把差异固化成补丁；不打算保留的临时试验不要留在 `upstream/` 里。
 
 ## 同步步骤（上游发新版后）
 
 ```powershell
-node %USERPROFILE%\.dsh\dsh-pocket\sync-dsh-web-mobile.mjs          # 跟 origin/main
-node %USERPROFILE%\.dsh\dsh-pocket\sync-dsh-web-mobile.mjs v2.4.0   # 或指定 tag
+npm run upstream:check     # upstream/ 能否由 vendor + 变换 + patches 精确重建（提交前/CI 跑这个）
+npm run upstream:apply     # 重建并覆盖 upstream/（等价于 check 通过后采纳结果）
+npm run upstream:regen     # 改完 upstream/ 之后：把当前差异重新固化成 patches/（旧补丁集被替换）
+npm run upstream:bump -- --from <本地克隆路径> --tag v3.4.0 --commit <40 位 sha>
 ```
 
-**注意（2026-11-03）：sync 脚本硬编码落点 `POCKET='C:/dsh/dsh-pocket-pure'`（pure 树）。
-维护中的工作副本是 `D:/dsh work/dsh-pocket-fix`——脚本跑完后要把 pure 的新 `upstream/`
-复制进 fix 树再重打补丁（本次同步即此流程，下述 2026-11-03 基线）。**
+`upstream:bump` 做三件事：从本地克隆 `git archive <ref> src/client` 取快照写进
+`vendor/dsh-web-mobile/`；重写 `UPSTREAM.json`（repo / tag / commit / sourcePath / 逐文件
+sha256）；再用现有补丁集试重建。补丁打不上就停下并列出冲突文件——这时候要逐条对账补丁
+（`patches/MANIFEST.json` 里有顺序与行数），而不是把 upstream/ 硬覆盖过去。
 
-```powershell
-node %USERPROFILE%\.dsh\dsh-pocket\sync-dsh-web-mobile.mjs          # 跟 origin/main
-node %USERPROFILE%\.dsh\dsh-pocket\sync-dsh-web-mobile.mjs v2.4.0   # 或指定 tag
-```
+**镜像变换（`scripts/lib/upstream-transform.mjs`，构建期自动施加，不写进补丁）**：
 
-脚本会：fetch → 镜像 src/client → **镜像期变换（见下）** → esbuild 重建 client.js →
-node --check。产物 `client/client.js` 由 esbuild 打包 upstream/ + 适配器 + fileGuard
-为一个 `window.__ModuleLoader__.load` 包装的 CJS bundle（react 与
-`@deepseek-ai/dsh-client-ui-primitives` 保持 external）。
+1. **T0 换行归一化**：所有文本文件统一 LF。补丁按行比对，一端 CRLF 一端 LF 会让整文件变成
+   「全删全加」（实测 sidebar-swipe / layout / misc 三个文件因此涨到 +6000 行）；
+   `.gitattributes` 同时把 `client/mobile/upstream/**`、`vendor/**`、`patches/**` 钉成 `eol=lf`。
+2. **T1 NS 改名**：`dshWebMobileNav` → `pocketMobileNav`（含 `.attachments` 等子 NS 与
+   `…FileShare` 变体；历史 `mobileNav` 字面量同改，`dataset.mobileNav` / `data-mobile-nav`
+   是 data 属性**不在其列**）。理由：vendored 副本注册同名人会与独立安装的 dsh-web-mobile
+   撞车（上游 locales.ts 注释：register 重名 throw 且整条插件 fiber 死亡）。
+3. **T2 stats 让位**：`[data-mobile-nav="stats"]` 的每个选择器项首加
+   `body:not([data-pocket-stats="off"])`——别的插件设 `document.body.dataset.pocketStats='off'`
+   就能整组回收 stats 条，纯 CSS、无 JS 拦截，且幂等（已前缀的不再二次加）。
 
-**镜像期变换（sync 脚本 step 2.5，自动施加，无需手工）**——v3.1.0 起上游 NS 家族
-改为 `dshWebMobileNav` 前缀，vendored 副本注册同名人会与独立安装的 dsh-web-mobile
-插件撞车（上游 locales.ts 注释：register 重名 throw 且整条插件 fiber 死亡）：
-1. `dshWebMobileNav` → `pocketMobileNav`（全字符串，含 `.attachments` 子 NS 与
-   `…FileShare` 变体；对历史 `'mobileNav'` 字面量同改，`dataset.mobileNav`/`data-mobile-nav`
-   是 data 属性**不在其列**）；
-2. `[data-mobile-nav="stats"]` 选择器 → `body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"]`
-   （让位机制：其它插件设 `document.body.dataset.pocketStats='off'` 即可整组回收
-   stats 条，纯 CSS、无 JS 拦截；幂等：已前缀的选择器不会二次加前缀）。
-   变换后脚本断言镜像目录零 `dshWebMobileNav` 残留——**上游新增未跟踪文件**（如
-   v3.1.0 的 file-share-locale.ts）git grep 搜不到，断言必须走文件系统遍历。
+变换后 `assertTransformedTree()` 断言三件事：零 `dshWebMobileNav` 残留、guard 不落在选择器
+链中段、没有 CRLF。断言必须走文件系统遍历——**上游新增未跟踪文件**（如 v3.1.0 的
+file-share-locale.ts）用 git grep 搜不到。
 
 构建依赖 esbuild：vendored 于 `%USERPROFILE%\.dsh\dsh-pocket\vendor\node_modules\`
-（esbuild@0.28.1 + @esbuild/win32-x64），sync 脚本自动 junction 进包内 node_modules。
-`dsh plugin update dsh-pocket` 重装包后 junction 会丢——重跑 sync 脚本即可恢复。
+（esbuild@0.28.1 + @esbuild/win32-x64，与仓库内 `vendor/dsh-web-mobile/` 是两回事），
+`dsh plugin update dsh-pocket` 重装包后 junction 会丢——重建一次即可恢复。
 
 **同步后必做：**
 1. 重启 dsh web（`node %USERPROFILE%\.dsh\dsh-pocket\detached-restart.cjs`，注意会断当前会话）。
@@ -68,7 +75,7 @@ node --check。产物 `client/client.js` 由 esbuild 打包 upstream/ + 适配�
 4. **激活冒烟**：`node client\repro-activate.mjs`（桩环境直跑 bundle 的 apply()，
    应打印 `apply() completed` + 47 effects + locale NS 清单；NS 重名/漏 inject
    一律当场炸）。比「重启后拿手机试」快得多。
-5. **重打下方「upstream/ 内的 pocket 手工补丁」清单**——sync 会整目录覆盖，丢了会静默回归。
+5. **验补丁集**：`npm run upstream:check`（手改了 `upstream/` 没固化 → 这里红）。
 6. **重算锚点台账**：`npm run anchors:gen`（sync 增删锚点后不重算，契约测试红）；宿主升级
    还要先 `npm run anchors:dump`，详见下方「锚点台账与宿主升级 triage」。
 
@@ -91,14 +98,18 @@ node --check。产物 `client/client.js` 由 esbuild 打包 upstream/ + 适配�
 自动重算台账）。契约测试 `test/anchors-contract.test.js` 钉住「台账 == 重算结果」与
 「分组 == 实际落点」，源码增删锚点后不重新生成就是红。
 
-## upstream/ 内的 pocket 手工补丁（sync 覆盖后必须重打）
+## upstream/ 内的 pocket 补丁（固化在 patches/）
 
-「upstream/ 零手改」有例外：下列修复必须落在镜像文件内部（适配器层够不着
-组件闭包/reconciler 回调/slot 组件），每次 `sync-dsh-web-mobile.mjs` 会把它们
-整目录冲掉。按序号逐个施加，施加完用 `git diff client/mobile/upstream` 复核。
+`upstream/` 里的本地改动不再靠「同步后手工重打」：它们已经固化成
+`patches/NNNN-<路径>.patch`（路径里的 `/` 写成 `__`），顺序与 sha256 记在
+`patches/MANIFEST.json`，全部由 `npm run upstream:check` 逐字节验证。下面的编号
+（#1…#17）是历史台账编号，用来对上 2026-11-03 那次对账；编号与补丁文件的对照见
+「各补丁的落点与理由」前面那张表。
 
-**2026-11-03 对账基线：上游 main @2cf9061（v3.2.2 之后、#254/#257/#258 合入）。**
-14 条补丁全部重打完成（3 条已被上游吸收，见下）。本轮上游要点：
+**对账基线：上游 v3.2.3 = `91b328c1c0217cd58cf807a22e000ee8a56b6622`**（提交 c02bde5
+「吸收上游 v3.2.3（#260）」引入；早期记录的 `main @2cf9061` / v3.2.2 已过时）。
+当前补丁集 31 个文件、+725 / −973 行。
+14 条补丁全部重打完成（3 条已被上游吸收，见下；这批改动现已全部固化成 `patches/`）。本轮上游要点：
 - 新效果 ×5：composer-clearance（#245 横屏键盘挤压输入框）、question-fullscreen
   （提问卡手动全屏回答）、image-lightbox-zoom（灯箱双指缩放只缩图片）、
   drawer-quick-settings（抽屉一键设置齿轮）+ tablet-quick-settings（平板档单独武装）；
@@ -125,7 +136,43 @@ node --check。产物 `client/client.js` 由 esbuild 打包 upstream/ + 适配�
   随 aionui 集成删除，见 #17）。
 - #12 reasoning-defaults 退避 —— 该文件上游 v3.2.0 已退休（旧记录，本轮再次确认无需打）。
 
-**14 条补丁 → 重打落点（2026-11-03 实录）**：
+**补丁集 ↔ 台账对照**（`patches/` 下文件名 = 序号 + 路径，路径里的 `/` 写成 `__`）：
+
+| 补丁 | 承载的改动 |
+| --- | --- |
+| 0001 AGENTS.md | 上游目录说明的 pocket 侧增补（#15/#17 删除后同步索引） |
+| 0002 components/MobileNavToggle.tsx | #6 抽屉开关 aria-expanded 订阅 |
+| 0003 components/open-files-panel.ts | #17 删第三方 explorer 回退，只留宿主右侧栏 |
+| 0004 core/composer-clearance.ts | #15 清掉指向键盘抬升的注释 |
+| 0005 core/visible-band-publish.ts | #16 新文件：可见带逐帧发布判据 |
+| 0006 debug.ts | #3 paint() 改 rAF 合并 |
+| 0007 effects/AGENTS.md | 上游 effect 索引的 pocket 侧增补 |
+| 0008 effects/aionui-compat.ts | #17 整份删除 |
+| 0009 effects/composer-clearance.ts | #15 注释清理 |
+| 0010 effects/composer-keyboard-lift.ts | #15 整份删除 |
+| 0011 effects/file-viewer-compat.ts | #5 wasActive/lastFrame memo + dispose 清缓存 |
+| 0012 effects/header-metrics.ts | #17 注释里去掉已删的 preview-fullscreen |
+| 0013 effects/overlay-backdrop-fab.ts | #1 frame-null 清理 + #13③ hero 锚缓存 |
+| 0014 effects/panel-exit.ts | #13② panelRow 锚缓存 |
+| 0015 effects/phone-chrome.ts | #17 dispose 里三个已废标记的清理 |
+| 0016 effects/preview-fullscreen.ts | #17 整份删除 |
+| 0017 effects/question-fullscreen.ts | 后缀锚重锚（哈希换代）+ 可见带事件消费（#16 配套） |
+| 0018 effects/reconciler-adapter.ts | #17 摘掉三个任务注册与三条 attributeFilter |
+| 0019 effects/session-focus-guard.ts | 2026-11-03 性能批：子树观察者只在窗口内挂 |
+| 0020 effects/session-menu.ts | #2 capture anchor 共用 + #14 chat-flow 整批早退 |
+| 0021 effects/sidebar-swipe.ts | #4 willChange + 输入区起手守卫 |
+| 0022 effects/stats-line.ts | #13① stats 锚缓存 |
+| 0023 effects/subagent-chip-touch.ts | 子代理芯片：pointerleave 一并吞掉（tap 后卡片被 hover 关掉） |
+| 0024 effects/viewport-meta.ts | #16 可见带高度发布改写 |
+| 0025 i18n/locales.ts | #17 删 previewFullscreen 词条 |
+| 0026 index.tsx | #15/#17 摘掉 import 与装配调用 |
+| 0027 platform/visible-band.ts | #16 平台层可见带事件注释配套 |
+| 0028 styles/base.css.ts | #17 删 sheet-up 关键帧 |
+| 0029 styles/compat.css.ts | #8①opPanel z-index +#8②cardShots 横滚 +#10 dvh + #17 两列 sheet 几何删除 |
+| 0030 styles/layout.css.ts | #7 四条（text-size-adjust / overscroll / 座位 2px / 钉底）+ #10 dvh 三处 |
+| 0031 styles/misc.css.ts | #17 平板居中与桌面隐藏项删除 |
+
+**各补丁的落点与理由（2026-11-03 实录，编号沿用旧台账）**：
 - #1 `effects/overlay-backdrop-fab.ts` — frame-null 分支清理 timer/backdrop/FAB（原样重打）。
 - #2 `effects/session-menu.ts` — ①capture contextmenu + captureRow 共用；②removedMenu
   清 anchor。上游本轮把 onDocumentClick 重构为内联箭头函数，补丁改挂在同构的 captureRow 上。
@@ -158,9 +205,9 @@ node --check。产物 `client/client.js` 由 esbuild 打包 upstream/ + 适配�
   键盘抬升 2026-10-31 起就已停用（`index.tsx` 里留 `void installComposerKeyboardLift` 一行占位），
   帧数据显示它和引擎自己的滚动纠正互相拉扯（seat 578→283→560、conv 8572↔8587 每帧来回），
   而引擎单独工作时座位落在可见带内；评审报告把它列为死路径，文件与占位一并删除。
-  **同步后必须再删一次**（sync 会把文件从上游拷回来），并确认 `index.tsx` 没有重新出现
-  import 与调用；`effects/composer-clearance.ts`、`core/composer-clearance.ts` 里指向它的
-  注释同样要清掉。
+  落地形式：`patches/0010`（整份删除）+ `0026`（摘 index.tsx 的 import 与占位调用）
+  + `0004`/`0009`（composer-clearance 两处注释）。上游 bump 后若该文件被改写，补丁会
+  打不上——那是对账信号，别改成「同步后手工再删一次」。
 - #16（2026-11-12 新增）`--dsha-mobile-visible-vh` 自适应发布 — **新文件**
   `core/visible-band-publish.ts`（纯判据，零 DOM）+ `effects/viewport-meta.ts` 的
   `syncStableViewportHeight()` 改写。评审 §3.3 要求变量跟手（键盘动画期间逐帧变），但
@@ -169,9 +216,9 @@ node --check。产物 `client/client.js` 由 esbuild 打包 upstream/ + 适配�
   就判定这台设备扛不住，本次会话余下时间退回停稳发布（每次过渡只重排一次），降级单向
   不回升。消费者（提问卡全屏带）仍然只在停稳后收到 `dsh-mobile-visible-band` 事件；
   `--dsha-mobile-viewport-top` 改为去重直写（全仓暂无消费者）。
-  **同步后必须重打**：`core/visible-band-publish.ts` 会被 sync 删掉，viewport-meta 会被
-  上游版本覆盖（旧行为是「只在两帧稳定后写变量」）；契约断言在
-  `test/upstream-v323-port.test.js` 与 `test/visible-band.test.js`。
+  落地形式：`patches/0005`（新文件）+ `0024`（viewport-meta 改写）+ `0027`（平台层注释）
+  + `0017`（question-fullscreen 消费事件）；契约断言在 `test/upstream-v323-port.test.js`
+  与 `test/visible-band.test.js`。
 - #17（2026-11-12 新增）aionui / dsh-web-ui explorer-preview 集成 — **整层删除**。评审
   §2.5 把它列为死路径（本机 profile 从未装过 dsh-web-ui）：`effects/aionui-compat.ts`
   （chevron 关标记、preview sheet 标记、伪装 Windows 桌面绕套件 Android 检查）、
@@ -183,8 +230,10 @@ node --check。产物 `client/client.js` 由 esbuild 打包 upstream/ + 适配�
   附加层的 explorer 可用性探测（issue #48）与其 POCKET_EXTRA_CSS 隐藏规则、debug 探针
   两行，全部移除。文件浏览只剩宿主官方右侧栏（`data-sidebar-right-expand` /
   `-toggle`）；dsh-web-ui 的 task-board / ssh 兼容块**保留**。
-  **同步后需复查**：sync 会把这些文件与样式整段拷回。删完跑 `node scripts/gen-anchors.mjs`
-  （锚点台账计数会变）与全量测试；`effects/AGENTS.md` 与 `upstream/AGENTS.md` 的索引已同步。
+  落地形式：`patches/0003` `0008` `0012` `0015` `0016` `0018` `0025` `0028` `0029` `0031`
+  + `0001`/`0007`（两份 AGENTS.md 索引）。上游 bump 后若补丁打不上，先看是不是这几份
+  文件被上游改写过，再决定重放还是作废该条；改完跑 `npm run anchors:gen`（锚点台账计数
+  会变）与全量测试。
 
 **历史对账基线：v3.2.0 (473a78b)（已被 2026-11-03 的 main @2cf9061 取代，见上一节）。**
 当时相对 v3.1.0 的 14 条补丁：#12

@@ -1,0 +1,21 @@
+diff --git a/styles/base.css.ts b/styles/base.css.ts
+index c459252..4a87a26 100644
+--- a/styles/base.css.ts
++++ b/styles/base.css.ts
+@@ -611,16 +611,5 @@ export const BASE_CSS = `
+     transform: none;
+   }
+ }
+-/* Preview sheet rise: the aionui preview column opens as a bottom sheet. */
+-@keyframes dsh-web-mobile-sheet-up {
+-  from {
+-    opacity: 0;
+-    transform: translateY(28px);
+-  }
+-  to {
+-    opacity: 1;
+-    transform: none;
+-  }
+-}
+ 
+ `

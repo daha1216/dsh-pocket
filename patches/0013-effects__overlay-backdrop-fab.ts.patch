@@ -1,0 +1,57 @@
+diff --git a/effects/overlay-backdrop-fab.ts b/effects/overlay-backdrop-fab.ts
+index 04754f0..859c1e4 100644
+--- a/effects/overlay-backdrop-fab.ts
++++ b/effects/overlay-backdrop-fab.ts
+@@ -64,8 +64,19 @@ export function createOverlayTask(
+     // rules stay armed and this backdrop keeps being created.
+     return !frame.hasAttribute('data-sidebar-collapsed')
+   }
+-  const heroPhase = (): boolean =>
+-    document.querySelector('[data-phase="active"]') === null
++  // Pocket patch: cache the active-phase node — heroPhase() runs up to twice
++  // per ensure (every flush), and the steady state has no [data-phase] host
++  // node at all, so the query is pure tax whenever a phase IS mounted.
++  // isConnected + matches() re-check (the attribute moves between connected
++  // nodes); a miss falls through to the same query as before. Cleared in
++  // dispose so a re-arm never inherits a stale node.
++  let heroActiveEl: Element | null = null
++  const heroPhase = (): boolean => {
++    const cached = heroActiveEl
++    if (cached !== null && cached.isConnected && cached.matches('[data-phase="active"]')) return false
++    heroActiveEl = document.querySelector('[data-phase="active"]')
++    return heroActiveEl === null
++  }
+   /**
+    * The FAB does one job per view. While a sidebar panel owns the main area it
+    * steps back through the panel and everywhere else it opens the drawer.
+@@ -123,7 +134,21 @@ export function createOverlayTask(
+         backdrop.style.opacity = '0'
+       }
+       const frame = getFrame()
+-      if (frame === null) return
++      if (frame === null) {
++        // Pocket patch: with the frame gone (host rebuilt the shell), clear
++        // the stale backdrop/FAB/fade timer before the early return — the
++        // closure-held nodes are detached but non-null, so a later frame
++        // would keep treating them as live overlay state.
++        if (backdropRemoveTimer !== null) {
++          window.clearTimeout(backdropRemoveTimer)
++          backdropRemoveTimer = null
++        }
++        backdrop?.remove()
++        backdrop = null
++        fab?.remove()
++        fab = null
++        return
++      }
+       if (drawerOpen()) {
+         if (backdrop === null) {
+           backdrop = document.createElement('div')
+@@ -177,6 +202,7 @@ export function createOverlayTask(
+         backdropRemoveTimer = null
+       }
+       fadeHook = null
++      heroActiveEl = null
+       backdrop?.remove()
+       backdrop = null
+       fab?.remove()

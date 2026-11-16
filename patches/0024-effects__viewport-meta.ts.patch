@@ -1,0 +1,143 @@
+diff --git a/effects/viewport-meta.ts b/effects/viewport-meta.ts
+index 7764fa9..00e123f 100644
+--- a/effects/viewport-meta.ts
++++ b/effects/viewport-meta.ts
+@@ -8,6 +8,8 @@
+ // 本模块**不**调 installMobileEffect / ctx.effect：各段自持的 matchMedia 会变成
+ // 「每次外层重新武装就往 ctx 上再注册三个收不到的 effect」的累积注册，也会把
+ // 一段确定的回调顺序拆成三个监听器各自的（规范未定义的）触发顺序。
++import { VISIBLE_BAND_EVENT } from '../platform/visible-band.ts'
++import { createBandPublishGovernor } from '../core/visible-band-publish.ts'
+ 
+ /** Marker the iOS-only zoom-guard CSS is scoped to (html element). */
+ const IOS_MARKER = 'data-mobile-nav-ios'
+@@ -57,8 +59,6 @@ const VIEWPORT_CONTENT = 'width=device-width, initial-scale=1, viewport-fit=cove
+  * 本模块不自起 effect：`syncStableViewportHeight()` 是返回 disposer 的普通函数，
+  * 调用方是 phone-chrome 的 status-bar effect（P1 拆分第五片，2026-10-12）。
+  */
+-import { VISIBLE_BAND_EVENT } from '../platform/visible-band.ts'
+-
+ export const STABLE_VIEWPORT_VAR = '--dsh-web-mobile-vh'
+ 
+ const findViewportMeta = (): HTMLMetaElement | null =>
+@@ -118,7 +118,7 @@ export function preserveViewportMeta(): () => void {
+   }
+ }
+ 
+-/** The keyboard-less viewport height (STABLE_VIEWPORT_VAR). */
++/** The keyboard-less viewport height (STABLE_VIEWPORT_VAR) + the live visible band. */
+ export function syncStableViewportHeight(): () => void {
+   const root = document.documentElement
+   let stableVh = 0
+@@ -129,50 +129,70 @@ export function syncStableViewportHeight(): () => void {
+   // width change that leaves the height alone (split-screen resize, a
+   // rotation that lands back on the same height) used to re-run the document
+   // style pass for an identical string. Measured 2026-10-09 on Android 16
+-  // WebView: the monotonic rule above already suppresses every keyboard
++  // WebView: the monotonic rule below already suppresses every keyboard
+   // driven write (the keyboard only lowers the height, and a lower height
+   // never passes the growth test), so no per-frame dedup is needed here —
+   // this guard only removes the redundant identical writes.
+   let stableValue = ''
+-  let pendingVisible = ''
+-  let pendingVisibleFrames = 0
+-  let pendingVisibleFrame = 0
+-  // 2026-11-03：发布时机晚于最后一次 resize 事件（要等两帧确认），而读这个变量排版的
+-  // 效果（提问卡全屏带）只在 resize 时量。没有这个通知，它们最后一次测量量到的是
+-  // 发布前的旧几何——录屏实测：键盘收起后全屏卡片停在键盘高度不回来。
+-  const publishVisible = (value: string): void => {
++  /** 变量当前持有的值：自己记账，免得每帧回读 style 再解析字符串。 */
++  let written = ''
++  /** 已按「停稳」广播过的值：事件每个值只发一次。 */
++  let settledValue = ''
++  let pendingBand = ''
++  let pendingBandFrames = 0
++  let bandFrame = 0
++  const publish = createBandPublishGovernor()
++
++  const writeBand = (value: string): void => {
++    if (written === value) return
++    written = value
+     root.style.setProperty('--dsha-mobile-visible-vh', value)
+-    document.dispatchEvent(new CustomEvent(VISIBLE_BAND_EVENT))
+   }
++
+   const syncStableViewport = (): void => {
++    bandFrame = 0
+     const height = window.innerHeight
+     const width = window.innerWidth
+     const visible = window.visualViewport
+     const available = Math.max(1, Math.min(height, visible?.height ?? height))
+-    const visibleValue = `${available}px`
++    const bandValue = `${available}px`
+     const topValue = `${visible?.offsetTop ?? 0}px`
+-    // Only publish the band height once it STOPS MOVING (two consecutive frames
+-    // agree). The shell is sized from this variable, and a custom property on
+-    // :root invalidates style for the whole document — following the keyboard's
+-    // 300ms rise frame by frame re-laid-out the entire app ~20 times and the
+-    // conversation list painted blank (white) for 1-2s on the owner's phone
+-    // (2026-10-31). Publishing on settle costs one resize, right after the
+-    // keyboard stops, and the animation itself is left to the compositor.
+-    pendingVisibleFrames = visibleValue === pendingVisible ? pendingVisibleFrames + 1 : 0
+-    pendingVisible = visibleValue
+-    if (pendingVisibleFrames >= 2 &&
+-      root.style.getPropertyValue('--dsha-mobile-visible-vh') !== visibleValue)
+-      publishVisible(visibleValue)
+-    // The keyboard stops without announcing it: the last resize event still sees
+-    // a fresh value, so confirmation has to come from a frame of its own. One
+-    // rAF at a time; during the animation each tick re-arms exactly once.
+-    else if (pendingVisibleFrames < 2 && pendingVisibleFrame === 0)
+-      pendingVisibleFrame = requestAnimationFrame(() => {
+-        pendingVisibleFrame = 0
+-        syncStableViewport()
+-      })
++    // The band's top edge moves without the height changing (the engine pans the
++    // page under the keyboard), so it is tracked separately; it has no reader in
++    // this repo today but stays cheap and correct.
+     if (root.style.getPropertyValue('--dsha-mobile-viewport-top') !== topValue)
+       root.style.setProperty('--dsha-mobile-viewport-top', topValue)
++
++    // 停稳 = 同一高度连续两帧不变。它决定两件事：消费者（提问卡全屏带）什么时候量，
++    // 以及设备跟不上时变量什么时候写（见下）。
++    pendingBandFrames = bandValue === pendingBand ? pendingBandFrames + 1 : 0
++    pendingBand = bandValue
++    const settled = pendingBandFrames >= 2
++
++    // 2026-11-12（评审 §3.3）：跟手优先，但按设备量力而行。
++    // 2026-10-31 真机实测过纯逐帧发布：整个 app 每帧重排约 20 次，会话列表白屏
++    // 1-2s，所以当时改成「停稳才发布」，代价是键盘动画走完那一下跳变。现在过渡期
++    // 逐帧直写，帧节拍交给 core/visible-band-publish.ts 判定——连续几帧被重排拖慢
++    // 就退回停稳发布（每次过渡只重排一次），本次会话余下时间不再来回切。
++    if (publish.isLive()) {
++      writeBand(bandValue)
++      if (settled) publish.noteSettled()
++      else publish.noteFrame(performance.now())
++    } else if (settled) {
++      writeBand(bandValue)
++    }
++
++    // 消费者只在停稳后量一次（它们量的是布局几何，动画期间量等于把重排风暴转嫁出去）。
++    // 2026-11-03 的现场是变量发布晚于最后一次 resize，它们量到发布前的旧几何——键盘
++    // 收起后全屏卡停在键盘高度。降级模式下变量也只在这一刻动，同一个事件正好叫醒它们。
++    if (settled && bandValue !== settledValue) {
++      settledValue = bandValue
++      document.dispatchEvent(new CustomEvent(VISIBLE_BAND_EVENT))
++    }
++    // The keyboard stops without announcing it: the last resize event still sees a
++    // fresh value, so confirmation has to come from a frame of its own. One rAF at a
++    // time; during the animation each tick re-arms exactly once.
++    if (!settled && bandFrame === 0) bandFrame = requestAnimationFrame(syncStableViewport)
+     if (stableVh === 0 || height > stableVh || width !== stableWidth) {
+       stableVh = height
+       stableWidth = width
+@@ -193,8 +213,8 @@ export function syncStableViewportHeight(): () => void {
+     window.removeEventListener('resize', syncStableViewport)
+     window.visualViewport?.removeEventListener('resize', syncStableViewport)
+     window.visualViewport?.removeEventListener('scroll', syncStableViewport)
+-    if (pendingVisibleFrame !== 0) cancelAnimationFrame(pendingVisibleFrame)
+-    pendingVisibleFrame = 0
++    if (bandFrame !== 0) cancelAnimationFrame(bandFrame)
++    bandFrame = 0
+     root.style.removeProperty('--dsha-mobile-visible-vh')
+     root.style.removeProperty('--dsha-mobile-viewport-top')
+     stableValue = ''

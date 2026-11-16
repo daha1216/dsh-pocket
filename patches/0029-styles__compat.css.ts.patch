@@ -1,0 +1,396 @@
+diff --git a/styles/compat.css.ts b/styles/compat.css.ts
+index 4ca90be..9d814a1 100644
+--- a/styles/compat.css.ts
++++ b/styles/compat.css.ts
+@@ -5,226 +5,13 @@
+ 
+ export const COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
+   /* ---------- dsh-web-ui family compatibility ----------
+-     The linxin666 plugin suite extends the shell frame directly:
+-       - aionui-panel appends two trailing grid columns (explorer / preview)
+-         plus absolute drag handles to [data-dsh-frame]; its 5-track inline
+-         grid is already overridden above, but the handles and columns would
+-         still float over the main UI. On mobile the columns leave the grid
+-         as floating bottom sheets and keep their own visibility state —
+-         the suite's collapse chevron / preview tabs still work, so no
+-         feature is lost. The task-board / ssh plugins inject sidebar
+-         entries and center-column takeover panels; the entries need
+-         spacing and the kanban needs scrollable columns. */
+-
+-  /* Touch devices: the drag handles are useless — the floating expand
+-     button is the opener. */
+-  .aionui-explorer-handle,
+-  .aionui-preview-handle {
+-    display: none !important;
+-  }
+-
+-  /* Shared base: both columns leave the grid as floating panels. The
+-     explorer is gated shut by default (its own persisted expanded state
+-     must never cover the mobile UI on load); the header Files action opens
+-     it via the frame marker below, and the sheet's own collapse chevron
+-     clears it. Preview stays owned by the suite (hidden while no tab is
+-     open). The per-column rules below override the geometry. */
+-  [data-aionui-explorer-col],
+-  [data-aionui-preview-col] {
+-    position: fixed !important;
+-    z-index: 55 !important;
+-    background: var(--aion-bg-base, #ffffff) !important;
+-    border-left: none !important;
+-  }
+-  /* Explorer (file tree) bottom sheet: bottom edge aligned exactly with
+-     the composer card's bottom line — the card sits 36px above the
+-     viewport bottom (8px composer padding + the 28px stats strip below
+-     the card), so the sheet uses the same 36px bottom offset. */
+-  [data-aionui-explorer-col] {
+-    visibility: hidden !important;
+-    left: 8px !important;
+-    right: 8px !important;
+-    top: auto !important;
+-    bottom: 36px !important;
+-    width: auto !important;
+-    height: min(55dvh, 460px) !important;
+-    max-height: calc(100dvh - 44px) !important;
+-    border-radius: 14px !important;
+-    overflow: hidden !important;
+-    box-shadow: 0 -4px 28px rgba(0, 0, 0, .18) !important;
+-    animation: dsh-web-mobile-sheet-up .24s var(--ds-ease-out, ease-in-out) !important;
+-  }
+-  /* Preview (file content) bottom sheet. Gated shut by default: the suite
+-     persists open preview tabs in localStorage and restores them on load,
+-     which would pop the sheet over the fresh UI. The client only sets the
+-     frame marker after the user taps a file row in the explorer; the
+-     suite's own collapse chevron clears it via the visibility watcher. */
+-  [data-aionui-preview-col] {
+-    visibility: hidden !important;
+-    position: fixed !important;
+-    left: 8px !important;
+-    right: 8px !important;
+-    top: auto !important;
+-    bottom: 40px !important;
+-    width: auto !important;
+-    height: min(50dvh, 420px) !important;
+-    max-height: calc(100dvh - 48px) !important;
+-    border-radius: 14px !important;
+-    overflow: hidden !important;
+-    box-shadow: 0 -4px 28px rgba(0, 0, 0, .18) !important;
+-    z-index: 56 !important;
+-    animation: dsh-web-mobile-sheet-up .24s var(--ds-ease-out, ease-in-out) !important;
+-    /* Fullscreen toggle (issue #8): animate the geometry change instead of
+-       snapping. visibility is deliberately not listed, so opening/closing
+-       the sheet stays instant; the open/close keyframes own transform. */
+-    transition:
+-      left .24s var(--ds-ease-out, ease-in-out),
+-      right .24s var(--ds-ease-out, ease-in-out),
+-      top .24s var(--ds-ease-out, ease-in-out),
+-      bottom .24s var(--ds-ease-out, ease-in-out),
+-      width .24s var(--ds-ease-out, ease-in-out),
+-      height .24s var(--ds-ease-out, ease-in-out),
+-      border-radius .24s var(--ds-ease-out, ease-in-out),
+-      box-shadow .24s var(--ds-ease-out, ease-in-out),
+-      padding-top .24s var(--ds-ease-out, ease-in-out) !important;
+-  }
+-  /* User-opened preview sheet (frame marker, set on file-row tap). */
+-  [data-mobile-nav="frame"][data-aionui-preview-open] [data-aionui-preview-col] {
+-    visibility: visible !important;
+-  }
+-  /* The Files action opens the explorer sheet (frame marker). */
+-  [data-mobile-nav="frame"][data-aionui-explorer-open] [data-aionui-explorer-col] {
+-    visibility: visible !important;
+-  }
+-  /* While the preview sheet is up, the explorer sheet yields (two stacked
+-     bottom sheets would read as one broken overlay). Closing the preview
+-     via its collapse chevron / tab close clears the marker, and the
+-     explorer sheet returns. Same specificity as the explorer-open rule, so
+-     this must stay AFTER it. */
+-  [data-mobile-nav="frame"][data-aionui-preview-open] [data-aionui-explorer-col] {
+-    visibility: hidden !important;
+-  }
+-  /* The open drawer must never sit under a sheet: while the frame is in the
+-     narrow-expanded state both sheets yield (later in the file than the
+-     open marker rule, so it wins at equal specificity). The fullscreen
+-     toggle is a descendant of this column, so it is hidden with the rest of
+-     the column — there is no separate drawer-open rule for it. */
+-  [data-mobile-nav="frame"]:not([data-sidebar-collapsed]) [data-aionui-explorer-col],
+-  [data-mobile-nav="frame"]:not([data-sidebar-collapsed]) [data-aionui-preview-col] {
+-    visibility: hidden !important;
+-    display: none !important;
+-  }
+-  /* The suite's own expand button reads the store state we bypass on
+-     mobile — hide it; the header Files action is the opener. */
+-  .aionui-floating-expand {
+-    display: none !important;
+-  }
+-
+-  /* Preview sheet fullscreen toggle (issue #8): a fixed button parked in the
+-     sheet's titlebar row, just left of the suite's collapse chevron (24px at
+-     right:8px of the sheet, and the sheet spans 8px..(100vw-8px)). The top
+-     calc mirrors the sheet geometry above (bottom 40px + min(50dvh, 420px));
+-     when the frame carries "data-mobile-preview-full" the sheet goes
+-     fullscreen and the button moves to the viewport corner. */
+-  [data-mobile-nav="preview-full-toggle"] {
+-    position: absolute !important;
+-    right: 36px !important;
+-    top: 8px !important;
+-    z-index: 57 !important;
+-    display: none !important;
+-    align-items: center;
+-    justify-content: center;
+-    width: 20px;
+-    height: 20px;
+-    padding: 0;
+-    border: none;
+-    border-radius: 4px;
+-    background: transparent;
+-    color: var(--aion-text-secondary, var(--dsw-alias-label-secondary, inherit));
+-    cursor: pointer;
+-    -webkit-tap-highlight-color: transparent;
+-    /* Native look: same size/radius/hover language as the suite's tab-bar
+-       icon buttons (the 20px panelCollapse next to it). The button lives
+-       INSIDE the preview column, so it rides the sheet's own open
+-       animation and geometry transition — no curve matching needed. */
+-    transition: background-color .15s, top .24s var(--ds-ease-out, ease-in-out);
+-  }
+-  /* 44px 热区：20×20 的按钮外扩——纵向 ±12px（标题栏行内上下都有空），横向只能
+-     ±4px（右侧 8px 外就是宿主自己的 20px 收起键：两颗命中盒再宽就会互相压住，
+-     变成「点收起却展开」。该约束与上面「头部按钮热区」那组同一来源）。 */
+-  [data-mobile-nav="preview-full-toggle"]::after {
+-    content: '';
+-    position: absolute;
+-    inset: -12px -4px;
+-  }
+-  @media (hover: hover) {
+-    [data-mobile-nav="preview-full-toggle"]:hover {
+-      background: var(--aion-bg-3, rgba(0, 0, 0, .22));
+-    }
+-  }
+-  [data-mobile-nav="preview-full-toggle"]:active {
+-    background: var(--aion-bg-active, rgba(0, 0, 0, .28));
+-  }
+-  [data-mobile-nav="preview-full-toggle"]:focus-visible {
+-    outline: 2px solid var(--dsw-alias-state-business-primary, #4f6ef7);
+-    outline-offset: 2px;
+-  }
+-  [data-mobile-nav="preview-full-toggle"] svg {
+-    width: 14px;
+-    height: 14px;
+-  }
+-  /* Keep the last tab (and the "+" URL-tab trigger) from sliding under the
+-     fullscreen toggle: reserve the right end of the preview tab row. */
+-  [data-aionui-preview-col] [class*="_tabScroll"] {
+-    padding-right: 34px !important;
+-  }
+-  /* Visible only while the preview sheet is open. Visibility itself is
+-     inherited from the column, so the sheet's own hide rules (collapse,
+-     drawer open) cover the button too. */
+-  [data-mobile-nav="frame"][data-aionui-preview-open] [data-aionui-preview-col] [data-mobile-nav="preview-full-toggle"] {
+-    display: inline-flex !important;
+-  }
+-  /* Icon swap on the frame fullscreen marker. */
+-  [data-mobile-nav="preview-full-toggle"] .dsh-web-mobile-full-out {
+-    display: none !important;
+-  }
+-  [data-mobile-nav="frame"][data-mobile-preview-full] [data-aionui-preview-col] [data-mobile-nav="preview-full-toggle"] .dsh-web-mobile-full-in {
+-    display: none !important;
+-  }
+-  [data-mobile-nav="frame"][data-mobile-preview-full] [data-aionui-preview-col] [data-mobile-nav="preview-full-toggle"] .dsh-web-mobile-full-out {
+-    display: inline !important;
+-  }
+-  /* Fullscreen preview: the sheet fills the whole viewport (notch included);
+-     the safe-area padding drops the titlebar row below the status bar, and
+-     the toggle follows the titlebar into the top corner. */
+-  [data-mobile-nav="frame"][data-aionui-preview-open][data-mobile-preview-full] [data-aionui-preview-col] {
+-    inset: 0 !important;
+-    left: 0 !important;
+-    right: 0 !important;
+-    top: 0 !important;
+-    bottom: 0 !important;
+-    width: 100% !important;
+-    height: 100dvh !important;
+-    max-height: none !important;
+-    box-sizing: border-box !important;
+-    padding-top: env(safe-area-inset-top, 0px) !important;
+-    border-radius: 0 !important;
+-    box-shadow: none !important;
+-    z-index: 57 !important;
+-    animation: none !important;
+-  }
+-  /* Fullscreen: the column fills the viewport, so the button follows the
+-     titlebar row down below the notch. */
+-  [data-mobile-nav="frame"][data-mobile-preview-full] [data-aionui-preview-col] [data-mobile-nav="preview-full-toggle"] {
+-    top: calc(env(safe-area-inset-top, 0px) + 8px) !important;
+-  }
+-  @media (prefers-reduced-motion: reduce) {
+-    [data-aionui-preview-col],
+-    [data-mobile-nav="preview-full-toggle"] {
+-      transition: none !important;
+-      animation: none !important;
+-    }
+-  }
++     The linxin666 plugin suite extends the shell frame directly: the
++     task-board / ssh plugins inject sidebar entries and center-column takeover
++     panels; the entries need spacing and the kanban needs scrollable columns.
++     The suite's aionui explorer / preview columns are NOT supported any more —
++     that integration (sheet geometry, fullscreen toggle, column markers) was
++     removed on 2026-11-12; file browsing uses the host's own right sidebar.
++     See PORTING.md #17. */
+ 
+   /* dsh-web-ui sidebar entries (task board / ssh) sit flush against each
+      other — give the injected rows breathing room. */
+@@ -301,6 +88,9 @@ export const COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
+     left: 50% !important;
+     right: auto !important;
+     transform: translate(-50%, -50%) !important;
++    /* pocket 补丁：唯一无 z-index 的 fixed 层——不钉层级时后来居上的兄弟
++       层可把它盖住。 */
++    z-index: 60 !important;
+   }
+ 
+   /* ---------- dshmarket polish: header title row ----------
+@@ -509,35 +299,6 @@ export const COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
+     border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, .12)) !important;
+   }
+ 
+-  /* ---------- dsh-web-ui polish: explorer sheet ----------
+-     The aionui explorer was designed for a desktop side column: compact the
+-     header, search box and tree rows so a phone shows more entries, and pad
+-     the scroll bottom so the last row never sits flush on the edge. */
+-
+-  [data-aionui-explorer-col] [class*="_tabBar"]:not([class*="_tabBarRight"]) {
+-    height: 36px !important;
+-  }
+-  [data-aionui-explorer-col] [class*="_tabBtn"],
+-  [data-aionui-explorer-col] [class*="_tabBtnActive"] {
+-    padding: 0 12px !important;
+-    font-size: 13px !important;
+-  }
+-  [data-aionui-explorer-col] [class*="_searchBox"] {
+-    height: 32px !important;
+-    font-size: 13px !important;
+-  }
+-  [data-aionui-explorer-col] [class*="_treeRow"] {
+-    height: 30px !important;
+-    font-size: 13px !important;
+-  }
+-  [data-aionui-explorer-col] [class*="_treeRow"] svg {
+-    width: 14px !important;
+-    height: 14px !important;
+-  }
+-  [data-aionui-explorer-col] [class*="_scrollArea"] {
+-    padding-bottom: 28px !important;
+-  }
+-
+   /* ---------- dsh-web-ui polish: drawer footer ----------
+      The official footerActions row also hosts the remote-web-ui entry row
+      (two icon buttons) and the usage/balance badge; without wrapping the
+@@ -600,7 +361,7 @@ export const COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
+       → 视觉间距约 7px，仍留余量；早前的 -4px 会把间隙压到 0（就是"挨得太近"），
+       已按实测改回。不改 28px 行高、不动 composer 底部占位（8px + 28px 几何契约）。 */
+ 
+-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] {
++  [data-mobile-nav="stats"] {
+     margin-top: -2px !important;
+     display: flex !important;
+     flex-flow: row nowrap !important;
+@@ -620,12 +381,12 @@ export const COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
+     line-height: 18px !important;
+     font-size: 10px !important;
+   }
+-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"]::-webkit-scrollbar {
++  [data-mobile-nav="stats"]::-webkit-scrollbar {
+     display: none !important;
+     width: 0 !important;
+     height: 0 !important;
+   }
+-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] > * {
++  [data-mobile-nav="stats"] > * {
+     display: flex !important;
+     flex-flow: row nowrap !important;
+     align-items: center !important;
+@@ -634,7 +395,7 @@ export const COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
+     padding: 0 !important;
+   }
+   /* 第一组（轮次·步数·tok/s）保持完整。 */
+-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] > *:first-child {
++  [data-mobile-nav="stats"] > *:first-child {
+     flex: 0 0 auto !important;
+     width: max-content !important;
+     min-width: max-content !important;
+@@ -646,7 +407,7 @@ export const COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
+      这版保持 flex 对齐，只让药丸**内部的文字 span** 收缩 + 出省略号；
+      图标 svg 固定不缩。另外把两组药丸的左右内边距压到 6px、组间距压到 4px，
+      抠出来的宽度全部让给第二组（实测它原本只分到 76px 而需要 156px）。 */
+-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] > *:last-child {
++  [data-mobile-nav="stats"] > *:last-child {
+     display: flex !important;
+     align-items: center !important;
+     flex: 0 1 auto !important;
+@@ -656,23 +417,23 @@ export const COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
+     overflow: hidden !important;
+     margin-right: 0 !important;
+   }
+-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] > *:last-child > * {
++  [data-mobile-nav="stats"] > *:last-child > * {
+     display: flex !important;
+     align-items: center !important;
+     min-width: 0 !important;
+     max-width: 100% !important;
+     overflow: hidden !important;
+   }
+-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] > *:last-child svg {
++  [data-mobile-nav="stats"] > *:last-child svg {
+     flex: 0 0 auto !important;
+   }
+-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] > *:last-child span {
++  [data-mobile-nav="stats"] > *:last-child span {
+     flex: 0 1 auto !important;
+     min-width: 0 !important;
+     overflow: hidden !important;
+     text-overflow: ellipsis !important;
+   }
+-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] button {
++  [data-mobile-nav="stats"] button {
+     padding: 0 3px !important;
+     margin: 0 !important;
+     min-width: 0 !important;
+@@ -680,17 +441,17 @@ export const COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
+   }
+   /* 药丸内部的 span/svg 有自己的字号（宿主 .pill 自带），只在外层设 10px 不会被
+      继承进去 —— 真机上第二组仍差 ~20px 被省略号切掉，所以这里显式压到内部。 */
+-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] button,
+-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] button span,
+-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] button svg,
+-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] > * {
++  [data-mobile-nav="stats"] button,
++  [data-mobile-nav="stats"] button span,
++  [data-mobile-nav="stats"] button svg,
++  [data-mobile-nav="stats"] > * {
+     font-size: 10px !important;
+     line-height: 18px !important;
+   }
+-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] > *:not(:last-child) {
++  [data-mobile-nav="stats"] > *:not(:last-child) {
+     margin-right: 3px !important;
+   }
+-  body:not([data-pocket-stats="off"]) [data-mobile-nav="stats"] * {
++  [data-mobile-nav="stats"] * {
+     white-space: nowrap !important;
+   }
+   /* 「上下文环」显示在输入框行的右簇（店主 2026-09-23 确认：
+@@ -942,6 +703,8 @@ export const COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
+     transform: translateX(-50%) !important;
+     width: min(100% - 24px, 360px) !important;
+     max-width: 360px !important;
++    /* vh 回退行在前（pocket 补丁），无 dvh 引擎时模式选择菜单不塌回 auto。 */
++    max-height: min(55vh, 440px) !important;
+     max-height: min(55dvh, 440px) !important;
+     padding: 30px 6px 10px !important;
+     border-radius: 16px !important;
+@@ -1031,6 +794,8 @@ export const COMPAT_CSS = `@media (max-width: 1023px) and (pointer: coarse) {
+   flex-wrap: nowrap !important;
+   overflow-x: auto !important;
+   -webkit-overflow-scrolling: touch !important;
++  /* 到头继续拽不把整页拖出（pocket 补丁） */
++  overscroll-behavior-x: contain !important;
+   scrollbar-width: thin !important;
+   min-width: 0 !important;
+   width: 100% !important;

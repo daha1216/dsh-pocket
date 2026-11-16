@@ -31,7 +31,11 @@
     "anchors:gen": "node scripts/gen-anchors.mjs",
     "test:anchors": "node --test --test-timeout=300000 test/local/anchors-live.test.js",
     "anchors:report": "node scripts/anchor-report.mjs",
-    "anchors:rename": "node scripts/anchor-rename.mjs"
+    "anchors:rename": "node scripts/anchor-rename.mjs",
+    "upstream:check": "node scripts/upstream.mjs check",
+    "upstream:apply": "node scripts/upstream.mjs apply",
+    "upstream:regen": "node scripts/upstream.mjs regen",
+    "upstream:bump": "node scripts/upstream.mjs bump"
   },
   "dependencies": {
     "qrcode": "^1.5.4"
