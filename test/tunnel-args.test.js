@@ -49,7 +49,9 @@ test('issue #78: 命名隧道 --no-autoupdate 在全局位置（argv[0]，含 ru
       assert.equal(argv[0], '--no-autoupdate', '--no-autoupdate 必须是 argv 第一个（全局位置）');
       assert.ok(argv.indexOf('tunnel') > argv.indexOf('--no-autoupdate'), '--no-autoupdate 必须在 tunnel 子命令之前');
       assert.ok(argv.includes('run'), '命名隧道应含 run 子命令');
-      assert.deepEqual(argv, ['--no-autoupdate', 'tunnel', 'run', '--protocol', 'http2']);
+      // 协议必须是 auto 而非 http2：TUN/代理网络常拦 TCP 7844 却放行 UDP 7844，
+      // 硬编码 http2 会 TLS 超时注册不上边缘（公网 530）；auto 预检失败后可降级 quic。
+      assert.deepEqual(argv, ['--no-autoupdate', 'tunnel', 'run', '--protocol', 'auto']);
       assert.equal(recorded.token, token, 'Token 只通过环境变量传递');
       assert.ok(!argv.includes(token) && !argv.includes('--token'), 'Token 不得进入命令行');
       assert.ok(!argv.includes('--url'), '不得启动随机 URL 隧道');
