@@ -74,7 +74,7 @@ dsh web
 ```
 
 > [!IMPORTANT]
-> **Package source**: The `dsh-pocket` package on npm belongs to the original upstream author's 2.x line. Always install v4.x from `github:daha1216/dsh-pocket` (or pin a specific release tag via `dsh plugin --profile web add github:daha1216/dsh-pocket#v4.0.0 -w`).
+> **Package source**: The `dsh-pocket` package on npm belongs to the original upstream author's 2.x line. Always install v4.x from `github:daha1216/dsh-pocket` (or pin a specific release tag via `dsh plugin --profile web add github:daha1216/dsh-pocket#v4.0.1 -w`).
 
 > [!TIP]
 > **Upgrading from v3.x to v4.0**: Re-run the `add` command above and restart `dsh web` (or click Restart in the Settings banner). Existing LAN/public preferences, PINs, and Named Tunnel tokens carry over automatically; Lite View (`/__dsh-pocket/lite`) and the Usage Probe have been retired in favor of a single, deeply polished host-UI experience.

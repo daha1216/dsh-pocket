@@ -74,7 +74,7 @@ dsh web
 ```
 
 > [!IMPORTANT]
-> **安装来源说明**：npm 上的同名 `dsh-pocket` 为上游原作者历史版本，请务必使用上方 `github:daha1216/dsh-pocket` 地址安装 v4.x。如需锁定特定版本，可执行 `dsh plugin --profile web add github:daha1216/dsh-pocket#v4.0.0 -w`。
+> **安装来源说明**：npm 上的同名 `dsh-pocket` 为上游原作者历史版本，请务必使用上方 `github:daha1216/dsh-pocket` 地址安装 v4.x。如需锁定特定版本，可执行 `dsh plugin --profile web add github:daha1216/dsh-pocket#v4.0.1 -w`。
 
 > [!TIP]
 > **从 v3.x 升级到 v4.0**：重跑一次上方的 `add` 命令并重启 `dsh web`（或点击设置页顶部黄条重启）即可。原有的局域网/公网配置、密码与命名隧道 Token 会自动延续；v4.0 已移除独立轻量视图（`/__dsh-pocket/lite`）与使用探针，全面聚焦扫码一步直连与宿主 UI 移动端体验。

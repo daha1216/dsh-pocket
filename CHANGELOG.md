@@ -1,3 +1,19 @@
+## [4.0.1](https://github.com/daha1216/dsh-pocket/compare/v4.0.0...v4.0.1) (2026-11-18)
+
+> v4.0.0 全量发布后经多视角终局安全与双代际客户端深度审查完成的 6 项加固补丁。
+
+### Security & Stability
+
+* **auth (`lib/auth/device-store.mjs`):** 将 `generation` 代际计数器、`flushTimer`、`flushPromise` 与 `unlinked` 迁入文件级共享缓存，为同步/异步 `.bak` 容灾备份生成唯一文件名；同步撤销/签发设备立即递增值代并取消挂起异步刷盘，若异步写盘期间发生并发变更则在写完后自动按最新代际重刷落盘，彻底消除已撤销设备在异步写盘竞争下重启复活的隐患。
+* **proxy (`lib/proxy/upgrade.mjs`):** WebSocket 升级握手同步拦截 `channel-mismatch` 跨通道设备 Cookie（直接返回 `401 Unauthorized`，杜绝局域网设备凭证在相同自定义密码配置下经 `authCheck` 回落透传公网隧道），并在转发上游路径前通过 `stripPairParam` 彻底剥离 `?pair=` 参数。
+* **rpc (`lib/web-rpc.js`):** 将 `fileRead` 的 `fs.realpath`（含悬空符号链接 `readlink`）、敏感凭据路径检查与工作区根目录边界校验全部前移至 `fs.stat(real)` 之前，闭合工作区外符号链接的存在性/目录类型/超大体积探测侧信道；同时修正 `pin.setCustom` 清空自定义密码（`value: ''`）时准确返回 `custom: false`。
+
+### Bug Fixes & Maintenance
+
+* **settings-ui (`client/settings/use-settings.ts`, `client/settings/AdvancedSection.tsx`):** DSH `0.2.2-rc.2+` 已通过 `meta.stylesheets` 托管渲染样式时不再重复注入未清理的 `#dshp-settings-css` `<style>` 标签，并复用入口持有的兜底样式避免关闭/卸载泄漏；设置页脚「更新方法」链接由失效的 `#-怎么用` 修正为 `#-快速开始`。
+* **mobile & loader (`client/mobile/mobile-apply.tsx`, `client/index.tsx`):** 移动端激活层补齐与入口门控一致的 `dsh-mobile-nav-layout` 旧配置兼容回退；`client/index.tsx` 对 `importMobileChunk` 拉取失败或缺失导出支持重置状态并重挂监听器重试，同时强化异步 Cordis 环境下 `safeEffect`、`inject` 与 `slots.inject` 的一次性清理防重入保护。
+* **docs & hygiene (`CHANGELOG.md`, `.gitattributes`, `scripts/`):** 将 `CHANGELOG.md` 中 5 处失效相对路径 `./docs/security-audit-2026-10-27.md` 修复为 `v3.1.0` 永久 GitHub 归档链接；删除废弃图标脚本 `scripts/make-icon.py`，并在 `.gitattributes` 补齐 `client/mobile/*.{ts,tsx}` 的 `eol=lf` 约束。
+
 ## [4.0.0](https://github.com/daha1216/dsh-pocket/compare/v3.1.0...v4.0.0) (2026-11-18)
 
 > 全面迈入独立演进的 v4.0 架构：一步扫码免密配对、跨重启持久设备凭证与单台实时断流吊销、Named Tunnel 守护自愈与环境预检、64 MiB Worker 异步会话瘦身、桌面零开销双分包，以及对齐 DSH 官方 R20/0.5px 设计系统的 TSX 设置页与移动端代码预览抽屉。
@@ -150,7 +166,7 @@
 
 ## [3.0.8](https://github.com/daha1216/dsh-pocket/compare/v3.0.7...v3.0.8) (2026-10-27)
 
-> 第六轮对抗验证（CLI/更新链路、并发与内存生命周期）后的补丁，完整记录见 [docs/security-audit-2026-10-27.md](./docs/security-audit-2026-10-27.md)。
+> 第六轮对抗验证（CLI/更新链路、并发与内存生命周期）后的补丁，完整记录见 [docs/security-audit-2026-10-27.md](https://github.com/daha1216/dsh-pocket/blob/v3.1.0/docs/security-audit-2026-10-27.md)。
 
 ### Security
 
@@ -173,7 +189,7 @@
 
 ## [3.0.7](https://github.com/daha1216/dsh-pocket/compare/v3.0.6...v3.0.7) (2026-10-27)
 
-> 第五轮对抗验证（proxy 安全回归，48b5ea9 → 9af15ca）后的补丁，完整记录见 [docs/security-audit-2026-10-27.md](./docs/security-audit-2026-10-27.md)。
+> 第五轮对抗验证（proxy 安全回归，48b5ea9 → 9af15ca）后的补丁，完整记录见 [docs/security-audit-2026-10-27.md](https://github.com/daha1216/dsh-pocket/blob/v3.1.0/docs/security-audit-2026-10-27.md)。
 
 ### Security
 
@@ -190,7 +206,7 @@
 
 ## [3.0.6](https://github.com/daha1216/dsh-pocket/compare/v3.0.5...v3.0.6) (2026-10-27)
 
-> 第四轮对抗验证（settings 生命周期 / PIN 缓存 / pnpm 安装布局）后的补丁，完整记录见 [docs/security-audit-2026-10-27.md](./docs/security-audit-2026-10-27.md)。
+> 第四轮对抗验证（settings 生命周期 / PIN 缓存 / pnpm 安装布局）后的补丁，完整记录见 [docs/security-audit-2026-10-27.md](https://github.com/daha1216/dsh-pocket/blob/v3.1.0/docs/security-audit-2026-10-27.md)。
 
 ### Security
 
@@ -208,7 +224,7 @@
 
 ## [3.0.5](https://github.com/daha1216/dsh-pocket/compare/v3.0.4...v3.0.5) (2026-10-27)
 
-> 第二轮/第三轮对抗审查（认证隐私、settings 生命周期、客户端/移动端三路只读审计）后的补丁，完整记录见 [docs/security-audit-2026-10-27.md](./docs/security-audit-2026-10-27.md)。
+> 第二轮/第三轮对抗审查（认证隐私、settings 生命周期、客户端/移动端三路只读审计）后的补丁，完整记录见 [docs/security-audit-2026-10-27.md](https://github.com/daha1216/dsh-pocket/blob/v3.1.0/docs/security-audit-2026-10-27.md)。
 
 ### Security
 
@@ -229,7 +245,7 @@
 
 ## [3.0.4](https://github.com/daha1216/dsh-pocket/compare/v3.0.3...v3.0.4) (2026-10-27)
 
-> 完整记录见 [docs/security-audit-2026-10-27.md](./docs/security-audit-2026-10-27.md)。
+> 完整记录见 [docs/security-audit-2026-10-27.md](https://github.com/daha1216/dsh-pocket/blob/v3.1.0/docs/security-audit-2026-10-27.md)。
 
 ### Security
 
