@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WebSocket, WebSocketServer } from 'ws';
@@ -17,6 +17,7 @@ import {
 import { DEFAULT_PAIRING_TTL_MS, createPairingManager } from '../lib/auth/pairing.mjs';
 import { createPocketProxy } from '../lib/proxy.mjs';
 import { cookieFor, TOKEN_COOKIE } from '../lib/proxy/auth.mjs';
+import { pinCustom } from '../lib/settings.mjs';
 import { installPocketRpc } from '../lib/web-rpc.js';
 import {
   getAccessToken,
@@ -81,6 +82,7 @@ async function createUpstreamAndRpcHarness(t, {
   now = Date.now,
 } = {}) {
   const upstreamHits = [];
+  const upstreamWsHits = [];
   const registeredRoutes = [];
   const deviceStore = createDeviceStore({ home, now });
   const pairing = createPairingManager({ ttlMs: DEFAULT_PAIRING_TTL_MS, now });
@@ -129,7 +131,7 @@ async function createUpstreamAndRpcHarness(t, {
       const fresh = setCustomPin('lan', '');
       return fresh;
     },
-    getPinCustom: () => false,
+    getPinCustom: (which) => pinCustom(which),
     setCustomPin: (which, val) => setCustomPin(which, val),
     resetPocket: () => resetPocketState(),
     log: { error() {}, warn() {}, info() {} },
@@ -155,7 +157,12 @@ async function createUpstreamAndRpcHarness(t, {
   });
 
   const wss = new WebSocketServer({ server: upstream });
-  wss.on('connection', (ws) => {
+  wss.on('connection', (ws, req) => {
+    upstreamWsHits.push({
+      url: req.url,
+      host: req.headers.host ?? null,
+      originHeader: req.headers['x-dsh-pocket-origin'] ?? null,
+    });
     ws.on('message', (msg) => ws.send(`echo:${msg.toString()}`));
   });
 
@@ -210,6 +217,7 @@ async function createUpstreamAndRpcHarness(t, {
     upstreamPort,
     proxyPort: proxy.port,
     upstreamHits,
+    upstreamWsHits,
     logs,
     deviceStore,
     pairing,
@@ -660,4 +668,157 @@ test('v4 连接级即时撤销：devices.revoke 毫秒级主动销毁该设备�
     ws2.once('error', () => resolve('error'));
   });
   assert.equal(rejectedUpgrade, 401);
+});
+
+test('v4 审计回归 (Finding 1)：verifyDeviceCookie 异步刷新期间同步 revokeDevice 绝不把已撤销设备写回磁盘', async (t) => {
+  const home = withTempHome(t);
+  let clock = 1_700_000_000_000;
+  // 模拟代理层与 RPC 层共享同一 DSH_HOME 的两个独立 DeviceStore 实例
+  const proxyStore = createDeviceStore({ home, now: () => clock });
+  const rpcStore = createDeviceStore({ home, now: () => clock });
+
+  // 场景 A：50ms 定时器尚未触发前（15ms <= 60ms）同步调用 revokeDevice
+  const devEarly = proxyStore.issueDevice({ channel: 'lan', authMethod: 'pair', ua: 'iPhone' });
+  clock += 65_000;
+  assert.equal(
+    proxyStore.verifyDeviceCookie(`${DEVICE_COOKIE}=${devEarly.cookieValue}`, 'lan', { ip: '192.168.1.20' }).ok,
+    true,
+  );
+  await new Promise((r) => setTimeout(r, 15));
+  assert.equal(rpcStore.revokeDevice(devEarly.device.id), true);
+  await proxyStore.flush();
+  await rpcStore.flush();
+  assert.deepEqual(JSON.parse(readFileSync(devicesPath(home), 'utf8')).devices, []);
+  assert.equal(createDeviceStore({ home }).verifyDeviceCookie(`${DEVICE_COOKIE}=${devEarly.cookieValue}`, 'lan').revoked, true);
+
+  // 场景 B：50ms 定时器刚触发、atomicWriteAsync 正在异步飞行途中（50ms <= 60ms）同步调用 revokeDevice
+  const devKeep = proxyStore.issueDevice({ channel: 'lan', authMethod: 'pair', ua: 'iPad' });
+  const devMidFlight = proxyStore.issueDevice({ channel: 'lan', authMethod: 'pair', ua: 'Android' });
+  clock += 65_000;
+  assert.equal(
+    proxyStore.verifyDeviceCookie(`${DEVICE_COOKIE}=${devMidFlight.cookieValue}`, 'lan', { ip: '192.168.1.21' }).ok,
+    true,
+  );
+  // 同毫秒注册的 50ms 定时器按 FIFO 紧跟 scheduleAsyncFlush 回调之后恢复，此时 atomicWriteAsync 正处于飞行态
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(rpcStore.revokeDevice(devMidFlight.device.id), true);
+  await proxyStore.flush();
+
+  const diskAfterPartial = JSON.parse(readFileSync(devicesPath(home), 'utf8')).devices;
+  assert.deepEqual(diskAfterPartial.map((d) => d.id), [devKeep.device.id], 'Revoked device must not resurrect on disk');
+
+  // 继续把最后一台设备也在异步落盘飞行途中同步撤销，最终磁盘必须为 0 台已授权设备
+  clock += 65_000;
+  assert.equal(
+    proxyStore.verifyDeviceCookie(`${DEVICE_COOKIE}=${devKeep.cookieValue}`, 'lan', { ip: '192.168.1.22' }).ok,
+    true,
+  );
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(rpcStore.revokeDevice(devKeep.device.id), true);
+  await proxyStore.flush();
+
+  const diskFinal = JSON.parse(readFileSync(devicesPath(home), 'utf8')).devices;
+  assert.equal(diskFinal.length, 0, 'devices.json must contain zero revoked devices after flush()');
+  assert.deepEqual(createDeviceStore({ home }).listDevices(), []);
+});
+
+test('v4 审计回归 (Finding 2 & 3)：pin.setCustom 清空回传 custom:false、WS 同 PIN 跨通道拦截与 ?pair= 剥离、fileRead 软链边界前置', async (t) => {
+  const home = withTempHome(t);
+  const h = await createUpstreamAndRpcHarness(t, { home });
+
+  // 1) pin.setCustom 设置非空自定义密码返回 custom:true，传空字符串重置返回 custom:false
+  const setLanCustom = await h.callRpc(POCKET_ENDPOINTS.pinSetCustom, { which: 'lan', value: 'SharedPin2026' });
+  assert.equal(setLanCustom.ok, true);
+  assert.equal(setLanCustom.value.custom, true);
+
+  const clearLanCustom = await h.callRpc(POCKET_ENDPOINTS.pinSetCustom, { which: 'lan', value: '' });
+  assert.equal(clearLanCustom.ok, true);
+  assert.equal(clearLanCustom.value.custom, false, 'Clearing custom PIN must report custom: false');
+
+  // 2) 当 lan 与 public 设置完全相同的自定义 PIN 时，携带 lan 设备 Cookie + 同值 dsh_pocket_token 访问 public WS 仍须 401 拦截
+  await h.callRpc(POCKET_ENDPOINTS.pinSetCustom, { which: 'lan', value: 'IdenticalPin88' });
+  await h.callRpc(POCKET_ENDPOINTS.pinSetCustom, { which: 'public', value: 'IdenticalPin88' });
+
+  const lanLogin = await rawRequest({
+    port: h.proxyPort,
+    method: 'POST',
+    path: '/pocket-login',
+    headers: {
+      host: `192.168.1.50:${h.proxyPort}`,
+      'content-type': 'application/x-www-form-urlencoded',
+      'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) Safari/604.1',
+    },
+    body: 'token=IdenticalPin88',
+  });
+  assert.equal(lanLogin.status, 302);
+  const lanDevCookie = extractCookiePair(lanLogin.headers['set-cookie'], DEVICE_COOKIE);
+  const sharedTokenCookie = extractCookiePair(lanLogin.headers['set-cookie'], TOKEN_COOKIE);
+  assert.ok(lanDevCookie && sharedTokenCookie);
+
+  const crossChannelWsStatus = await new Promise((resolve) => {
+    const wsCross = new WebSocket(`ws://127.0.0.1:${h.proxyPort}/ws`, {
+      headers: {
+        Host: 'pocket.example.com',
+        Cookie: `${lanDevCookie.pair}; ${sharedTokenCookie.pair}`,
+      },
+    });
+    wsCross.once('unexpected-response', (_req, res) => {
+      res.resume();
+      resolve(res.statusCode);
+    });
+    wsCross.once('open', () => {
+      wsCross.close();
+      resolve(101);
+    });
+    wsCross.once('error', () => resolve('error'));
+  });
+  assert.equal(crossChannelWsStatus, 401, 'LAN device cookie must not fall through to identical-PIN token cookie on public WS');
+
+  // 3) 合法公网设备建立 WS 连接时，上游收到的握手路径必须彻底剥离 ?pair= 参数
+  const pubIssued = await h.callRpc(POCKET_ENDPOINTS.pairingIssue, { channel: 'public' });
+  const pubRedeem = await rawRequest({
+    port: h.proxyPort,
+    method: 'GET',
+    path: `/?pair=${pubIssued.value.ticket}`,
+    headers: { host: 'pocket.example.com' },
+  });
+  const pubDevCookie = extractCookiePair(pubRedeem.headers['set-cookie'], DEVICE_COOKIE);
+  assert.ok(pubDevCookie);
+
+  const wsClean = new WebSocket(`ws://127.0.0.1:${h.proxyPort}/ws?pair=SecretPairLeakCanary&keep=1`, {
+    headers: {
+      Host: 'pocket.example.com',
+      Cookie: pubDevCookie.pair,
+    },
+  });
+  await new Promise((resolve, reject) => {
+    wsClean.once('open', resolve);
+    wsClean.once('error', reject);
+  });
+  wsClean.close();
+  assert.ok(h.upstreamWsHits.length >= 1);
+  const lastWsUrl = h.upstreamWsHits.at(-1).url;
+  assert.equal(lastWsUrl, '/ws?keep=1', 'WS upgrade path must strip ?pair= before forwarding upstream');
+  assert.equal(lastWsUrl.includes('SecretPairLeakCanary'), false);
+
+  // 4) fileRead：工作区内指向工作区外目录的联接/软链必须在 fs.stat 之前按工作区边界拒绝，不泄漏目录元数据文案
+  const wsDir = mkdtempSync(join(tmpdir(), 'dsh-ws-in-'));
+  const outsideDir = mkdtempSync(join(tmpdir(), 'dsh-ws-out-'));
+  t.after(() => {
+    try { rmSync(wsDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    try { rmSync(outsideDir, { recursive: true, force: true }); } catch { /* ignore */ }
+  });
+  mkdirSync(outsideDir, { recursive: true });
+  const linkPath = join(wsDir, 'escape-dir-link');
+  symlinkSync(outsideDir, linkPath, process.platform === 'win32' ? 'junction' : 'dir');
+
+  let rpcFn = null;
+  installPocketRpc({
+    connection: { rpc: { handle: (_ch, fn) => { rpcFn = fn; return () => {}; } } },
+    get: (k) => (k === 'workspaceRegistry' ? { list: [{ cwd: wsDir }] } : undefined),
+  }, { service: { status: async () => ({}) } });
+  const symlinkRes = await rpcFn(POCKET_ENDPOINTS.fileRead, { path: linkPath });
+  assert.equal(symlinkRes.ok, false);
+  assert.match(String(symlinkRes.error?.message ?? ''), /工作区|workspace/i);
+  assert.doesNotMatch(String(symlinkRes.error?.message ?? ''), /目录|directory/i);
 });

@@ -236,21 +236,34 @@ export function useSettings(rpcCall: RpcCallFn, t: TranslateFn) {
     reloadAbortRef.current?.abort();
   }, []);
 
-  // 幂等注入设置页样式表
+  // 幂等注入设置页样式表（优先复用 DSH 0.2.2+ meta.stylesheets 或入口 ctx.effect 已挂载节点；独立挂载时卸载自清）
   useEffect(() => {
     if (typeof document === 'undefined') return undefined;
-    const id = 'dshp-settings-css';
-    let el = document.getElementById(id) as HTMLStyleElement | null;
-    if (el && el.tagName !== 'STYLE') el = null;
-    if (!el) {
-      el = document.createElement('style');
-      el.id = id;
-      document.head?.appendChild(el);
+    const hostManaged =
+      document.querySelector?.(
+        'style[data-plugin="dsh-pocket"][data-path="client/settings/styles.css"]',
+      ) ?? null;
+    if (hostManaged !== null) return undefined;
+
+    let existing = (document.getElementById?.('dshp-settings-css') ??
+      document.querySelector?.('style#dshp-settings-css') ??
+      null) as HTMLStyleElement | null;
+    if (existing && existing.tagName && existing.tagName !== 'STYLE') existing = null;
+    if (existing) {
+      if (existing.textContent !== POCKET_SETTINGS_CSS) {
+        existing.textContent = POCKET_SETTINGS_CSS;
+      }
+      return undefined;
     }
-    if (el.textContent !== POCKET_SETTINGS_CSS) {
-      el.textContent = POCKET_SETTINGS_CSS;
-    }
-    return undefined;
+
+    const el = document.createElement('style');
+    el.id = 'dshp-settings-css';
+    el.setAttribute?.('data-plugin', 'dsh-pocket');
+    el.textContent = POCKET_SETTINGS_CSS;
+    document.head?.appendChild(el);
+    return () => {
+      el?.remove();
+    };
   }, []);
 
   const call = async <T = any>(endpoint: string, payload: Record<string, unknown> = {}): Promise<T> => {

@@ -1033,3 +1033,495 @@ test('v4 DSH 0.2.2+ 启动令牌桥接：同时支持 webserver/entry-url 被动
     for (const fn of effectCleanups) await fn();
   }
 });
+
+test('v4 审计回归：SettingsPage 样式生命周期（0.2.2+ meta.stylesheets 不重复挂载 / 入口共有不误删 / 独立挂载卸载自清）、#-快速开始 锚点、legacy 布局键与分包重试', async () => {
+  const mainCode = readFileSync(join(clientDir, 'client.js'), 'utf8');
+  const mobileCode = readFileSync(join(clientDir, 'client.mobile.js'), 'utf8');
+  const advSrc = readFileSync(join(clientDir, 'settings/AdvancedSection.tsx'), 'utf8');
+  const mobileApplySrc = readFileSync(join(clientDir, 'mobile/mobile-apply.tsx'), 'utf8');
+
+  // (b) 页脚文档锚点对齐 v4 README.md (`#-快速开始`)，彻底移除死锚 `#-怎么用`
+  assert.equal(advSrc.includes('https://github.com/daha1216/dsh-pocket#-快速开始'), true);
+  assert.equal(advSrc.includes('#-怎么用'), false);
+  assert.equal(mainCode.includes('https://github.com/daha1216/dsh-pocket#-快速开始'), true);
+  assert.equal(mainCode.includes('#-怎么用'), false);
+
+  // (c) mobile-apply.tsx 源码与运行时同步兼容 legacy localStorage['dsh-mobile-nav-layout']
+  assert.match(mobileApplySrc, /dsh-mobile-nav-layout/);
+  assert.match(mobileApplySrc, /persistLayoutFromUrl\(urlRaw\)\s*\|\|\s*readLegacyMobileLayout\(\)/);
+
+  function createStyleHeadHarness() {
+    const headChildren = [];
+    const makeStyleEl = (tag = 'style') => {
+      const attrs = new Map();
+      const node = {
+        tagName: String(tag).toUpperCase(),
+        id: '',
+        textContent: '',
+        innerHTML: '',
+        parentElement: null,
+        isConnected: true,
+        childElementCount: 0,
+        children: [],
+        firstElementChild: null,
+        dataset: {},
+        classList: { add() {}, remove() {} },
+        style: { setProperty() {}, removeProperty() {}, getPropertyValue: () => '', cssText: '' },
+        setAttribute(k, v) {
+          attrs.set(k, String(v));
+          if (k === 'id') node.id = String(v);
+        },
+        removeAttribute(k) {
+          attrs.delete(k);
+          if (k === 'id') node.id = '';
+        },
+        getAttribute(k) {
+          if (k === 'id' && node.id) return node.id;
+          return attrs.has(k) ? attrs.get(k) : null;
+        },
+        hasAttribute(k) {
+          return (k === 'id' && Boolean(node.id)) || attrs.has(k);
+        },
+        appendChild(ch) { return ch; },
+        append() {},
+        insertBefore(ch) { return ch; },
+        addEventListener() {},
+        removeEventListener() {},
+        click() {},
+        focus() {},
+        blur() {},
+        contains: () => false,
+        querySelector: () => null,
+        querySelectorAll: () => [],
+        closest: () => null,
+        matches: () => false,
+        getClientRects: () => [{ width: 100, height: 32 }],
+        getBoundingClientRect: () => ({ top: 0, bottom: 32, left: 0, right: 100, width: 100, height: 32 }),
+        remove() {
+          const idx = headChildren.indexOf(node);
+          if (idx >= 0) headChildren.splice(idx, 1);
+          node.parentElement = null;
+        },
+      };
+      return node;
+    };
+
+    const head = {
+      children: headChildren,
+      appendChild(el) {
+        if (!headChildren.includes(el)) headChildren.push(el);
+        el.parentElement = head;
+        return el;
+      },
+    };
+    const body = makeStyleEl('body');
+
+    const querySelector = (sel) => {
+      for (const el of headChildren) {
+        if (
+          sel === 'style[data-plugin="dsh-pocket"][data-path="client/settings/styles.css"]' &&
+          el.tagName === 'STYLE' &&
+          el.getAttribute('data-plugin') === 'dsh-pocket' &&
+          el.getAttribute('data-path') === 'client/settings/styles.css'
+        ) {
+          return el;
+        }
+        if (
+          (sel === 'style#dshp-settings-css' || sel === '#dshp-settings-css') &&
+          el.tagName === 'STYLE' &&
+          el.id === 'dshp-settings-css'
+        ) {
+          return el;
+        }
+      }
+      return null;
+    };
+
+    const doc = {
+      hidden: true,
+      visibilityState: 'hidden',
+      head,
+      body,
+      documentElement: makeStyleEl('html'),
+      createElement: (tag) => makeStyleEl(tag),
+      getElementById: (id) => headChildren.find((el) => el.id === id) ?? null,
+      querySelector,
+      querySelectorAll: () => [],
+      addEventListener() {},
+      removeEventListener() {},
+    };
+    return { doc, headChildren, makeStyleEl };
+  }
+
+  // 构建可收集 useEffect 清理函数并递归展开函数组件的轻量 React 树渲染器
+  function createReactMountHarness() {
+    let effectFns = [];
+    const cleanups = [];
+    const ReactHarness = {
+      Fragment: Symbol.for('react.fragment'),
+      createElement: (type, props, ...children) => ({
+        type,
+        props: {
+          ...(props || {}),
+          children: children.length === 0 ? props?.children : children.length === 1 ? children[0] : children,
+        },
+      }),
+      useState: (init) => [typeof init === 'function' ? init() : init, () => {}],
+      useRef: (init) => ({ current: init }),
+      useMemo: (fn) => fn(),
+      useCallback: (fn) => fn,
+      useEffect: (fn) => { effectFns.push(fn); },
+    };
+
+    const collectLinks = (node, hrefs = []) => {
+      if (node == null || typeof node === 'boolean' || typeof node === 'string' || typeof node === 'number') {
+        return hrefs;
+      }
+      if (Array.isArray(node)) {
+        for (const item of node) collectLinks(item, hrefs);
+        return hrefs;
+      }
+      if (typeof node.type === 'function') {
+        return collectLinks(node.type(node.props || {}), hrefs);
+      }
+      if (node.type === 'a' && node.props?.href) {
+        hrefs.push(node.props.href);
+      }
+      if (node.props?.children !== undefined) {
+        collectLinks(node.props.children, hrefs);
+      }
+      return hrefs;
+    };
+
+    return {
+      ReactHarness,
+      mount(Component, props) {
+        effectFns = [];
+        const tree = Component(props);
+        const hrefs = collectLinks(tree);
+        for (const fn of effectFns) {
+          const off = fn();
+          if (typeof off === 'function') cleanups.push(off);
+        }
+        return {
+          hrefs,
+          unmount() {
+            while (cleanups.length > 0) cleanups.pop()?.();
+          },
+        };
+      },
+    };
+  }
+
+  function loadClientPlugin(doc, winOverrides = {}) {
+    let mainDesc = null;
+    const chunkDescs = new Map();
+    const win = {
+      location: { href: 'http://127.0.0.1:3080/', search: '' },
+      innerWidth: 1440,
+      innerHeight: 900,
+      scrollX: 0,
+      scrollY: 0,
+      scrollTo() {},
+      scrollBy() {},
+      visualViewport: null,
+      dispatchEvent() {},
+      matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
+      addEventListener() {},
+      removeEventListener() {},
+      setTimeout: () => 0,
+      clearTimeout() {},
+      setInterval: () => 0,
+      clearInterval() {},
+      requestAnimationFrame: () => 1,
+      cancelAnimationFrame() {},
+      __ModuleLoader__: {
+        load(d) {
+          if (d.chunk) chunkDescs.set(d.chunk, d);
+          else mainDesc = d;
+        },
+      },
+      ...winOverrides,
+    };
+    const vmGlobals = {
+      window: win,
+      document: doc,
+      location: win.location,
+      innerWidth: win.innerWidth,
+      innerHeight: win.innerHeight,
+      devicePixelRatio: 2,
+      performance: globalThis.performance,
+      URL,
+      URLSearchParams,
+      console,
+      setTimeout: win.setTimeout,
+      clearTimeout: win.clearTimeout,
+      setInterval: win.setInterval,
+      clearInterval: win.clearInterval,
+      requestAnimationFrame: win.requestAnimationFrame,
+      cancelAnimationFrame: win.cancelAnimationFrame,
+    };
+    vmGlobals.globalThis = vmGlobals;
+    const vmCtx = createContext(vmGlobals);
+    new Script(mainCode).runInContext(vmCtx);
+    return { mainDesc, chunkDescs, vmCtx, win, vmGlobals };
+  }
+
+  // (a-1) DSH 0.2.2-rc.2+ 已挂载 meta.stylesheets 样式节点：apply() 与 SettingsPage 均不得再创建 #dshp-settings-css
+  {
+    const { doc, headChildren, makeStyleEl } = createStyleHeadHarness();
+    const hostStyle = makeStyleEl('style');
+    hostStyle.setAttribute('data-plugin', 'dsh-pocket');
+    hostStyle.setAttribute('data-path', 'client/settings/styles.css');
+    hostStyle.textContent = '.dshp-page{}';
+    doc.head.appendChild(hostStyle);
+
+    const { ReactHarness, mount } = createReactMountHarness();
+    const { mainDesc } = loadClientPlugin(doc);
+    const exportsObj = mainDesc.factory((id) => {
+      if (id === 'react') return ReactHarness;
+      throw new Error(`Unexpected require: ${id}`);
+    });
+
+    let SettingsComponent = null;
+    let slotPropsFactory = null;
+    const pluginDisposers = [];
+    exportsObj.apply({
+      locale: { register: () => () => {}, bind: () => (k) => k },
+      effect: (fn) => {
+        const d = fn();
+        if (typeof d === 'function') pluginDisposers.push(d);
+        return d;
+      },
+      slots: {
+        inject: (_name, setup) => { setup(); return () => {}; },
+        register: (spec, comp) => {
+          slotPropsFactory = spec.inject;
+          SettingsComponent = comp;
+          return () => {};
+        },
+      },
+      connection: { rpc: { call: async () => ({ ok: true, value: {} }) } },
+    });
+
+    assert.equal(typeof SettingsComponent, 'function');
+    assert.equal(doc.getElementById('dshp-settings-css'), null, 'apply() must skip #dshp-settings-css when host meta.stylesheets is present');
+
+    const mounted = mount(SettingsComponent, slotPropsFactory());
+    assert.equal(doc.getElementById('dshp-settings-css'), null, 'useSettings() must ALSO skip #dshp-settings-css when host meta.stylesheets is present');
+    assert.equal(headChildren.length, 1, 'Only the single host-managed <style> must exist in <head>');
+    assert.equal(mounted.hrefs.includes('https://github.com/daha1216/dsh-pocket#-快速开始'), true);
+    assert.equal(mounted.hrefs.some((h) => h.includes('#-怎么用')), false);
+
+    mounted.unmount();
+    while (pluginDisposers.length > 0) pluginDisposers.pop()?.();
+    assert.equal(headChildren.length, 1, 'Host-managed <style> must remain untouched');
+  }
+
+  // (a-2) DSH < 0.2.2-rc.2 入口 ctx.effect 已挂载 #dshp-settings-css：关闭设置页不得窃取删除，卸载插件才清理
+  {
+    const { doc, headChildren } = createStyleHeadHarness();
+    const { ReactHarness, mount } = createReactMountHarness();
+    const { mainDesc } = loadClientPlugin(doc);
+    const exportsObj = mainDesc.factory((id) => (id === 'react' ? ReactHarness : null));
+
+    let SettingsComponent = null;
+    let slotPropsFactory = null;
+    const pluginDisposers = [];
+    exportsObj.apply({
+      locale: { register: () => () => {}, bind: () => (k) => k },
+      effect: (fn) => {
+        const d = fn();
+        if (typeof d === 'function') pluginDisposers.push(d);
+        return d;
+      },
+      slots: {
+        inject: (_name, setup) => { setup(); return () => {}; },
+        register: (spec, comp) => {
+          slotPropsFactory = spec.inject;
+          SettingsComponent = comp;
+          return () => {};
+        },
+      },
+      connection: { rpc: { call: async () => ({ ok: true, value: {} }) } },
+    });
+
+    assert.ok(doc.getElementById('dshp-settings-css'), 'Entry fallback must mount #dshp-settings-css on <0.2.2-rc.2');
+    assert.equal(headChildren.length, 1);
+
+    const mounted = mount(SettingsComponent, slotPropsFactory());
+    assert.equal(headChildren.length, 1, 'Opening SettingsPage must reuse entry #dshp-settings-css');
+    mounted.unmount();
+    assert.ok(doc.getElementById('dshp-settings-css'), 'Unmounting SettingsPage must NOT steal/remove entry-owned #dshp-settings-css');
+
+    while (pluginDisposers.length > 0) pluginDisposers.pop()?.();
+    assert.equal(doc.getElementById('dshp-settings-css'), null, 'Plugin unload must dispose entry #dshp-settings-css');
+  }
+
+  // (a-3) 独立挂载 <SettingsPage>（既无宿主样式也无入口样式）：自建 #dshp-settings-css 并在卸载时移除
+  {
+    const { doc } = createStyleHeadHarness();
+    const { ReactHarness, mount } = createReactMountHarness();
+    const { mainDesc } = loadClientPlugin(doc);
+    const exportsObj = mainDesc.factory((id) => (id === 'react' ? ReactHarness : null));
+
+    let SettingsComponent = null;
+    let slotPropsFactory = null;
+    exportsObj.apply({
+      locale: { register: () => () => {}, bind: () => (k) => k },
+      // 不执行入口 ctx.effect，模拟纯组件独立挂载测试场景
+      effect: () => () => {},
+      slots: {
+        inject: (_name, setup) => { setup(); return () => {}; },
+        register: (spec, comp) => {
+          slotPropsFactory = spec.inject;
+          SettingsComponent = comp;
+          return () => {};
+        },
+      },
+      connection: { rpc: { call: async () => ({ ok: true, value: {} }) } },
+    });
+
+    assert.equal(doc.getElementById('dshp-settings-css'), null);
+    const mounted = mount(SettingsComponent, slotPropsFactory());
+    const fallbackEl = doc.getElementById('dshp-settings-css');
+    assert.ok(fallbackEl, 'Standalone SettingsPage mount must inject fallback #dshp-settings-css');
+    assert.equal(fallbackEl.getAttribute('data-plugin'), 'dsh-pocket');
+    assert.ok(fallbackEl.textContent.includes('.dshp-page'));
+
+    mounted.unmount();
+    assert.equal(doc.getElementById('dshp-settings-css'), null, 'Standalone SettingsPage unmount must remove self-created <style>');
+  }
+
+  // (c) & 分包加载失败重试 + 异步 ctx.effect 防重入：
+  //     1) 宽屏 (1440px) + legacy localStorage['dsh-mobile-nav-layout']='mobile' 一致解析为 mobile；
+  //     2) 首次 <0.2.2 fetch 瞬时 503 失败后不锁死 mobileLoaded，下次 resize 重试成功且异步排队 ctx.effect 不双跑
+  {
+    const { doc, makeStyleEl } = createStyleHeadHarness();
+    const frame = makeStyleEl('div');
+    doc.querySelector = (sel) => (sel === '[data-mobile-nav="frame"]' ? frame : null);
+
+    let resizeHandler = null;
+    let fetchAttempts = 0;
+    const storage = new Map([['dsh-mobile-nav-layout', 'mobile']]);
+    const localStorageStub = {
+      getItem: (k) => (storage.has(k) ? storage.get(k) : null),
+      setItem: (k, v) => { storage.set(k, String(v)); },
+      removeItem: (k) => { storage.delete(k); },
+    };
+
+    const { ReactHarness } = createReactMountHarness();
+    const { mainDesc, vmCtx, win, vmGlobals } = loadClientPlugin(doc, {
+      innerWidth: 1440,
+      addEventListener(ev, fn) { if (ev === 'resize') resizeHandler = fn; },
+      removeEventListener(ev, fn) { if (ev === 'resize' && resizeHandler === fn) resizeHandler = null; },
+    });
+
+    win.head = doc.head;
+    doc.head.appendChild = (elNode) => {
+      if (elNode?.tagName === 'SCRIPT' && elNode.textContent) {
+        new Script(elNode.textContent).runInContext(vmCtx);
+      }
+      return elNode;
+    };
+
+    Object.assign(vmGlobals, {
+      localStorage: localStorageStub,
+      navigator: globalThis.navigator,
+      Node: { TEXT_NODE: 3 },
+      MutationObserver: class { observe() {} disconnect() {} },
+      ResizeObserver: class { observe() {} disconnect() {} },
+      getComputedStyle: () => ({ getPropertyValue: () => '', visibility: 'visible', paddingTop: '0px' }),
+      getSelection: () => ({ rangeCount: 0, isCollapsed: true, removeAllRanges() {}, addRange() {} }),
+      Selection: class {},
+      Range: class {},
+      Element: class {},
+      HTMLElement: class {},
+      HTMLInputElement: class {},
+      HTMLTextAreaElement: class {},
+      KeyboardEvent: class { constructor(tp) { Object.assign(this, tp); } },
+      PointerEvent: class {},
+      Event: class { constructor(tp) { this.type = tp; } },
+      EventTarget: class {},
+      CustomEvent: class { constructor(n, o) { this.type = n; this.detail = o?.detail; } },
+      requestAnimationFrame: () => 1,
+      cancelAnimationFrame() {},
+      fetch: async (url) => {
+        if (url === `${POCKET_RPC_CHANNEL}/client.mobile.js`) {
+          fetchAttempts += 1;
+          if (fetchAttempts === 1) {
+            return { ok: false, status: 503, text: async () => 'unavailable' };
+          }
+          return { ok: true, status: 200, text: async () => mobileCode };
+        }
+        return { ok: true, status: 204, text: async () => '' };
+      },
+    });
+    win.localStorage = localStorageStub;
+    win.CustomEvent = vmGlobals.CustomEvent;
+    win.getSelection = vmGlobals.getSelection;
+
+    const exportsObj = mainDesc.factory((id) => {
+      if (id === 'react') return ReactHarness;
+      throw new Error(`No sync chunk: ${id}`);
+    });
+
+    const queuedAsyncEffects = [];
+    let localeRegRuns = 0;
+    const pluginDisposers = [];
+    let rootApplyDone = false;
+    exportsObj.apply({
+      locale: {
+        register: (ns) => {
+          if (ns === 'pocketMobileNav') localeRegRuns += 1;
+          return () => {};
+        },
+        bind: () => (k) => k,
+      },
+      inject: (_deps, cb) => { cb({
+        effect: (fn) => { queuedAsyncEffects.push(fn); return () => {}; },
+        inject: () => () => {},
+        get: () => undefined,
+        locale: { register: () => () => {}, bind: () => (k) => k },
+        slots: { inject: () => () => {}, register: () => () => {} },
+      }); return () => {}; },
+      effect: (fn) => {
+        if (!rootApplyDone) {
+          const d = fn();
+          if (typeof d === 'function') pluginDisposers.push(d);
+          return d;
+        }
+        // 模拟 Cordis 异步排队延迟触发 ctx.effect 回调
+        queuedAsyncEffects.push(fn);
+        return () => {};
+      },
+      slots: { inject: () => () => {}, register: () => () => {} },
+      layout: { toggleSidebar() {} },
+      connection: { rpc: { call: async () => ({ ok: true, value: {} }) } },
+      get: () => undefined,
+      sessions: { list: { getSnapshot: () => ({ current: 's1', byId: {} }), subscribe: () => () => {} }, selected: null },
+      sessionLogDownload: { download() {} },
+    });
+    rootApplyDone = true;
+
+    for (let i = 0; i < 8; i += 1) await new Promise((r) => setImmediate(r));
+    assert.equal(fetchAttempts, 1, 'Initial forcedMobile load should attempt fallback fetch');
+    assert.equal(localeRegRuns, 0, 'First fetch failed (503), mobileApply not yet run');
+    assert.equal(typeof resizeHandler, 'function', 'Transient failure must re-arm resize watcher for retry');
+
+    // 触发下一次断点/窗口变化：重试加载成功，且 mobileApply 在 1440px 宽屏下读取 dsh-mobile-nav-layout 仍保持 mobile
+    doc.body.setAttribute('data-dsh-pocket-layout', 'stale');
+    resizeHandler();
+    for (let i = 0; i < 10; i += 1) await new Promise((r) => setImmediate(r));
+
+    assert.equal(fetchAttempts, 2, 'Next resize must retry loading client.mobile.js');
+    assert.equal(doc.body.getAttribute('data-dsh-pocket-layout'), 'mobile', 'mobileApply must honor legacy dsh-mobile-nav-layout=mobile on >=1024px viewport');
+    assert.equal(localeRegRuns, 1, 'mobileApply effect must run once immediately');
+
+    // 触发延迟排队的 ctx.effect 回调：started 门控保证绝不重复执行第二次
+    while (queuedAsyncEffects.length > 0) queuedAsyncEffects.shift()?.();
+    assert.equal(localeRegRuns, 1, 'Delayed async ctx.effect callback must NOT execute effect body twice');
+
+    while (pluginDisposers.length > 0) pluginDisposers.pop()?.();
+  }
+});

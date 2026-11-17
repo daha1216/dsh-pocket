@@ -150,9 +150,26 @@ function createAsyncMobileContext(
   isActive: () => boolean,
   trackDisposer: (fn: () => void) => void,
 ): ClientContext {
+  const wrapDisposer = (d: unknown, kind: string): (() => void) => {
+    if (typeof d !== 'function') return () => {}
+    let disposed = false
+    const once = (): void => {
+      if (disposed) return
+      disposed = true
+      try {
+        ;(d as () => void)()
+      } catch (err) {
+        console.warn(`[dsh-pocket] mobile ${kind} cleanup error:`, err)
+      }
+    }
+    trackDisposer(once)
+    return once
+  }
+
   const safeEffect = (fn: () => (() => void) | void, label?: string): (() => void) => {
     if (!isActive()) return () => {}
     let cleaned = false
+    let started = false
     let innerCleanup: (() => void) | void
     const runCleanupOnce = (): void => {
       if (cleaned) return
@@ -170,6 +187,8 @@ function createAsyncMobileContext(
     try {
       ctx.effect(() => {
         executed = true
+        if (started || cleaned || !isActive()) return runCleanupOnce
+        started = true
         innerCleanup = fn()
         return runCleanupOnce
       }, label)
@@ -177,20 +196,73 @@ function createAsyncMobileContext(
       /* Post-apply async scope in stricter Cordis builds: run directly below */
     }
 
-    if (!executed && isActive()) {
+    if (!executed && !started && isActive()) {
+      started = true
       innerCleanup = fn()
     }
     trackDisposer(runCleanupOnce)
     return runCleanupOnce
   }
 
-  return new Proxy(ctx, {
+  const safeSlots =
+    ctx.slots && typeof ctx.slots === 'object'
+      ? new Proxy(ctx.slots, {
+          get(slotsTarget, prop) {
+            if (prop === 'inject') {
+              return (slotName: string, setup: () => (() => void) | void): (() => void) => {
+                if (!isActive() || typeof slotsTarget.inject !== 'function') return () => {}
+                try {
+                  const orig = slotsTarget.inject.bind(slotsTarget)
+                  const d = orig(slotName, () => {
+                    if (!isActive()) return undefined
+                    return setup()
+                  })
+                  return wrapDisposer(d, 'slots.inject')
+                } catch (err) {
+                  console.warn('[dsh-pocket] mobile slots.inject error:', err)
+                  return () => {}
+                }
+              }
+            }
+            const val = Reflect.get(slotsTarget, prop, slotsTarget)
+            return typeof val === 'function' ? val.bind(slotsTarget) : val
+          },
+        })
+      : ctx.slots
+
+  const proxyCtx: ClientContext = new Proxy(ctx, {
     get(target, prop) {
       if (prop === 'effect') return safeEffect
+      if (prop === 'slots') return safeSlots
+      if (prop === 'inject') {
+        return (
+          deps: readonly string[],
+          callback: (scope: ClientContext) => void,
+        ): (() => void) => {
+          if (!isActive() || typeof target.inject !== 'function') return () => {}
+          try {
+            const orig = target.inject.bind(target)
+            const d = orig(deps, (scope: ClientContext) => {
+              if (!isActive()) return
+              const safeScope =
+                scope === ctx || scope === proxyCtx
+                  ? proxyCtx
+                  : createAsyncMobileContext(scope, isActive, trackDisposer)
+              callback(safeScope)
+            })
+            return wrapDisposer(d, 'inject')
+          } catch (err) {
+            console.warn('[dsh-pocket] mobile inject error:', err)
+            return () => {}
+          }
+        }
+      }
       const value = Reflect.get(target, prop, target)
       return typeof value === 'function' ? value.bind(target) : value
     },
   })
+
+  return proxyCtx
 }
 
 export function apply(ctx: ClientContext): void {
@@ -290,6 +362,25 @@ export function apply(ctx: ClientContext): void {
     }
 
     let detachWatchers: (() => void) | null = null
+    const onEnvChange = (): void => {
+      if (shouldLoadMobile()) triggerMobileLoad()
+    }
+    const attachWatchers = (): void => {
+      if (!active || mobileLoaded || detachWatchers !== null) return
+      widthMQ?.addEventListener?.('change', onEnvChange)
+      coarseMQ?.addEventListener?.('change', onEnvChange)
+      window.addEventListener?.('resize', onEnvChange)
+      detachWatchers = () => {
+        widthMQ?.removeEventListener?.('change', onEnvChange)
+        coarseMQ?.removeEventListener?.('change', onEnvChange)
+        window.removeEventListener?.('resize', onEnvChange)
+      }
+    }
+
+    const resetAfterLoadFailure = (): void => {
+      mobileLoaded = false
+      if (active) attachWatchers()
+    }
 
     const triggerMobileLoad = (): void => {
       if (!active || mobileLoaded) return
@@ -304,29 +395,29 @@ export function apply(ctx: ClientContext): void {
       )
 
       void importMobileChunk()
-        .then((mod) => {
-          if (!active || typeof mod?.mobileApply !== 'function') return
-          mod.mobileApply(mobileCtx)
-        })
+        .then(
+          (mod) => {
+            if (!active) return
+            if (typeof mod?.mobileApply !== 'function') {
+              resetAfterLoadFailure()
+              return
+            }
+            mod.mobileApply(mobileCtx)
+          },
+          (err) => {
+            resetAfterLoadFailure()
+            console.error('[dsh-pocket] Failed to load client.mobile.js:', err)
+          },
+        )
         .catch((err) => {
-          console.error('[dsh-pocket] Failed to load client.mobile.js:', err)
+          console.error('[dsh-pocket] Failed to apply client.mobile.js:', err)
         })
     }
 
     if (shouldLoadMobile()) {
       triggerMobileLoad()
     } else {
-      const onEnvChange = (): void => {
-        if (shouldLoadMobile()) triggerMobileLoad()
-      }
-      widthMQ?.addEventListener?.('change', onEnvChange)
-      coarseMQ?.addEventListener?.('change', onEnvChange)
-      window.addEventListener?.('resize', onEnvChange)
-      detachWatchers = () => {
-        widthMQ?.removeEventListener?.('change', onEnvChange)
-        coarseMQ?.removeEventListener?.('change', onEnvChange)
-        window.removeEventListener?.('resize', onEnvChange)
-      }
+      attachWatchers()
     }
 
     return () => {

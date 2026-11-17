@@ -8,4 +8,6 @@ client/settings/** text eol=lf
 src/** text eol=lf
 client/mobile/upstream/** text eol=lf
 client/mobile/pocket/** text eol=lf
+client/mobile/*.ts text eol=lf
+client/mobile/*.tsx text eol=lf
 client/mobile/anchors.ts text eol=lf

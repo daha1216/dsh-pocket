@@ -31,6 +31,16 @@ function pocketText(ctx: ClientContext, key: string, fallback: string): string {
   }
 }
 
+function readLegacyMobileLayout(): string {
+  try {
+    if (typeof localStorage === 'undefined') return ''
+    const v = localStorage.getItem('dsh-mobile-nav-layout')
+    return v === 'desktop' || v === 'mobile' ? v : ''
+  } catch {
+    return ''
+  }
+}
+
 /**
  * Installs the mobile-adaptive host UI shell and pocket mobile enhancements.
  * @param ctx - DSH client root context.
@@ -40,7 +50,7 @@ export function mobileApply(ctx: ClientContext): void {
   const urlValue = urlRaw ?? ''
   const urlNorm = urlValue.trim().toLowerCase()
   const narrowMQ = window.matchMedia(MOBILE_QUERY)
-  const stored = persistLayoutFromUrl(urlRaw)
+  const stored = persistLayoutFromUrl(urlRaw) || readLegacyMobileLayout()
   const layout = resolveLayout({ urlValue, stored, narrowMatch: narrowMQ.matches })
   document.body?.setAttribute('data-dsh-pocket-layout', layout)
 

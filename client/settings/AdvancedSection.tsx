@@ -300,7 +300,7 @@ export function AdvancedSection({ s }: AdvancedSectionProps): React.ReactElement
         <span title={t('updateHint')}>{fmt(t, 'versionLine', { ver: displayVersion })}</span>
         <span>·</span>
         <a
-          href="https://github.com/daha1216/dsh-pocket#-怎么用"
+          href="https://github.com/daha1216/dsh-pocket#-快速开始"
           target="_blank"
           rel="noreferrer"
           title={t('updateHint')}
