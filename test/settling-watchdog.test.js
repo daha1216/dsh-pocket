@@ -29,6 +29,12 @@ const {
   LINK_TICK_MS,
   LINK_PROBE_TIMEOUT_MS,
   LINK_BACKOFF_MS,
+  classifyLink,
+  LINK_PROBE_RETRY_MS,
+  LINK_HOST_STUCK_MS,
+  LINK_COLD_STUCK_MS,
+  LINK_BANNER_GRACE_MS,
+  LINK_BANNER_BACK_MS,
 } = await import('../client/mobile/settling-watchdog.mjs');
 
 const apply = readFileSync(new URL('../client/mobile/mobile-apply.tsx', import.meta.url), 'utf8');
@@ -284,18 +290,22 @@ test('createLinkLiveness：前台按节拍探活，in-flight 期间不重发，�
   assert.equal(l.shouldProbe(LINK_PING_MS, true), true, '到节拍就探');
   l.noteProbe(true, LINK_PING_MS + 10);
   assert.equal(l.shouldProbe(LINK_PING_MS * 2, false), false, '后台不探活（定时器会被系统节流，也没意义）');
-  assert.deepEqual([LINK_PING_MS, LINK_TICK_MS, LINK_PROBE_TIMEOUT_MS], [1500, 500, 900],
-    '最坏感知 = 1500 + 500 + 900 < 3s（评审验收线）');
-  assert.equal(LINK_PING_MS + LINK_TICK_MS + LINK_PROBE_TIMEOUT_MS < 3000, true);
+  assert.deepEqual([LINK_PING_MS, LINK_TICK_MS, LINK_PROBE_TIMEOUT_MS], [1500, 500, 900], '探活常量');
+  // 判死要连续两次（不误拆），最坏感知因此比旧「一次判死」慢约 1s：仍远小于旧实现的 16s，
+  // 也仍在「用户还没开始怀疑页面死没死」的量级。
+  const worst = LINK_PING_MS + LINK_PROBE_TIMEOUT_MS * 2 + LINK_PROBE_RETRY_MS + LINK_TICK_MS;
+  assert.equal(worst < 4500, true, '最坏感知 ' + worst + 'ms 不超过 4.5s');
 });
 
-test('createLinkLiveness：一次探活失败即判死（静默断线的主路径）', () => {
+test('createLinkLiveness：一次探活失败只作证据，两次才拆链路', () => {
   const l = createLinkLiveness();
-  l.noteState(false, 0);
+  l.noteState('up', 0);
   assert.equal(l.isDown(), false);
   l.noteProbe(false, 100);
-  assert.equal(l.isDown(), true, '探活失败就是断线，不必等任何确认窗口');
-  assert.equal(l.shouldReconnect(100, true), true, '用户已经等了一个探活周期，立即重连');
+  assert.equal(l.isDown(), true, '探活没回应先按断线记账（横幅走这条）');
+  assert.equal(l.shouldForceReconnect(100, true), false, '不拿一次超时去拆一条可能还活着的链路');
+  l.noteProbe(false, 600);
+  assert.equal(l.shouldReconnect(600, true), true, '连续两次没回应才强制重连');
 });
 
 test('createLinkLiveness：快照说正常冲不掉探活证据（否则会来回翻转）', () => {
@@ -309,37 +319,99 @@ test('createLinkLiveness：快照说正常冲不掉探活证据（否则会来�
 
 test('createLinkLiveness：快照报断线时，一次探活成功不能撤销判定', () => {
   const l = createLinkLiveness();
-  l.noteState(true, 0);
+  l.noteState('up', 0);
+  l.noteState('down', 10);
   assert.equal(l.isDown(), true);
   l.noteProbe(true, 100);
   assert.equal(l.isDown(), true, '宿主自己也认为断线时必须继续重连');
-  l.noteState(false, 200);
+  l.noteState('up', 200);
   assert.equal(l.isDown(), false, '快照恢复即清除');
 });
 
-test('createLinkLiveness：重连退避递进且封顶，恢复后归零', () => {
-  const l = createLinkLiveness();
-  l.noteState(true, 0);
-  const hits = [];
-  for (let at = 0; at <= 120000; at += 250) {
-    if (l.shouldReconnect(at, true)) hits.push(at);
-  }
-  assert.deepEqual(hits.slice(0, 6), [0, 4000, 12000, 27000, 57000, 87000],
-    '首轮立即重连，之后按 2/4/8/15/30s 递进并封顶 30s');
-  // 恢复后归零：下一次断线仍是立即重连，而不是接着 30s 的退避。
-  l.noteProbe(true, 900000);
-  l.noteState(true, 900500);
-  assert.equal(l.shouldReconnect(900500, true), true, '恢复后归零');
+test('classifyLink：三态——宿主自己在连时不判死，读不到链路按在线处理', () => {
+  assert.equal(classifyLink({ hasGeneration: true, generation: { id: 1 } }), 'up');
+  // generation 已消失但 state 还是 connecting：宿主正在自己重连，绝不能判死（2026-11-17：
+  // 判死就会调 reconnect() 把它刚建的那条 socket 关掉，于是越重连越连不上）。
+  assert.equal(classifyLink({ hasGeneration: true, generation: undefined, state: 'connecting' }), 'connecting');
+  assert.equal(classifyLink({ hasGeneration: true, generation: undefined }), 'down');
+  assert.equal(classifyLink({ hasGeneration: false, state: 'disconnected' }), 'down');
+  assert.equal(classifyLink({ hasGeneration: false, state: 'connecting' }), 'connecting');
+  assert.equal(classifyLink({ hasGeneration: false }), 'up', '读不到链路（代际差异）不算断线证据');
+  assert.equal(classifyLink(undefined), 'up');
 });
 
-test('createLinkLiveness：不可见时不重连，reset 清干净', () => {
+test('createLinkLiveness：冷启动不误报——首次连上之前既不判死也不重连', () => {
   const l = createLinkLiveness();
-  l.noteState(true, 0);
-  assert.equal(l.shouldReconnect(0, false), false, '后台不重连');
-  assert.equal(l.shouldReconnect(0, true), true);
+  // 实测：页面还在「Loading plugins…」时宿主快照就是 connecting，旧判据在这里立刻判死，
+  // 还会调 connection.reconnect() 跟首连抢跑，1s 内就弹一条「连接已断开」。
+  for (let at = 0; at < LINK_COLD_STUCK_MS; at += 500) {
+    l.noteState('connecting', at);
+    assert.equal(l.isDown(), false, '首次连上之前不出横幅');
+    assert.equal(l.shouldForceReconnect(at, true), false, '冷启动 ' + at + 'ms 不插手');
+  }
+  assert.equal(l.shouldForceReconnect(LINK_COLD_STUCK_MS, true), true,
+    '连首连都卡 30s 才补一次（安全网）');
+});
+
+test('createLinkLiveness：宿主自报断线不抢跑，卡住 15s 才补一次并退避', () => {
+  const l = createLinkLiveness();
+  l.noteState('up', 0);
+  l.noteState('connecting', 1000);
+  const hits = [];
+  for (let at = 1000; at <= 120000; at += 250) {
+    if (l.shouldForceReconnect(at, true)) hits.push(at);
+  }
+  // downSince = 1000。宿主自己重连的头 15s 里一次都不插手：旧实现每个 tick 都可能插一脚，
+  // 实测 4s 断网建了 3 条 socket、恢复被拖到 7s 以上（用户说的「一直重连、画面一直跳」）。
+  assert.deepEqual(hits.slice(0, 5), [16000, 20000, 28000, 43000, 73000],
+    '卡住之后才按 2/4/8/15/30s 退避补重连，仍封顶 30s');
+  assert.equal(hits.length, 6);
+  // 恢复后归零：下一轮断线重新等满 15s，而不是接着上一轮的 30s 退避。
+  l.noteState('up', 200000);
+  assert.equal(l.isDown(), false);
+  l.noteState('down', 200500);
+  assert.equal(l.shouldForceReconnect(200600, true), false, '恢复后仍然不抢跑');
+  assert.equal(l.shouldForceReconnect(200500 + LINK_HOST_STUCK_MS, true), true,
+    '下一轮断线重新等满 15s 才补');
+});
+
+test('createLinkLiveness：静默断线要连续两次探活失败才判死，之后按退避重连', () => {
+  const l = createLinkLiveness();
+  l.noteState('up', 0);
+  l.noteProbe(false, 100);
+  assert.equal(l.isDown(), true, '快照说在线但探活没回应 = 静默断线的第一条证据');
+  // 页面自己在忙（渲染大列表、批量批注）也会撞上 900ms 超时，一次没回应就去拆链路的话，
+  // 误判照样让用户看到「画面跳」——而这正是本轮要消灭的东西。
+  assert.equal(l.shouldForceReconnect(100, true), false, '一次没回应不拆链路');
+  l.noteProbe(false, 1600);
+  assert.equal(l.shouldForceReconnect(1600, false), false, '后台不重连');
+  const hits = [];
+  for (let at = 1600; at <= 20000; at += 250) {
+    if (l.shouldForceReconnect(at, true)) hits.push(at);
+  }
+  assert.deepEqual(hits, [1600, 5600, 13600], '连续两次判死后立即重连，之后按 2s/4s 递进');
   l.reset();
   assert.equal(l.isDown(), false);
-  assert.equal(l.shouldReconnect(1000, true), false, 'reset 后无断线判定');
+  assert.equal(l.shouldForceReconnect(200000, true), false, 'reset 后无断线判定');
+});
+
+test('createLinkLiveness：探活失败后用短间隔补问，不把感知时延拖成两个整周期', () => {
+  const l = createLinkLiveness();
+  assert.equal(l.shouldProbe(0, true), true, '前台首探');
+  l.noteProbe(false, 900);
+  assert.equal(l.shouldProbe(900 + LINK_PROBE_RETRY_MS - 1, true), false, '补问间隔没到不重发');
+  assert.equal(l.shouldProbe(900 + LINK_PROBE_RETRY_MS, true), true,
+    '失败后 ' + LINK_PROBE_RETRY_MS + 'ms 就补问');
+  l.noteProbe(true, 1400);
+  // 恢复后回到常规节拍：一次成功就把连续失败计数清零。
+  assert.equal(l.shouldProbe(1400 + LINK_PROBE_RETRY_MS, true), false, '活着时按常规 ' + LINK_PING_MS + 'ms 节拍');
+  assert.equal(l.shouldProbe(1400 + LINK_PING_MS, true), true);
+});
+
+test('断线横幅：短抖动完全不出提示，恢复时也不补绿条', () => {
+  assert.deepEqual([LINK_BANNER_GRACE_MS, LINK_BANNER_BACK_MS], [1200, 3000]);
+  assert.ok(LINK_BANNER_GRACE_MS < LINK_BANNER_BACK_MS,
+    '宽限必须短于「值得报一句已重连」的门槛，否则短抖动照样闪一整套红→绿');
 });
 
 test('mobile-apply：链路看门狗前台探活（2026-11-12 提速：12s → 最坏 2.9s）', () => {
@@ -351,6 +423,11 @@ test('mobile-apply：链路看门狗前台探活（2026-11-12 提速：12s → �
   assert.ok(body.includes('LINK_TICK_MS'), '轮询节拍来自模块常量');
   assert.ok(body.includes('LINK_PROBE_TIMEOUT_MS'), '探活必须带超时（不能永久挂住）');
   assert.ok(body.includes('liveness.noteProbe('), '探活结果必须回填判定');
+  assert.ok(body.includes('classifyLink('), '快照必须分三态读（connecting 不能判死，否则抢跑）');
+  assert.ok(body.includes('shouldForceReconnect('), '重连只在静默断线/宿主卡住时触发');
+  assert.ok(!body.includes('shouldReconnect('), '旧名是「抢跑版」语义，不能再接线');
+  assert.ok(body.includes('LINK_BANNER_GRACE_MS') && body.includes('LINK_BANNER_BACK_MS'),
+    '横幅必须有宽限与「值得报一句」的门槛（实测抖动会红绿整轮闪）');
   assert.ok(body.includes("addEventListener('visibilitychange'"), '切回前台必须立即评估');
   assert.ok(body.includes('clearInterval(timer)'), '清理必须清掉轮询计时器');
   assert.ok(body.includes('clearTimeout(probeTimer)'), '清理必须清掉探活超时');

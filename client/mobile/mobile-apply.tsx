@@ -14,7 +14,7 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import { apply as upstreamApply } from './upstream/index.tsx'
 import { startFileGuard } from './fileGuard.ts'
 import { resolveLayout, persistLayoutFromUrl } from './layout-mode.mjs'
-import { createSettlingGuard, createFreezeDetector, resolveLinkVerdict, createLinkLiveness, SETTLING_STALE_MS, LINK_TICK_MS, LINK_PROBE_TIMEOUT_MS } from './settling-watchdog.mjs'
+import { createSettlingGuard, createFreezeDetector, resolveLinkVerdict, classifyLink, createLinkLiveness, SETTLING_STALE_MS, LINK_TICK_MS, LINK_PROBE_TIMEOUT_MS, LINK_BANNER_GRACE_MS, LINK_BANNER_BACK_MS } from './settling-watchdog.mjs'
 import { POCKET_RPC_CHANNEL, POCKET_ENDPOINTS, MOBILE_RIGHTBAR_ATTRIBUTE, MOBILE_RIGHTBAR_EVENT, MOBILE_PINCH_ZOOM_ATTRIBUTE, MOBILE_PINCH_ZOOM_EVENT, MOBILE_FONT_ATTRIBUTE, MOBILE_FONT_EVENT, MOBILE_FONT_SIZE_VAR, MOBILE_FONT_MIN, MOBILE_FONT_MAX } from '../api.js'
 // 使用探针（评审 §7.1）：采集层在这里，纯判定/限界在 probe-core.mjs（有单测），
 // 落盘在宿主 lib/probe.mjs。锚点台账用来体检宿主类名有没有失效。
@@ -1057,9 +1057,13 @@ export function mobileApply(ctx: ClientContext): void {
   //
   // 旧实现要等状态判据连续 12s 为 down 才动手（最坏 16s），对静默断线完全无感。现在
   // 两条路并行，判定与退避全部委托给 settling-watchdog.mjs 的 createLinkLiveness（有单测）：
-  //   1) 每 LINK_TICK_MS 读一次状态快照（同步、便宜）：宿主自己察觉到的断线 0.5s 内重连；
+  //   1) 每 LINK_TICK_MS 读一次状态快照（同步、便宜），用 classifyLink 分成三态；
   //   2) 前台每 LINK_PING_MS 打一次 pocket.status：收到任何响应都算活着，只有传输层
   //      抛错/超时才判死——静默断线最坏 2.9s 内发现（评审验收线 < 3s）。
+  // 关键（2026-11-17 实测后改）：宿主自报断线时**不要再补一次 reconnect**。它自己的退避
+  // 循环正在重连，我们再插一脚会关掉它刚建的 socket、让它从头再来；4s 断网因此建 3 条
+  // socket，恢复被拖到 7s 以上，用户看到的就是「一直重连、画面一直跳」。只有快照说在线
+  // 而探活没回应的静默断线才强制重连（那正是宿主察觉不到的那一类）。
   // 后台完全不动作（省电，也不跟宿主自己的退避抢节奏），切回前台立刻评估一次。
   armOnNarrow('dsh-pocket: link watchdog (silent disconnect never recovers)', () => {
     const liveness = createLinkLiveness();
@@ -1077,20 +1081,23 @@ export function mobileApply(ctx: ClientContext): void {
     let downAt = 0;
 
     /** 与 settling 看门狗同一个判据来源：generation 存在时以它的有无为准（断连瞬间
-     *  变 undefined、重连后换新 id），缺失的代际退化看 state。 */
-    const linkDown = (): boolean => {
+     *  变 undefined、重连后换新 id），缺失的代际退化看 state。三态里 'connecting' 表示
+     *  宿主自己在自连——那是它的事，我们只记账不插手。 */
+    const linkState = (): 'up' | 'connecting' | 'down' => {
       try {
         const conn = ctx.connection as unknown as {
           generation?: { getSnapshot?: () => unknown };
           state?: { getSnapshot?: () => unknown };
         };
         const hasGeneration = typeof conn?.generation?.getSnapshot === 'function';
-        return resolveLinkVerdict({
+        return classifyLink({
           hasGeneration,
           generation: hasGeneration ? conn.generation?.getSnapshot?.() : undefined,
-          state: hasGeneration ? undefined : conn?.state?.getSnapshot?.(),
-        }).down;
-      } catch { return false; }
+          // state 与 generation 都读：generation 活着时它不参与判定，死了才用来区分
+          // 「宿主自己在重连」与「宿主也放弃了这一轮」。
+          state: typeof conn?.state?.getSnapshot === 'function' ? conn.state.getSnapshot() : undefined,
+        });
+      } catch { return 'up'; }
     };
 
     const tryReconnect = (): void => {
@@ -1133,21 +1140,33 @@ export function mobileApply(ctx: ClientContext): void {
     }
     const syncBanner = (): void => {
       if (disposed) return
-      const down = liveness.isDown()
+      const at = now()
+      // 宽限（2026-11-17）：短于 LINK_BANNER_GRACE_MS 的抖动完全不出提示。此前每一次网络
+      // 打嗝都会「红条→绿条→1.4s 后消失」闪一整套，等于把抖动放大给用户看，而用户要的
+      // 恰恰是无感。
+      const down = liveness.isDown() && liveness.downFor(at) >= LINK_BANNER_GRACE_MS
       if (down === bannerDown) return
       bannerDown = down
       if (down) {
         window.clearTimeout(bannerBackTimer)
         bannerBackTimer = 0
-        downAt = now()
+        // 记真实的断线起点（不是横幅画出来的时刻）：恢复后要用它判断这次断线值不值得报
+        // 一句「已重新连接」。
+        downAt = at - liveness.downFor(at)
         notifyProbe({ kind: 'down' })
         paintBanner(pocketText(ctx, 'linkDown', '连接已断开，正在自动重连…'), 'down')
       } else {
-        // 恢复耗时是「最坏体验」的直接证据：横幅只显示 1.4s，但探针要记下真实毫秒数。
-        notifyProbe({ kind: 'recover', ms: downAt === 0 ? 0 : Math.round(now() - downAt) })
+        const outage = downAt === 0 ? 0 : Math.round(at - downAt)
+        // 恢复耗时是「最坏体验」的直接证据：探针要记下真实毫秒数，与报不报绿条无关。
+        notifyProbe({ kind: 'recover', ms: outage })
         downAt = 0
-        paintBanner(pocketText(ctx, 'linkBack', '✅ 已重新连接'), 'back')
-        bannerBackTimer = window.setTimeout(removeBanner, 1400)
+        // 只有真正等过的断线才报一句「已重新连接」；短抖动安静撤掉红条即可，不补绿条。
+        if (outage >= LINK_BANNER_BACK_MS) {
+          paintBanner(pocketText(ctx, 'linkBack', '✅ 已重新连接'), 'back')
+          bannerBackTimer = window.setTimeout(removeBanner, 1400)
+        } else {
+          removeBanner()
+        }
       }
     }
 
@@ -1179,8 +1198,11 @@ export function mobileApply(ctx: ClientContext): void {
       if (disposed) return;
       const at = now();
       const visible = document.visibilityState === 'visible';
-      liveness.noteState(linkDown(), at);
-      if (liveness.shouldReconnect(at, visible)) tryReconnect();
+      liveness.noteState(linkState(), at);
+      // 系统已经说没网时不去补重连：那一下必然失败，只会白烧一次退避（iOS 的 onLine 只
+      // 用来否决，从不当作在线证据）。
+      const online = navigator.onLine !== false;
+      if (liveness.shouldForceReconnect(at, visible && online)) tryReconnect();
       if (liveness.shouldProbe(at, visible)) probe();
       syncBanner();
     };

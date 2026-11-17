@@ -68,6 +68,24 @@ export function resolveLinkVerdict(snapshot) {
 }
 
 /**
+ * 链路快照 → 三态。比 resolveLinkVerdict 多区分一个 'connecting'：宿主正在自连时不该
+ * 被当成断线去抢跑（那正是重连风暴的来源）。generation 活得就是 'up'；generation 没了
+ * 才看 state——'connecting' 说明宿主自己在重试，'disconnected' 才是它放弃了这一轮。
+ * 读不到链路（代际差异）按 'up' 处理：宁可不动，也不误修。
+ *
+ * @param {{ hasGeneration: boolean, generation?: unknown, state?: unknown }} snapshot
+ * @returns {'up' | 'connecting' | 'down'}
+ */
+export function classifyLink(snapshot) {
+  const { hasGeneration, generation, state } = snapshot ?? {};
+  if (hasGeneration === true && generation !== undefined && generation !== null) return 'up';
+  if (state === 'connecting') return 'connecting';
+  if (hasGeneration === true) return 'down';
+  if (state === 'disconnected') return 'down';
+  return 'up';
+}
+
+/**
  * 卡死判定器。所有方法都接收外部时刻（毫秒，单调即可），便于用假时钟单测。
  * root 可以是任何对象身份（真实用法是 HTMLElement）；本模块只把它当 Map 键。
  *
@@ -253,22 +271,28 @@ export function createFreezeDetector({ gapMs = FREEZE_GAP_MS, intervalMs = 1000 
   return { tick, reset, intervalMs };
 }
 
-// ---- 链路探活（2026-11-12，评审 §3.3 / §5.3 #2：断线感知 < 3s）----
+// ---- 链路探活（2026-11-12，评审 §3.3 / §5.3 #2；2026-11-17 改为不抢跑、两次判死）----
 //
 // resolveLinkVerdict 只能识别「宿主自己察觉到的断线」。iOS 主屏 PWA 被冻结、宿主进程
 // 重启、隧道抖动都可能让 socket 静默死亡而快照一直报 usable（推导见文件头）。旧兜底是
 // 「状态判据连续 12s 为 down 才重连」，既慢（最坏 16s）又对静默断线完全无效。
 //
 // 这里把「何时探活、何时重连」做成纯状态机，DOM 与 RPC 留在 mobile-apply.tsx：
-//   - 两条证据并行：状态快照（同步读，便宜，几百毫秒内就能重连）与探活结果（每次要发
-//     一条 RPC）。探活的判据是「有没有收到响应」而不是响应内容——pocket.status 回业务
-//     错误也证明链路活着，只有传输层抛错/超时才证明它死了。
-//   - 一次探活失败即判死：误判的代价是多一次重连（宿主立刻重连，几百毫秒），漏判的代价
-//     是用户对着死页面等。探活超时给到 900ms，是这条空载荷 RPC 正常往返的十倍以上。
-//   - 判死后立即重连（用户已经等了一个探活周期），之后按 2/4/8/15/30s 退避；链路确认
-//     恢复后归零。
+//   - 两条证据并行：状态快照（同步读，便宜）与探活结果（每次要发一条 RPC）。探活的判据
+//     是「有没有收到响应」而不是响应内容——pocket.status 回业务错误也证明链路活着，只有
+//     传输层抛错/超时才证明它死了。探活超时 900ms，是这条空载荷 RPC 正常往返的十倍以上。
+//   - 只补宿主补不了的那一段（2026-11-17 实测后改的）：宿主自报断线时它自己的退避循环
+//     已经在重连，这里再插一次 connection.reconnect() 会关掉它刚建的 socket、让它从头
+//     再来。4s 断网的复现里因此建了 3 条 socket、恢复被拖到 7s 以上，用户看到的就是
+//     「一直重连、画面一直跳」。所以强制重连只留给静默断线（快照说在线、探活没回应），
+//     宿主自报断线时只等它自己走到 LINK_HOST_STUCK_MS 才补一次。
+//   - 首次连上之前（冷启动）一律不算断线：实测页面还在「Loading plugins…」时就会报
+//     「连接已断开」，而此时宿主只是在正常首连。安全网是 LINK_COLD_STUCK_MS。
+//   - 判死要连续两次探活没回应（间隔 LINK_PROBE_RETRY_MS）：页面自己在忙也会撞上 900ms
+//     超时，一次超时就拆链路的代价是把好链路拆了重来——那同样是用户眼里的「画面跳」。
 //   - 后台完全不动作：定时器被系统节流，探活也没有意义，而且不与宿主自身的退避抢节奏。
-// 最坏感知时延 = LINK_PING_MS + LINK_TICK_MS + LINK_PROBE_TIMEOUT_MS ≈ 2.9s。
+// 最坏感知时延 = LINK_PING_MS + 两次探活超时 + LINK_PROBE_RETRY_MS + LINK_TICK_MS ≈ 4.0s，
+// 比单次判死慢约 1s；换来的是不再误拆。宿主自报断线时不抢跑，等它自己恢复。
 
 /** 前台探活间隔（毫秒）。 */
 export const LINK_PING_MS = 1500;
@@ -276,24 +300,51 @@ export const LINK_PING_MS = 1500;
 /** 单次探活超时：传输层没回应就算死。 */
 export const LINK_PROBE_TIMEOUT_MS = 900;
 
+/** 探活失败后的快速重试间隔。一次没回应不足以判死：页面自己在忙（渲染大列表、批量
+ *  批注）时 900ms 超时同样会被撞上，而误判的代价是白拆一条好链路——那正是「画面跳」。
+ *  隔 400ms 再问一次，连续两次都没回应才认。 */
+export const LINK_PROBE_RETRY_MS = 400;
+
 /** 状态快照轮询间隔：同步读，比探活密——宿主自己察觉到的断线不必等下一次探活。 */
 export const LINK_TICK_MS = 500;
 
 /** 重连退避（毫秒）：首轮立即重连，之后递进；探活确认恢复后归零。 */
 export const LINK_BACKOFF_MS = [2000, 4000, 8000, 15000, 30000];
 
+/** 宿主自报断线后等它自己重连的上限；超过才补一次强制重连（防止它卡在 connecting 里
+ *  没人接手），而不是每次断线都插一脚。 */
+export const LINK_HOST_STUCK_MS = 15000;
+
+/** 冷启动（从未连上过）的安全网：连首连都卡到这个时长才强制重连一次。 */
+export const LINK_COLD_STUCK_MS = 30000;
+
+/** 断线横幅的显示宽限：短于它的抖动完全不出提示，恢复时也不闪绿条。 */
+export const LINK_BANNER_GRACE_MS = 1200;
+
+/** 断线持续到这个时长，恢复时才值得报一句「已重新连接」；更短的直接安静撤掉。 */
+export const LINK_BANNER_BACK_MS = 3000;
+
 /**
  * 链路活性判定器。所有方法都接收外部时刻（毫秒，单调即可），便于假时钟单测。
  *
- * 两条证据的优先级是刻意的：
- *   - 快照说断线 → 就是断线（宿主自己也这么认为，它已经在重连；这里只是加速）；
- *   - 快照说没问题但探活失败 → 也是断线（静默断线的主路径）；
- *   - 探活成功只能清掉「探活那份证据」，快照仍报 down 时保留判定——否则「快照滞后 +
- *     探活正常」会在两者之间来回翻转，造成重连风暴。
+ * 证据优先级是刻意的：
+ *   - 探活连续两次失败 + 快照说在线 → 静默断线，强制重连（这是本看门狗的存在理由）；
+ *   - 快照自报断线/正在连 → 交给宿主，本判定器只等到 hostStuckMs 才补一次；
+ *   - 探活成功只清「探活那份证据」，快照仍报 down 时保留判定——否则「快照滞后 + 探活
+ *     正常」会在两者之间来回翻转，造成重连风暴；
+ *   - 首次连上之前（seenUp=false）不算断线，避免冷启动误报。
  */
-export function createLinkLiveness({ pingMs = LINK_PING_MS, backoffMs = LINK_BACKOFF_MS } = {}) {
-  let stateDown = false;
-  let probeDead = false;
+export function createLinkLiveness({
+  pingMs = LINK_PING_MS,
+  probeRetryMs = LINK_PROBE_RETRY_MS,
+  backoffMs = LINK_BACKOFF_MS,
+  hostStuckMs = LINK_HOST_STUCK_MS,
+  coldStuckMs = LINK_COLD_STUCK_MS,
+} = {}) {
+  let seenUp = false;
+  let hostDown = false;
+  /** 连续失败的探活次数（成功即清零）。判死要两次，见 LINK_PROBE_RETRY_MS。 */
+  let probeFails = 0;
   /** null = 没有断线判定。不能用 0 当哨兵：调用方的时钟可能就从 0 开始。 */
   let downSince = null;
   let attempts = 0;
@@ -307,21 +358,27 @@ export function createLinkLiveness({ pingMs = LINK_PING_MS, backoffMs = LINK_BAC
     lastReconnectAt = Number.NEGATIVE_INFINITY;
   };
 
-  /** 登记一次链路快照（同步判据）。 */
-  const noteState = (down, now) => {
-    stateDown = down === true;
-    if (stateDown) {
-      if (downSince === null) downSince = now;
+  /** 登记一次链路快照。接受 classifyLink 的三态，也接受旧布尔（true = down）。 */
+  const noteState = (state, now) => {
+    const kind = typeof state === 'boolean' ? (state ? 'down' : 'up') : state;
+    if (kind === 'up') {
+      seenUp = true;
+      hostDown = false;
+      // 静默断线期间快照一直报 usable，绝不能让它把探活证据冲掉（那条路只由 noteProbe 清）。
+      if (probeFails === 0 && downSince !== null) forget();
       return;
     }
-    // 静默断线期间快照一直报 usable，绝不能让它把探活证据冲掉（那条路只由 noteProbe 清）。
-    if (!probeDead && downSince !== null) forget();
+    // 'down' 与 'connecting' 都算「宿主此刻没连上」：它可能正在自连，别抢跑。
+    hostDown = true;
+    if (downSince === null) downSince = now;
   };
 
   /** 此刻该不该发一次探活；返回 true 时已记账（in-flight 期间不重发）。 */
   const shouldProbe = (now, visible) => {
     if (visible !== true || probeInFlight) return false;
-    if (now - lastProbeAt < pingMs) return false;
+    // 刚失败过就用短间隔补问一次：判死要连续两次，不能因此把感知时延拖到两个整周期。
+    const gap = probeFails > 0 ? probeRetryMs : pingMs;
+    if (now - lastProbeAt < gap) return false;
     lastProbeAt = now;
     probeInFlight = true;
     return true;
@@ -331,17 +388,28 @@ export function createLinkLiveness({ pingMs = LINK_PING_MS, backoffMs = LINK_BAC
   const noteProbe = (alive, now) => {
     probeInFlight = false;
     if (alive === true) {
-      probeDead = false;
-      if (!stateDown && downSince !== null) forget();
+      probeFails = 0;
+      seenUp = true;
+      if (!hostDown && downSince !== null) forget();
       return;
     }
-    probeDead = true;
+    probeFails += 1;
+    // 补问间隔从「失败」起算，而不是从发出起算：一次超时本身已经吃掉了 900ms。
+    lastProbeAt = now;
     if (downSince === null) downSince = now;
   };
 
-  /** 此刻该不该重连（含退避）；返回 true 时已记账 attempts / lastReconnectAt。 */
-  const shouldReconnect = (now, visible) => {
+  /**
+   * 此刻该不该由我们强制重连（含退避）；返回 true 时已记账 attempts / lastReconnectAt。
+   * 只认三种情况：静默断线、宿主自报断线后卡住、冷启动卡住。
+   */
+  const shouldForceReconnect = (now, visible) => {
     if (visible !== true || downSince === null) return false;
+    const silent = probeFails >= 2 && !hostDown;
+    // 宿主卡住这一条只在「连上过」之后才成立：冷启动时连接慢是正常的，不是它卡住了。
+    const hostStuck = seenUp && hostDown && now - downSince >= hostStuckMs;
+    const coldStuck = !seenUp && now - downSince >= coldStuckMs;
+    if (!silent && !hostStuck && !coldStuck) return false;
     const gap = backoffMs[Math.min(attempts, backoffMs.length - 1)];
     if (now - lastReconnectAt < gap) return false;
     attempts += 1;
@@ -349,16 +417,29 @@ export function createLinkLiveness({ pingMs = LINK_PING_MS, backoffMs = LINK_BAC
     return true;
   };
 
-  /** 当前判定（供 UI 用，不参与决策）。 */
-  const isDown = () => downSince !== null;
+  /** 当前判定（供 UI 用，不参与决策）。首次连上之前恒为 false。 */
+  const isDown = () => seenUp && downSince !== null;
+
+  /** 断线已持续多久（毫秒）；没断线或还没连上过则为 0。 */
+  const downFor = (now) => (seenUp && downSince !== null ? now - downSince : 0);
 
   const reset = () => {
-    stateDown = false;
-    probeDead = false;
+    seenUp = false;
+    hostDown = false;
+    probeFails = 0;
     probeInFlight = false;
     lastProbeAt = Number.NEGATIVE_INFINITY;
     forget();
   };
 
-  return { noteState, shouldProbe, noteProbe, shouldReconnect, isDown, reset };
+  return {
+    noteState,
+    shouldProbe,
+    noteProbe,
+    shouldForceReconnect,
+    shouldReconnect: shouldForceReconnect,
+    isDown,
+    downFor,
+    reset,
+  };
 }
