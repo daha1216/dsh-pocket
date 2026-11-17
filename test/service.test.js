@@ -283,11 +283,12 @@ test('service：并发开启 Named 单飞，重复开启复用，主动关闭杀
   }
 });
 
-test('service：Named 进程异常退出清理公网状态，可再次开启', async () => {
+test('service：Named 进程异常退出触发 Supervisor 退避重连，显式重启立即接管，致命错误熔断到 error', async () => {
   let onExit;
   let startCount = 0;
   const service = createPocketService({
     dshPort: 3080, port: 3081, getTunnelConfig: namedTunnelConfig,
+    log: { info() {}, warn() {} },
     internals: {
       ...stubInternals(),
       startNamedTunnel: async () => {
@@ -299,15 +300,29 @@ test('service：Named 进程异常退出清理公网状态，可再次开启', a
   try {
     await service.startTunnel();
     onExit(17);
-    const dead = await service.status();
-    assert.equal(dead.tunnelRunning, false);
-    assert.equal(dead.tunnelUrl, null);
-    assert.equal(dead.tunnelQr, null);
-    assert.equal(dead.tunnelState.phase, 'error');
-    assert.match(dead.tunnelState.detail, /code=17/);
-    assert.equal(dead.tunnelState.startedAt, null);
+    const reconn = await service.status();
+    assert.equal(reconn.tunnelRunning, false);
+    assert.equal(reconn.tunnelUrl, null);
+    assert.equal(reconn.tunnelQr, null);
+    assert.equal(reconn.tunnelState.phase, 'reconnecting');
+    assert.equal(reconn.tunnelState.attempt, 1);
+    assert.ok(reconn.tunnelState.nextRetryAt > 0);
+    assert.ok(reconn.tunnelState.startedAt > 0);
+    assert.match(reconn.tunnelState.detail, /code=17/);
+
+    // 显式 startTunnel 立即取消退避定时器并重新拉起
     assert.equal(await service.startTunnel(), 'https://pocket.example.com');
-    assert.equal(startCount, 2, '退出后可重新启动，而非复用死 URL');
+    assert.equal(startCount, 2, '退出后可立即显式重新启动，而非复用死 URL');
+
+    // 致命鉴权错误（401 / invalid token）直接熔断为 error，不盲目死循环重试
+    onExit(1, '401 Unauthorized: invalid tunnel token');
+    const fatal = await service.status();
+    assert.equal(fatal.tunnelRunning, false);
+    assert.equal(fatal.tunnelState.phase, 'error');
+    assert.match(fatal.tunnelState.detail, /401/);
+    assert.equal(fatal.tunnelState.startedAt, null);
+
+    await service.startTunnel();
     service.stopTunnel();
     onExit(0);
     assert.equal((await service.status()).tunnelState.phase, 'idle', '主动停止后的退出通知不误报故障');

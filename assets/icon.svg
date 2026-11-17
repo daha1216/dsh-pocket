@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="24" y1="16" x2="232" y2="240" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3B82F6"/>
+      <stop offset="0.52" stop-color="#2563EB"/>
+      <stop offset="1" stop-color="#3730A3"/>
+    </linearGradient>
+    <radialGradient id="glowGrad" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(184 68) rotate(132) scale(168)">
+      <stop offset="0" stop-color="#7DD3FC" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#1E3A8A" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="screenGrad" x1="88" y1="54" x2="188" y2="210" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0F172A"/>
+      <stop offset="1" stop-color="#1E293B"/>
+    </linearGradient>
+    <linearGradient id="promptGrad" x1="108" y1="112" x2="168" y2="152" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#38BDF8"/>
+      <stop offset="1" stop-color="#818CF8"/>
+    </linearGradient>
+  </defs>
+
+  <!-- App squircle base -->
+  <rect x="16" y="16" width="224" height="224" rx="54" fill="url(#bgGrad)"/>
+  <rect x="16" y="16" width="224" height="224" rx="54" fill="url(#glowGrad)"/>
+  <rect x="17" y="17" width="222" height="222" rx="53" stroke="#FFFFFF" stroke-opacity="0.22" stroke-width="2"/>
+
+  <!-- Subtle rear desktop terminal card -->
+  <rect x="44" y="56" width="116" height="92" rx="18" fill="#0F172A" fill-opacity="0.34" stroke="#E0F2FE" stroke-opacity="0.28" stroke-width="2"/>
+  <circle cx="60" cy="71" r="3.5" fill="#93C5FD" fill-opacity="0.75"/>
+  <circle cx="72" cy="71" r="3.5" fill="#93C5FD" fill-opacity="0.5"/>
+  <path d="M60 94L70 102L60 110" stroke="#BAE6FD" stroke-opacity="0.75" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M78 110H94" stroke="#BAE6FD" stroke-opacity="0.75" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Sync wave arcs top-right -->
+  <path d="M182 54C194 58 203 67 207 79" stroke="#BAE6FD" stroke-width="4.5" stroke-linecap="round" stroke-opacity="0.9"/>
+  <path d="M189 40C206 46 219 59 225 76" stroke="#E0F2FE" stroke-width="4" stroke-linecap="round" stroke-opacity="0.55"/>
+
+  <!-- Foreground sleek smartphone -->
+  <rect x="82" y="48" width="116" height="166" rx="26" fill="#F8FAFC"/>
+  <rect x="88" y="54" width="104" height="154" rx="21" fill="url(#screenGrad)"/>
+
+  <!-- Phone top speaker pill & live status dot -->
+  <rect x="124" y="64" width="32" height="5" rx="2.5" fill="#475569"/>
+  <circle cx="173" cy="66.5" r="4" fill="#10B981"/>
+
+  <!-- Terminal >_ prompt synced inside phone -->
+  <path d="M111 113L131 129L111 145" stroke="url(#promptGrad)" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M141 145H168" stroke="#38BDF8" stroke-width="8.5" stroke-linecap="round"/>
+
+  <!-- Synced activity bars -->
+  <rect x="108" y="166" width="64" height="6" rx="3" fill="#94A3B8" fill-opacity="0.45"/>
+  <rect x="108" y="179" width="42" height="6" rx="3" fill="#38BDF8" fill-opacity="0.55"/>
+
+  <!-- Home indicator -->
+  <rect x="122" y="198" width="36" height="4" rx="2" fill="#64748B" fill-opacity="0.7"/>
+</svg>

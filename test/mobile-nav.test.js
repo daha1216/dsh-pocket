@@ -1,6 +1,4 @@
-// 抽屉导航（镜像层，dsh-web-mobile 移植）：判定逻辑耦合在 DOM effects 里（upstream/
-// 零手改，不拆纯函数），所以这里对可纯测的部分（layout-mode.mjs）做真单测，其余
-// 断言结构不变量：抽屉 frame 样式、桌面隐藏闸、布局门控属性、抽屉状态订阅。
+// 抽屉导航与折叠屏/平板 auto 布局契约（v4.0 双分包架构）。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -13,22 +11,19 @@ const {
 } = await import('../client/mobile/layout-mode.mjs');
 
 const apply = readFileSync(new URL('../client/mobile/mobile-apply.tsx', import.meta.url), 'utf8');
-const bundle = readFileSync(new URL('../client/client.js', import.meta.url), 'utf8');
+const mobileBundle = readFileSync(new URL('../client/client.mobile.js', import.meta.url), 'utf8');
 
 test('layout-mode：URL 参数 > localStorage > auto 的优先级（issue #74）', () => {
   assert.equal(resolveLayout({ urlValue: 'desktop', stored: 'mobile', narrowMatch: true }), 'desktop');
   assert.equal(resolveLayout({ urlValue: '', stored: 'mobile', narrowMatch: true }), 'mobile');
-  // 从未选择过的设备按 auto：窄屏走 mobile 适配，宽屏走原生桌面 UI
   assert.equal(resolveLayout({ urlValue: '', stored: null, narrowMatch: true }), 'mobile');
   assert.equal(resolveLayout({ urlValue: '', stored: null, narrowMatch: false }), 'desktop');
-  // 非法 URL 值不生效、不清已有存储
   assert.equal(resolveLayout({ urlValue: 'banana', stored: 'mobile', narrowMatch: false }), 'mobile');
   assert.equal(resolveLayout({ urlValue: 'banana', stored: null, narrowMatch: false }), 'desktop');
 });
 
 test('layout-mode：persistLayoutFromUrl 只固化合法显式值，存储键稳定', () => {
   assert.equal(LAYOUT_STORAGE_KEY, 'dsh-pocket.layout', '设置页恢复入口与 mobileApply 必须读写同一键');
-  // Node 无 localStorage：注入桩让真实读写路径可测（模块自身对 undefined 已有守卫）
   const backing = new Map();
   globalThis.localStorage = {
     getItem: (k) => (backing.has(k) ? backing.get(k) : null),
@@ -39,10 +34,8 @@ test('layout-mode：persistLayoutFromUrl 只固化合法显式值，存储键稳
     assert.equal(persistLayoutFromUrl('desktop'), 'desktop');
     assert.equal(persistLayoutFromUrl('mobile'), 'mobile');
     assert.equal(persistLayoutFromUrl(''), '', 'auto/空参数清除显式选择');
-    // 非法值不生效也不清已有存储
     assert.equal(persistLayoutFromUrl('mobile'), 'mobile');
     assert.equal(persistLayoutFromUrl('banana'), 'mobile');
-    // 无 ?dsh-layout= 参数（null）→ 不写不改，直接读回已存布局
     assert.equal(persistLayoutFromUrl(null), 'mobile');
   } finally {
     delete globalThis.localStorage;
@@ -53,27 +46,30 @@ test('layout-mode：无 localStorage 环境（Node/沙箱）安全降级为空�
   assert.equal(readStoredLayout(), '', '无 storage 返回空（模块必须自守卫）');
 });
 
-test('mobile-apply：desktop 布局整段早退（不加样式、不挂 slots、不跑 effects）', () => {
-  assert.ok(apply.includes("layout === 'desktop'") && apply.includes('return'), 'desktop 模式必须整段不挂');
-  assert.ok(apply.includes("document.body?.setAttribute('data-dsh-pocket-layout', layout)"), '必须先写布局门控属性');
+test('mobile-apply：仅显式强制 desktop 早退，auto 模式保留跨断点监听（折叠屏/iPad 修复）', () => {
+  assert.ok(
+    apply.includes('forcedDesktop') && apply.includes('if (forcedDesktop) return'),
+    '仅显式强制 desktop 模式早退，auto 模式在 >=1024px 仍挂载断点同步与平板适配',
+  );
+  assert.ok(
+    apply.includes("document.body?.setAttribute('data-dsh-pocket-layout', layout)"),
+    '必须先写布局门控属性',
+  );
 });
 
-test('抽屉 frame 样式 + 桌面隐藏闸在产物中（宽屏/鼠标设备不出现移动控件）', () => {
-  assert.ok(bundle.includes('[data-mobile-nav="frame"'), '抽屉 frame 样式存在');
+test('抽屉 frame 样式 + 桌面隐藏闸在移动分包产物中（宽屏/鼠标设备不出现移动控件）', () => {
+  assert.ok(mobileBundle.includes('[data-mobile-nav="frame"'), '抽屉 frame 样式存在');
   assert.ok(
-    bundle.includes('@media (min-width: 1024px), (pointer: fine), (pointer: none)'),
+    mobileBundle.includes('@media (min-width: 1024px), (pointer: fine), (pointer: none)'),
     '桌面隐藏闸存在（toggle/files/fab/backdrop 在 ≥1024px 或非触控指针下 display:none）',
   );
-  assert.ok(bundle.includes('data-sidebar-collapsed'), '抽屉状态订阅 data-sidebar-collapsed 存在（a11y 与 chrome 状态）');
+  assert.ok(mobileBundle.includes('data-sidebar-collapsed'), '抽屉状态订阅 data-sidebar-collapsed 存在');
 });
 
 test('标题簇的 mask 渐隐在手机档被关掉（否则左缘的 toggle 整颗被 mask 掉）', () => {
-  // 宿主给 .an3WzG_titleCluster 挂的是 mask-image 渐隐，而 mask 的盒子只覆盖簇自身
-  // 的 border box：钉在 header left:8 的 toggle（簇从 x=36 起）落在盒外，被整体 mask
-  // 成透明、elementFromPoint 也取不到 —— 2026-11-17 手机端「左上角的按钮没有了」。
   assert.match(
-    bundle,
+    mobileBundle,
     /header \[class\*="_titleCluster"\] \{\s+-webkit-mask-image: none !important;\s+mask-image: none !important;/,
-    'client.js 必须带上关掉标题簇 mask 的那条规则',
+    'client.mobile.js 必须带上关掉标题簇 mask 的那条规则',
   );
 });

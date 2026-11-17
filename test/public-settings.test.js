@@ -9,19 +9,14 @@ import { zh, en } from '../client/pocket-locales.js';
 import { settingsSource } from './helpers/settings-source.js';
 
 const result = await build({
-  entryPoints: [fileURLToPath(new URL('../client/index.jsx', import.meta.url))],
+  entryPoints: [fileURLToPath(new URL('../client/index.tsx', import.meta.url))],
   bundle: true,
   write: false,
   format: 'cjs',
   platform: 'browser',
-  plugins: [{
-    name: 'settings-only',
-    setup(build) {
-      build.onResolve({ filter: /mobile-apply\.tsx$/ }, () => ({ path: 'mobile', namespace: 'settings-stub' }));
-      build.onLoad({ filter: /.*/, namespace: 'settings-stub' }, () => ({ contents: 'export function mobileApply() {}' }));
-    },
-  }],
-  external: ['react', '@deepseek-ai/dsh-client-ui-primitives'],
+  jsx: 'transform',
+  tsconfigRaw: { compilerOptions: { jsx: 'react' } },
+  external: ['react', 'react/jsx-runtime', './client.mobile.js'],
 });
 
 function mount({ configured = false, dictionary = zh, rpc } = {}) {
@@ -36,10 +31,19 @@ function mount({ configured = false, dictionary = zh, rpc } = {}) {
   const states = [];
   let cursor = 0;
   const react = {
-    createElement: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat(Infinity) }),
+    Fragment: 'Fragment',
+    createElement: (type, props, ...children) => {
+      const flat = children.flat(Infinity);
+      if (typeof type === 'function') {
+        return type({ ...(props ?? {}), ...(flat.length > 0 ? { children: flat.length === 1 ? flat[0] : flat } : {}) });
+      }
+      return { type, props: props ?? {}, children: flat };
+    },
     useState(initial) {
       const i = cursor++;
-      if (!(i in states)) states[i] = i === 0 ? structuredClone(status) : typeof initial === 'function' ? initial() : initial;
+      if (!(i in states)) {
+        states[i] = i === 0 ? structuredClone(status) : typeof initial === 'function' ? initial() : initial;
+      }
       return [states[i], (value) => { states[i] = typeof value === 'function' ? value(states[i]) : value; }];
     },
     useRef(initial) {
@@ -48,18 +52,25 @@ function mount({ configured = false, dictionary = zh, rpc } = {}) {
       return states[i];
     },
     useEffect() {},
+    useMemo(fn) { return fn(); },
+    useCallback(fn) { return fn; },
   };
   const module = { exports: {} };
+  const hostRequire = (id) => {
+    if (id === 'react') return react;
+    throw new Error(`Unexpected require: ${id}`);
+  };
   const context = createContext({
-    module, exports: module.exports, console,
-    require: (id) => {
-      if (id === 'react') return react;
-      if (id === '@deepseek-ai/dsh-client-ui-primitives') return {};
-      throw new Error(`Unexpected require: ${id}`);
-    },
-    setTimeout() { return 1; }, clearTimeout() {},
+    module,
+    exports: module.exports,
+    console,
+    require: hostRequire,
+    __dshpHostRequire: hostRequire,
+    setTimeout() { return 1; },
+    clearTimeout() {},
     document: { body: { setAttribute() {}, removeAttribute() {}, style: { setProperty() {}, removeProperty() {} } } },
-    window: { dispatchEvent() {} }, CustomEvent: class {},
+    window: { dispatchEvent() {} },
+    CustomEvent: class {},
   });
   new Script(result.outputFiles[0].text).runInContext(context);
   let Component;
@@ -85,18 +96,42 @@ function mount({ configured = false, dictionary = zh, rpc } = {}) {
     }
     return { ok: true, value: structuredClone(status) };
   };
-  return { calls, render() { cursor = 0; return Component({ rpcCall, t: (key) => dictionary[key] ?? key }); } };
+  const render = () => {
+    cursor = 0;
+    return Component({ rpcCall, t: (key) => dictionary[key] ?? key });
+  };
+  const selectPublicTab = () => {
+    const tree = render();
+    const tab = nodes(
+      tree,
+      (node) => node.type === 'button' && node.props.role === 'tab' && text(node).includes(dictionary.publicFixedDomain),
+    )[0];
+    assert.ok(tab, 'Expected Public Fixed Domain tab in SegmentedControl');
+    tab.props.onClick();
+    return render();
+  };
+  const expandAdvanced = () => {
+    const tree = render();
+    const advSec = nodes(tree, (node) => node.props['data-dshp-section'] === 'advanced')[0];
+    assert.ok(advSec, 'Expected Advanced section');
+    const toggle = nodes(advSec, (node) => node.type === 'button' && 'aria-expanded' in node.props)[0];
+    if (toggle && !toggle.props['aria-expanded']) toggle.props.onClick();
+    return render();
+  };
+  return { calls, render, selectPublicTab, expandAdvanced };
 }
 
 function nodes(tree, predicate) {
   if (!tree || typeof tree !== 'object') return [];
-  return [...(predicate(tree) ? [tree] : []), ...tree.children.flatMap((child) => nodes(child, predicate))];
+  if (Array.isArray(tree)) return tree.flatMap((child) => nodes(child, predicate));
+  return [...(predicate(tree) ? [tree] : []), ...(tree.children ?? []).flatMap((child) => nodes(child, predicate))];
 }
 
 function text(tree) {
   if (tree == null || typeof tree === 'boolean') return '';
+  if (Array.isArray(tree)) return tree.map(text).join('');
   if (typeof tree !== 'object') return String(tree);
-  return tree.children.map(text).join('');
+  return (tree.children ?? []).map(text).join('');
 }
 
 function button(tree, label) {
@@ -120,7 +155,7 @@ async function settle() {
 for (const dictionary of [zh, en]) {
   test(`公网设置：${dictionary === zh ? '中文' : 'English'} 未配置只有自配入口，保存不启动`, async () => {
     const page = mount({ dictionary });
-    let tree = page.render();
+    let tree = page.selectPublicTab();
     assert.match(text(wan(tree)), new RegExp(dictionary.publicConfig));
     assert.ok(text(wan(tree)).includes(dictionary.publicSetupHint));
     assert.equal(nodes(wan(tree), (node) => node.type === 'img').length, 0);
@@ -148,6 +183,7 @@ for (const dictionary of [zh, en]) {
 
 test('公网设置：已配置须再次确认免责声明，启动与停止走独立端点', async () => {
   const page = mount({ configured: true });
+  page.selectPublicTab();
   button(page.render(), zh.enable).props.onClick();
   let tree = page.render();
   assert.equal(button(tree, zh.disclaimerAgree).props.disabled, true);
@@ -162,7 +198,8 @@ test('公网设置：已配置须再次确认免责声明，启动与停止走�
   assert.equal(page.calls[0].payload.disclaimer, true);
   assert.equal(switchOf(tree).props['aria-checked'], true);
   assert.equal(nodes(wan(tree), (node) => node.type === 'img').length, 1);
-  await switchOf(tree).props.onClick();
+  switchOf(tree).props.onClick();
+  await settle();
   assert.equal(page.calls[1].endpoint, POCKET_ENDPOINTS.tunnelStop);
   assert.equal(switchOf(page.render()).props['aria-checked'], false);
 });
@@ -170,6 +207,7 @@ test('公网设置：已配置须再次确认免责声明，启动与停止走�
 test('公网设置：编辑时 Token 留空不覆盖旧值，保存中禁止公网开关', async () => {
   let finish;
   const page = mount({ configured: true, rpc: () => new Promise((resolve) => { finish = resolve; }) });
+  page.selectPublicTab();
   button(page.render(), zh.namedEdit).props.onClick();
   let tree = page.render();
   assert.equal(nodes(wan(tree), (node) => node.type === 'input' && node.props.type === 'password')[0].props.value, '');
@@ -189,6 +227,8 @@ test('公网设置：编辑时 Token 留空不覆盖旧值，保存中禁止公�
 
 test('公网设置：恢复出厂回到未配置，不留下公网入口或二维码', async () => {
   const page = mount({ configured: true });
+  page.selectPublicTab();
+  page.expandAdvanced();
   button(page.render(), zh.resetGo).props.onClick();
   await button(page.render(), zh.resetConfirm).props.onClick();
   const tree = page.render();
@@ -201,8 +241,9 @@ test('公网设置：恢复出厂回到未配置，不留下公网入口或二�
 
 test('源码与构建产物均不再携带随机域名功能', () => {
   const sources = [
-    ['client/index.jsx + client/settings/*', settingsSource()],
+    ['client/index.tsx + client/settings/*', settingsSource()],
     ['../client/client.js', readFileSync(new URL('../client/client.js', import.meta.url), 'utf8')],
+    ['../client/client.mobile.js', readFileSync(new URL('../client/client.mobile.js', import.meta.url), 'utf8')],
     ['../client/pocket-locales.js', readFileSync(new URL('../client/pocket-locales.js', import.meta.url), 'utf8')],
     ['../lib/tunnel.mjs', readFileSync(new URL('../lib/tunnel.mjs', import.meta.url), 'utf8')],
   ];

@@ -1,6 +1,6 @@
 name: Test
 
-# push/PR 时只跑测试，不发版（发版走手动的 Release workflow）
+# push/PR 时只跑全量门禁与测试，不发版（发版走手动的 Release workflow）
 on:
   push:
     branches: [main]
@@ -18,8 +18,11 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      # 构建产物 client/client.js 是随包发布的；源码改了却没重建会让手机端跑旧代码。
-      # CI 里重建后必须零 diff（审计：发版流程此前不校验产物新鲜度）。
-      - run: npm run build:client
-      - run: git diff --exit-code -- client/client.js
+      - run: npm run typecheck
+      # 双分块构建产物 client/client.js + client/client.mobile.js 及锚点台账随包发布；
+      # CI 重建后必须零 diff，并过锚点契约检查与双分块激活门禁。
+      - run: npm run build
+      - run: git diff --exit-code -- client/client.js client/client.mobile.js client/mobile/anchors.ts
+      - run: node scripts/gen-anchors.mjs --check
+      - run: node client/repro-activate.mjs
       - run: npm test

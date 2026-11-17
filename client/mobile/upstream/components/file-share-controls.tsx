@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ReactElement, ReactNode } from 'react'
+import type { ReactElement } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import * as primitives from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconDownload, IconShare } from '../core/icon-compat.ts'
 import {
   FileShareError,
   deliverFile,
@@ -16,8 +16,7 @@ import type { FileShareKey } from './file-share-locale.ts'
 
 /**
  * Host 0.2.0 slot contracts this feature contributes to (declared by
- * ui-sidebar-files and ui-sidebar-documentpreview; the repo's locked
- * dsh-client-ui-slots 0.1.0-rc.6 typings predate them). Both are session
+ * ui-sidebar-files and ui-sidebar-documentpreview). Both are session
  * list slots whose owner passes `{ absolutePath }` (files: the tree root;
  * document: the previewed file's Host path, rendered only once it is known).
  */
@@ -30,10 +29,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /**
  * Session-bound ranged read over the host's `remote.workspaceFiles.readBytes`.
- * @param sessionId - Session whose workspace authorizes the read.
- * @param path - absolute or workspace-relative path.
- * @param range - byte window.
- * @param signal - cancellation.
  */
 export type ReadFileRange = (
   sessionId: string,
@@ -57,51 +52,26 @@ export interface FileShareSlotProps extends FileShareInject, PropsLocale<typeof 
 
 type Translate = (key: FileShareKey, params?: Record<string, unknown>) => string
 
-/** Host icon / toast component shapes, typed locally (see core/icon-compat.ts for why). */
-type HostIcon = (props: { size?: number; className?: string }) => ReactElement | null
-type HostToast = (props: { text: string; icon?: ReactNode; onDone: () => void }) => ReactElement | null
-
-const hostTable = primitives as unknown as Record<string, unknown>
-const hostShareIcon = (['IconShareOutlineRegular', 'IconShareOutline16']
-  .map(name => hostTable[name])
-  .find(value => typeof value === 'function') as HostIcon | undefined)
-const hostWarningIcon = (['IconWarningOutlineRegular', 'IconWarningOutline16']
-  .map(name => hostTable[name])
-  .find(value => typeof value === 'function') as HostIcon | undefined)
-const HostToastComponent = typeof hostTable.Toast === 'function' ? hostTable.Toast as HostToast : undefined
-
-/** Inline share glyph for injected DOM rows and hosts without a share icon (currentColor). */
+/** Inline share glyph for DOM-appended tree rows (`currentColor`, `stroke-width="1.65"`). */
 const SHARE_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">'
-  + '<path d="M8 1.5v8.5M8 1.5 5 4.5M8 1.5l3 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>'
-  + '<path d="M5 7H4a1.5 1.5 0 0 0-1.5 1.5v4A1.5 1.5 0 0 0 4 14h8a1.5 1.5 0 0 0 1.5-1.5v-4A1.5 1.5 0 0 0 12 7h-1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>'
+  + '<path d="M8 2v7.5M5.2 4.8L8 2l2.8 2.8" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"/>'
+  + '<path d="M3 9.5v3A1.5 1.5 0 0 0 4.5 14h7a1.5 1.5 0 0 0 1.5-1.5v-3" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"/></svg>'
 
 const DOWNLOAD_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">'
-  + '<path d="M8 1.5v8.5M8 10 5 7M8 10l3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>'
-  + '<path d="M5 12.5H4A1.5 1.5 0 0 0 2.5 14v.5h11V14A1.5 1.5 0 0 0 12 12.5h-1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>'
-
-/** 平台没有 Web Share 时按钮只能"下载"，图标也跟着换成下载方向（诚实语义）。 */
-function DownloadGlyph(): ReactElement {
-  return <span aria-hidden="true" dangerouslySetInnerHTML={{ __html: DOWNLOAD_SVG }} />
-}
-
-function ShareGlyph(): ReactElement {
-  if (hostShareIcon !== undefined) {
-    const Icon = hostShareIcon
-    return <Icon size={16} />
-  }
-  return <span aria-hidden="true" dangerouslySetInnerHTML={{ __html: SHARE_SVG }} />
-}
+  + '<path d="M8 2v7.5M5.2 6.7L8 9.5l2.8-2.8" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"/>'
+  + '<path d="M3 10.5v2A1.5 1.5 0 0 0 4.5 14h7a1.5 1.5 0 0 0 1.5-1.5v-2" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"/></svg>'
 
 /**
- * Minimal self-built notice for hosts without the primitives Toast: one
- * body-level status line, replaced by the next one, gone after 3s. Mounted on
- * <body> so no transformed sheet ancestor can mis-place the fixed box.
+ * Self-owned floating status pill mounted on `<body>` so no transformed sheet
+ * ancestor can mis-place the fixed box, and no host primitives import is needed.
  */
 function showFallbackNotice(text: string): void {
   document.querySelector('[data-mobile-nav="file-share-toast"]')?.remove()
   const node = document.createElement('div')
   node.dataset.mobileNav = 'file-share-toast'
   node.setAttribute('role', 'status')
+  node.setAttribute('aria-live', 'polite')
+  node.style.cssText = 'position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom, 0px) + var(--dshp-kb, 0px) + 64px);transform:translateX(-50%);z-index:2147483550;max-width:calc(100vw - 32px);padding:8px 16px;border-radius:999px;corner-shape:round;border:0.5px solid var(--dsw-alias-border-l3, rgba(127,127,127,.24));background:var(--dsw-alias-bg-layer-2, #1f2430);color:var(--dsw-alias-label-primary, #f3f4f6);font:500 13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;box-shadow:var(--dsw-elevation-panel, 0 4px 14px rgba(0,0,0,.22));pointer-events:none;text-align:center'
   node.textContent = text
   document.body.appendChild(node)
   setTimeout(() => node.remove(), 3000)
@@ -109,11 +79,7 @@ function showFallbackNotice(text: string): void {
 
 /**
  * The button label: 「分享」 only when the platform really has Web Share, else
- * 「下载」 — the press can only end in a download there, and calling that
- * 「分享」 was the owner's 2026-10-07 complaint.
- * @param t - file-share copy.
- * @param name - displayed file name.
- * @returns the label for the current state.
+ * 「下载」.
  */
 function shareLabel(t: Translate, name: string): string {
   return canShareFiles(platformDeps()) ? t('shareFile', { name }) : t('downloadFile', { name })
@@ -172,24 +138,16 @@ function platformDeps(): Parameters<typeof deliverFile<File>>[1] {
 function useFileShare(sessionId: string, readFileRange: ReadFileRange, t: Translate): {
   busyPath: string | null
   share: (path: string) => void
-  toast: ReactNode
 } {
   const [busyPath, setBusyPath] = useState<string | null>(null)
-  const [notice, setNotice] = useState<{ seq: number; text: string } | null>(null)
   const inFlight = useRef<AbortController | null>(null)
-  const seq = useRef(0)
   const latest = useRef({ sessionId, readFileRange, t })
   latest.current = { sessionId, readFileRange, t }
 
   useEffect(() => () => inFlight.current?.abort(), [])
 
   const announce = useCallback((text: string): void => {
-    if (HostToastComponent === undefined) {
-      showFallbackNotice(text)
-      return
-    }
-    seq.current += 1
-    setNotice({ seq: seq.current, text })
+    showFallbackNotice(text)
   }, [])
 
   const share = useCallback((path: string): void => {
@@ -208,7 +166,7 @@ function useFileShare(sessionId: string, readFileRange: ReadFileRange, t: Transl
     }
     run().catch((error: unknown) => {
       if (controller.signal.aborted) return
-      console.warn('[dsh-web-mobile] file share failed:', error)
+      console.warn('[dsh-pocket] file share failed:', error)
       announce(failureText(error, tr))
     }).finally(() => {
       if (inFlight.current === controller) inFlight.current = null
@@ -216,48 +174,26 @@ function useFileShare(sessionId: string, readFileRange: ReadFileRange, t: Transl
     })
   }, [announce])
 
-  const toast = notice === null || HostToastComponent === undefined
-    ? null
-    : (
-      <HostToastComponent
-        key={notice.seq}
-        text={notice.text}
-        {...(hostWarningIcon === undefined ? {} : { icon: <IconWarning /> })}
-        onDone={() => setNotice(null)}
-      />
-    )
-  return { busyPath, share, toast }
-}
-
-function IconWarning(): ReactElement | null {
-  const Icon = hostWarningIcon
-  return Icon === undefined ? null : <Icon />
+  return { busyPath, share }
 }
 
 /**
- * Preview header share button, contributed to the documentpreview-declared
- * `sidebar.right.tab.document.actions` list slot ("Header toolbar
- * contributions acting on the previewed file"). The owner renders the slot
- * only once the file's Host path is known, for every renderer (text, code,
- * image, PDF, Office, unsupported).
+ * Preview header share button, contributed to `sidebar.right.tab.document.actions`.
  */
 export function FilePreviewShareButton({ absolutePath, sessionId, readFileRange, t }: FileShareSlotProps): ReactElement {
-  const { busyPath, share, toast } = useFileShare(sessionId, readFileRange, t)
+  const { busyPath, share } = useFileShare(sessionId, readFileRange, t)
   const busy = busyPath !== null
   return (
-    <>
-      <button
-        type="button"
-        data-mobile-nav="file-share-preview"
-        aria-label={busy ? t('sharing') : shareLabel(t, fileNameOf(absolutePath))}
-        aria-busy={busy}
-        disabled={busy}
-        onClick={() => share(absolutePath)}
-      >
-        {canShareFiles(platformDeps()) ? <ShareGlyph /> : <DownloadGlyph />}
-      </button>
-      {toast}
-    </>
+    <button
+      type="button"
+      data-mobile-nav="file-share-preview"
+      aria-label={busy ? t('sharing') : shareLabel(t, fileNameOf(absolutePath))}
+      aria-busy={busy}
+      disabled={busy}
+      onClick={() => share(absolutePath)}
+    >
+      {canShareFiles(platformDeps()) ? <IconShare size={16} /> : <IconDownload size={16} />}
+    </button>
   )
 }
 
@@ -266,21 +202,9 @@ const ROW_BUTTON = 'file-share-row'
 
 /**
  * Row-end share buttons for the Files tree.
- *
- * The host file tree (ui-sidebar-files FilesBody) gives rows no menu, no
- * long-press and no per-row slot: each file is `<li data-files-entry="file"
- * data-files-path=…>` holding exactly one `<button>` whose click opens the
- * preview. The only extension seat is `sidebar.right.tab.files.actions`, in
- * the tree header. This entry sits there invisibly (a hidden anchor span) to
- * get a session-bound lifetime scoped to ONE tree, and decorates that tree's
- * file rows by APPENDING a plugin-owned button after the host's button.
- * Host nodes are never moved, wrapped or re-parented (#104 rule): React only
- * reconciles the children it rendered, so an extra trailing sibling survives
- * re-renders and leaves with the `li` on unmount. Directories and "other"
- * entries get no button; a reused `li` that turned into a directory drops it.
  */
 export function FilesRowShare({ sessionId, readFileRange, t }: FileShareSlotProps): ReactElement {
-  const { busyPath, share, toast } = useFileShare(sessionId, readFileRange, t)
+  const { busyPath, share } = useFileShare(sessionId, readFileRange, t)
   const anchorRef = useRef<HTMLSpanElement | null>(null)
   const latest = useRef({ busyPath, share, t })
   latest.current = { busyPath, share, t }
@@ -317,12 +241,6 @@ export function FilesRowShare({ sessionId, readFileRange, t }: FileShareSlotProp
         const path = row.getAttribute('data-files-path') ?? ''
         const active = busy !== null && busy === path
         const label = active ? tr('sharing') : shareLabel(tr, fileNameOf(path))
-        // Single flight is per tree (`inFlight` lives in this component) and
-        // `share()` returns immediately while one is running, so a tap on any
-        // OTHER row used to do visibly nothing. Block every row button for the
-        // flight: the tapped one keeps its 「分享中」 label, the rest read as
-        // disabled instead of silently dead. No new async path, no change to the
-        // success/failure routes.
         const blocked = busy !== null
         if (button.getAttribute('aria-label') !== label) button.setAttribute('aria-label', label)
         if (button.disabled !== blocked) button.disabled = blocked
@@ -340,8 +258,6 @@ export function FilesRowShare({ sessionId, readFileRange, t }: FileShareSlotProp
         decorate()
       })
     }
-    // childList only: our own aria/disabled writes never re-trigger it, and
-    // the appended buttons settle in one extra (idempotent) pass.
     const observer = new MutationObserver(schedule)
     observer.observe(body, { childList: true, subtree: true })
     decorate()
@@ -356,15 +272,9 @@ export function FilesRowShare({ sessionId, readFileRange, t }: FileShareSlotProp
     }
   }, [])
 
-  // Busy state and locale switches re-label the existing buttons in place.
   useEffect(() => {
     decorateRef.current?.()
   }, [busyPath, t])
 
-  return (
-    <>
-      <span hidden data-mobile-nav="file-share-anchor" ref={anchorRef} />
-      {toast}
-    </>
-  )
+  return <span hidden data-mobile-nav="file-share-anchor" ref={anchorRef} />
 }

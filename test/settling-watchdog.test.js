@@ -37,12 +37,18 @@ const {
   LINK_BANNER_BACK_MS,
 } = await import('../client/mobile/settling-watchdog.mjs');
 
-const apply = readFileSync(new URL('../client/mobile/mobile-apply.tsx', import.meta.url), 'utf8');
-// POCKET_EXTRA_CSS 的模板字面量正文：从声明处的第一个反引号到下一个反引号。
-const cssStart = apply.indexOf('const POCKET_EXTRA_CSS');
-const cssOpen = apply.indexOf('`', cssStart);
-const css = apply.slice(cssOpen + 1, apply.indexOf('`', cssOpen + 1));
-const bundle = readFileSync(new URL('../client/client.js', import.meta.url), 'utf8');
+const extraStyles = readFileSync(
+  new URL('../client/mobile/pocket/extra-styles.css.ts', import.meta.url),
+  'utf8',
+);
+const linkAndSettling = readFileSync(
+  new URL('../client/mobile/pocket/link-and-settling.ts', import.meta.url),
+  'utf8',
+);
+const cssStart = extraStyles.indexOf('export const POCKET_EXTRA_CSS');
+const cssOpen = extraStyles.indexOf('`', cssStart);
+const css = extraStyles.slice(cssOpen + 1, extraStyles.indexOf('`', cssOpen + 1));
+const bundle = readFileSync(new URL('../client/client.mobile.js', import.meta.url), 'utf8');
 
 const DOWN = { down: true, usable: false };
 const UP = { down: false, usable: true };
@@ -244,10 +250,10 @@ test('mobile-apply：CSS 兜底规则存在且压过宿主的 visibility:hidden'
     '内嵌会话体的 settling 也要还原（同一个 visibility:hidden 的另一半）');
 });
 
-test('mobile-apply：看门狗走 armOnNarrow 且清理全部订阅与标记', () => {
-  const start = apply.indexOf("armOnNarrow('dsh-pocket: settling watchdog");
+test('link-and-settling：看门狗走 armOnNarrow 且清理全部订阅与标记', () => {
+  const start = linkAndSettling.indexOf("armOnNarrow('dsh-pocket: settling watchdog");
   assert.ok(start > 0, '看门狗必须包在 armOnNarrow 里（宽屏桌面布局不掺和）');
-  const body = apply.slice(start, apply.indexOf('\n  }, ', start));
+  const body = linkAndSettling.slice(start, linkAndSettling.indexOf("armOnNarrow('dsh-pocket: link watchdog", start));
   assert.ok(body.includes('guard.decide('), '判定必须委托纯模块');
   assert.ok(body.includes('typeof session?.resync !== ') && body.includes("'function'"),
     'resync 必须有 typeof 守卫，宿主形状变化就跳过');
@@ -263,8 +269,6 @@ test('mobile-apply：看门狗走 armOnNarrow 且清理全部订阅与标记', (
   assert.ok(body.includes('timers.clear()'), '清理时必须清掉计时器');
   assert.ok(body.includes('guard.reset()'), '清理时必须重置判定状态');
   assert.ok(body.includes('removeAttribute(STALE_ATTR)'), '清理时必须摘掉标记');
-  // 父子会话同时挂着时，靠 retainedBy.mainView 反推会认错人，必须按 root 自带的
-  // 会话标识定位；内嵌会话体（data-content-phase）也要能被扫到。
   assert.ok(body.includes('data-conversation-session'), '会话 id 必须从这个 root 自己读');
   assert.ok(body.includes('data-content-phase="settling"'), '内嵌会话体的 settling 也要扫到');
 });
@@ -414,12 +418,13 @@ test('断线横幅：短抖动完全不出提示，恢复时也不补绿条', ()
     '宽限必须短于「值得报一句已重连」的门槛，否则短抖动照样闪一整套红→绿');
 });
 
-test('mobile-apply：链路看门狗前台探活（2026-11-12 提速：12s → 最坏 2.9s）', () => {
-  const start = apply.indexOf("armOnNarrow('dsh-pocket: link watchdog");
+test('link-and-settling：链路看门狗前台零 I/O 探活（/__dsh-pocket/ping + RPC 兜底）', () => {
+  const start = linkAndSettling.indexOf("armOnNarrow('dsh-pocket: link watchdog");
   assert.ok(start > 0, '链路看门狗必须包在 armOnNarrow 里');
-  const body = apply.slice(start, apply.indexOf('\n  }, ', start));
+  const body = linkAndSettling.slice(start);
   assert.ok(body.includes('createLinkLiveness()'), '判定必须委托纯模块（本文件就是它的单测）');
-  assert.ok(body.includes('POCKET_ENDPOINTS.status'), '探活必须打真实 RPC，不能只看快照');
+  assert.ok(body.includes('fetch(POCKET_PING_PATH'), '优先用零 I/O /__dsh-pocket/ping 探活');
+  assert.ok(body.includes('POCKET_ENDPOINTS.status'), '保留无 fetch 单测环境下的 RPC 探活兜底');
   assert.ok(body.includes('LINK_TICK_MS'), '轮询节拍来自模块常量');
   assert.ok(body.includes('LINK_PROBE_TIMEOUT_MS'), '探活必须带超时（不能永久挂住）');
   assert.ok(body.includes('liveness.noteProbe('), '探活结果必须回填判定');
@@ -427,7 +432,7 @@ test('mobile-apply：链路看门狗前台探活（2026-11-12 提速：12s → �
   assert.ok(body.includes('shouldForceReconnect('), '重连只在静默断线/宿主卡住时触发');
   assert.ok(!body.includes('shouldReconnect('), '旧名是「抢跑版」语义，不能再接线');
   assert.ok(body.includes('LINK_BANNER_GRACE_MS') && body.includes('LINK_BANNER_BACK_MS'),
-    '横幅必须有宽限与「值得报一句」的门槛（实测抖动会红绿整轮闪）');
+    '横幅必须有宽限与「值得报一句」的门槛');
   assert.ok(body.includes("addEventListener('visibilitychange'"), '切回前台必须立即评估');
   assert.ok(body.includes('clearInterval(timer)'), '清理必须清掉轮询计时器');
   assert.ok(body.includes('clearTimeout(probeTimer)'), '清理必须清掉探活超时');
@@ -436,9 +441,9 @@ test('mobile-apply：链路看门狗前台探活（2026-11-12 提速：12s → �
     '旧的 12s 门限与本地退避必须删掉（现在只有纯模块里那一份）');
 });
 
-test('bundle：链路看门狗随构建产物上线（防止改了源码忘了重建）', () => {
-  assert.ok(bundle.includes('dsh-pocket: link watchdog'), 'bundle 必须包含链路看门狗');
-  // 函数名会被压缩改名，但对象字面量的属性名保留：用 noteProbe 认这条判定链。
-  assert.ok(bundle.includes('noteProbe'), 'bundle 必须包含探活判定（属性名不压缩）');
-  assert.ok(bundle.includes('pocket.status'), 'bundle 必须打真实 RPC 探活');
+test('bundle：链路看门狗随移动分包产物上线（防止改了源码忘了重建）', () => {
+  assert.ok(bundle.includes('dsh-pocket: link watchdog'), 'client.mobile.js 必须包含链路看门狗');
+  assert.ok(bundle.includes('noteProbe'), 'client.mobile.js 必须包含探活判定');
+  assert.ok(bundle.includes('/__dsh-pocket/ping'), 'client.mobile.js 必须包含零 I/O ping 探针路径');
+  assert.ok(bundle.includes('pocket.status'), 'client.mobile.js 保留状态兜底端点');
 });

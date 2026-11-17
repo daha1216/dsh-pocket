@@ -1,48 +1,88 @@
+import { createElement as h } from 'react'
 import type { ReactElement } from 'react'
-import * as primitives from '@deepseek-ai/dsh-client-ui-primitives'
 
 /**
- * 宿主 `@deepseek-ai/dsh-client-ui-primitives` 的图标命名有两代（真机取证 2026-09-23）：
+ * Self-owned crisp inline SVG icons for the mobile adaptation layer.
  *
- *   · `0.1.0-rc.6`（本仓库锁文件 → CI 的 `pnpm verify` 按它 typecheck）：`IconXxxOutline16`
- *   · `0.1.7-alpha.1`（DSHA 真机宿主）：`IconXxxOutlineRegular`
- *
- * 仓库声明的 peer 范围（`^0.1.0-rc.6 || >=0.1.1-rc.0 <0.2.0 || >=0.1.2-a <0.2.0`）同时覆盖两代，
- * 但两边**导出的名字互不相交**：写死任何一代，另一代拿到的就是 `undefined`，
- * React 渲染时直接抛「Element type is invalid」（0.1.7 真机上回形针/下载/文件夹/侧栏四个图标
- * 就是这么坏掉的）。
- *
- * 所以这里按「运行时哪个存在用哪个」取名。宿主下次改命名，只需往候选数组里补一个名字。
- *
- * 两点刻意的设计：
- * 1. 图标组件的类型**本地定义**（`HostIcon`），不引宿主导出的类型面 —— 不同代的
- *    primitives 类型面不同，而且能不能解析到取决于环境（CI 能、探针环境不能），
- *    引用它会让生成的 `.d.ts` 不稳定（实测：本机退化成 `any`、CI 是真类型，
- *    直接顶掉 `lib is fresh` 这道闸）。
- * 2. 两代都没有时返回空组件，宁可少画一个图标，也不让整个组件树炸掉。
+ * Official DSH red-line: plugins MUST NOT import `@deepseek-ai/dsh-client-ui-primitives`
+ * at runtime (internal icon/component export names change across DSH releases and can
+ * crash plugin activation). All icons here are pure inline SVG React components
+ * rendered at `size` (default 16px) with `stroke="currentColor"`, `fill="none"`,
+ * and `strokeWidth="1.65"`.
  */
 
-/** 宿主图标组件的形状（各代 props 一致：size / className）。 */
-export type HostIcon = (props: { size?: number; className?: string }) => ReactElement | null
+/** Icon component shape shared across mobile slot controls. */
+export type HostIcon = (props: { size?: number; className?: string }) => ReactElement
 
-/** 命名缺失时的兜底：渲染成空，绝不抛错。 */
-const missingIcon: HostIcon = () => null
-
-/** 按候选名字顺序在宿主模块里寻找图标组件。 */
-const pickIcon = (names: readonly string[]): HostIcon => {
-  const table = primitives as unknown as Record<string, HostIcon | undefined>
-  for (const name of names) {
-    const found = table[name]
-    if (found !== undefined) return found
-  }
-  return missingIcon
+function svgFrame(
+  size: number | undefined,
+  className: string | undefined,
+  ...paths: ReactElement[]
+): ReactElement {
+  const px = size ?? 16
+  return h(
+    'svg',
+    {
+      width: px,
+      height: px,
+      viewBox: '0 0 16 16',
+      fill: 'none',
+      stroke: 'currentColor',
+      strokeWidth: 1.65,
+      strokeLinecap: 'round',
+      strokeLinejoin: 'round',
+      'aria-hidden': 'true',
+      ...(className ? { className } : {}),
+    },
+    ...paths,
+  )
 }
 
-/** 输入区文件入口（回形针）。 */
-export const IconPaperclip: HostIcon = pickIcon(['IconPaperclipOutlineRegular', 'IconPaperclipOutline16'])
+/** Composer file attachment entry (paperclip). */
+export const IconPaperclip: HostIcon = ({ size, className }) =>
+  svgFrame(
+    size,
+    className,
+    h('path', {
+      key: 'clip',
+      d: 'M13.4 7.5L7.8 13.1a3.5 3.5 0 0 1-4.95-4.95l5.9-5.9a2.3 2.3 0 0 1 3.25 3.25L6.25 11.25a1.15 1.15 0 0 1-1.63-1.63l5.13-5.12',
+    }),
+  )
 
-/** 会话头部的目录抽屉开关。 */
-export const IconPanelLeft: HostIcon = pickIcon(['IconPanelLeftOutlineRegular', 'IconPanelLeftOutline16'])
+/** Session header directory drawer toggle. */
+export const IconPanelLeft: HostIcon = ({ size, className }) =>
+  svgFrame(
+    size,
+    className,
+    h('rect', { key: 'box', x: 2, y: 2.5, width: 12, height: 11, rx: 2 }),
+    h('path', { key: 'bar', d: 'M6 2.5v11' }),
+  )
 
-/** 会话头部的 Files/右侧栏入口。 */
-export const IconFolderOpen: HostIcon = pickIcon(['IconFolderOpenOutlineRegular', 'IconFolderOpenOutline16'])
+/** Session header Files / right-sidebar entry. */
+export const IconFolderOpen: HostIcon = ({ size, className }) =>
+  svgFrame(
+    size,
+    className,
+    h('path', {
+      key: 'folder',
+      d: 'M2 4.5A1.5 1.5 0 0 1 3.5 3h2.5l1.4 1.5h4.6A1.5 1.5 0 0 1 13.5 6v1.5M2 7.5h12l-1.15 4.9a1.5 1.5 0 0 1-1.46 1.1H3.4A1.4 1.4 0 0 1 2 12.1V4.5Z',
+    }),
+  )
+
+/** File share upward-arrow tray icon. */
+export const IconShare: HostIcon = ({ size, className }) =>
+  svgFrame(
+    size,
+    className,
+    h('path', { key: 'arrow', d: 'M8 2v7.5M5.2 4.8L8 2l2.8 2.8' }),
+    h('path', { key: 'tray', d: 'M3 9.5v3A1.5 1.5 0 0 0 4.5 14h7a1.5 1.5 0 0 0 1.5-1.5v-3' }),
+  )
+
+/** File download downward-arrow tray icon. */
+export const IconDownload: HostIcon = ({ size, className }) =>
+  svgFrame(
+    size,
+    className,
+    h('path', { key: 'arrow', d: 'M8 2v7.5M5.2 6.7L8 9.5l2.8-2.8' }),
+    h('path', { key: 'tray', d: 'M3 10.5v2A1.5 1.5 0 0 0 4.5 14h7a1.5 1.5 0 0 0 1.5-1.5v-2' }),
+  )

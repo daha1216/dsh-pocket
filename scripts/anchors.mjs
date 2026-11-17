@@ -17,9 +17,9 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 
 const SOURCE_FILE = /\.(?:css|ts|tsx|js|jsx|mjs)$/
-// 构建产物不是源码：client/client.js 由 client/build.mjs 从 client/index.jsx 打出来，
-// 里面的锚点全都来自上游源文件，重复统计只会让台账虚涨。
-const BUILD_ARTIFACTS = new Set(['client.js'])
+// 构建产物不是源码：client/client.js 与 client/client.mobile.js 由 client/build.mjs 产出，
+// 里面的锚点全都来自源文件，重复统计只会让台账虚涨。
+const BUILD_ARTIFACTS = new Set(['client.js', 'client.mobile.js'])
 
 // 注释掉的选择器不生效，算进台账只会让账虚涨（core/css-rules.ts 里的 '…' 占位符就是这么混进来的）。
 export function stripComments(source) {

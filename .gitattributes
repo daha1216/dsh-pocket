@@ -1,6 +1,11 @@
-# 上游快照与派生树必须逐字节一致：补丁按 LF 生成，检出时不能被 core.autocrlf 改写。
-vendor/** text eol=lf
-patches/** text eol=lf
+# Enforce LF across platforms for deterministic dual-chunk builds and anchor contracts.
+client/build.mjs text eol=lf
+client/client.js text eol=lf
+client/client.mobile.js text eol=lf
+client/*.ts text eol=lf
+client/*.tsx text eol=lf
+client/settings/** text eol=lf
+src/** text eol=lf
 client/mobile/upstream/** text eol=lf
-# 锚点台账是生成物，测试按字节比对：Windows 上 core.autocrlf=true 检出成 CRLF 会让契约测试误红。
+client/mobile/pocket/** text eol=lf
 client/mobile/anchors.ts text eol=lf

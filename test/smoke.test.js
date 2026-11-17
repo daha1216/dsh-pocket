@@ -80,24 +80,20 @@ test('真实链路：RPC status 走真实 service（含 restartNotice）', async
   }
 });
 
-test('client bundle 注入 React 绑定（PR #1 回归：mobile 组件曾 React is not defined）', async () => {
-  // DSH 模块系统提供 react 为模块、非全局；esbuild classic JSX 生成 React.createElement，
-  // 若 factory 不绑定 React，mobile 组件（抽屉布局）渲染即崩、移动端适配永远不激活。
+test('client 双分包均注入 React 绑定（PR #1 回归：mobile 组件曾 React is not defined）', async () => {
   const { readFileSync } = await import('node:fs');
-  const src = readFileSync(new URL('../client/client.js', import.meta.url), 'utf8');
-  assert.ok(src.includes('var React = require("react")'), 'factory 注入 React 绑定');
-  // 匹配实际调用形式（带左括号），避免命中 build.mjs 注释里的字面量
-  assert.ok(src.includes('React.createElement('), 'bundle 内存在 JSX 编译产物（需要 React 绑定）');
-  const injectIdx = src.indexOf('var React = require("react")');
-  const createIdx = src.indexOf('React.createElement(');
+  const mainSrc = readFileSync(new URL('../client/client.js', import.meta.url), 'utf8');
+  const mobileSrc = readFileSync(new URL('../client/client.mobile.js', import.meta.url), 'utf8');
+  assert.ok(mainSrc.includes('var React = require("react")'), 'client.js factory 注入 React 绑定');
+  assert.ok(mainSrc.includes('createElement('), 'client.js 内存在 JSX 编译产物');
+  assert.ok(mobileSrc.includes('var React = require("react")'), 'client.mobile.js factory 注入 React 绑定');
+  assert.ok(mobileSrc.includes('React.createElement('), 'client.mobile.js 内存在 JSX 编译产物');
+  const injectIdx = mobileSrc.indexOf('var React = require("react")');
+  const createIdx = mobileSrc.indexOf('React.createElement(');
   assert.ok(injectIdx !== -1 && createIdx !== -1 && injectIdx < createIdx, 'React 声明先于使用');
 });
 
 test('client bundle：status 访问必须可选链（回归：1.9.0 白屏——首次渲染 status=null 时裸 status.lanAuthEnabled 抛 TypeError）', async () => {
-  // load() 是异步的：首次渲染时 status 为 null。LAN 开关行渲染在 lanUrl 安全分支之外，
-  // 1.9.0 在这里裸访问 status.lanAuthEnabled → React 整树崩溃 → 设置页白屏。
-  // 修复：全部 status?.lanAuthEnabled。此测试防止再次出现裸访问（esbuild 会原样保留 ?.）。
-  // 产物默认压缩：局部变量名会被改名，正面断言打在源码上；产物只保留负面断言。
   const { readFileSync } = await import('node:fs');
   const { settingsSource } = await import('./helpers/settings-source.js');
   const src = settingsSource();
@@ -108,12 +104,8 @@ test('client bundle：status 访问必须可选链（回归：1.9.0 白屏——
 });
 
 test('移动导航 backdrop（issue #38 镜像层）：backdrop 标记存在 + 抽屉层级高于三方插件抬升', async () => {
-  // 镜像层（dsh-web-mobile 移植）的 backdrop 由 overlay-backdrop-fab effect 挂载、
-  // 淡出与 pointer-events 走内联状态（JS 驱动），因此只断言结构标记与层级治理：
-  // 抽屉/菜单层必须高于第三方对 shell overlay 的抬升（500）与 dsh-web-ui-all 的
-  // 移动端层（sidebar 1100、frame 遮罩 1050）——镜像层治理为 1300/1400。
   const { readFileSync } = await import('node:fs');
-  const src = readFileSync(new URL('../client/client.js', import.meta.url), 'utf8');
+  const src = readFileSync(new URL('../client/client.mobile.js', import.meta.url), 'utf8');
   assert.ok(/\[data-mobile-nav="backdrop"\]/.test(src), 'backdrop CSS 规则存在');
   assert.ok(src.includes('z-index: 1300 !important'), '抽屉层 z-index 1300（高于 overlay 抬升 500 与 web-ui-all 的 1100/1050）');
   assert.ok(!src.includes('z-index: 40 !important'), '不再用 40（会被第三方抬升的 overlay 盖住）');
@@ -126,19 +118,16 @@ test('公网免责声明（issue #31）：bundle 含弹框与勾选逻辑，RPC 
   const { settingsSource } = await import('./helpers/settings-source.js');
   const clientSrc = settingsSource();
   assert.ok(src.includes('disclaimer'), 'bundle 含免责声明逻辑');
-  // 产物压缩会把 true 改写成 !0，正面断言打在源码上
   assert.ok(clientSrc.includes('disclaimer: true'), '开启公网带免责声明确认参数');
 });
 
 test('文件浏览（2026-11-12）：只走宿主官方右侧栏，点 Files 关抽屉', async () => {
   const { readFileSync } = await import('node:fs');
-  const src = readFileSync(new URL('../client/client.js', import.meta.url), 'utf8');
+  const src = readFileSync(new URL('../client/client.mobile.js', import.meta.url), 'utf8');
   const helper = readFileSync(new URL('../client/mobile/upstream/components/open-files-panel.ts', import.meta.url), 'utf8');
-  // 右栏开关：面板关闭时只有 expand，打开后只剩 toggle（0.1.5 实测）
   assert.ok(helper.includes("'[data-sidebar-right-expand]'"), '用宿主右侧栏展开按钮');
   assert.ok(helper.includes("'[data-sidebar-right-toggle]'"), '用宿主右侧栏收起按钮');
   assert.ok(!helper.includes('aionui'), '不再回退第三方 explorer 列（#17）');
-  // 点 Files 关闭抽屉（抽屉 z600 会盖住右栏，且面板外点击会被吃掉）
   assert.ok(src.includes('[data-mobile-nav="files"]'), 'Files 纳入抽屉内导航关闭');
 });
 
@@ -148,10 +137,11 @@ test('更新契约（2026-11-12）：不探测 npm registry，也不代跑 dsh p
     'lib/index.js': readFileSync(new URL('../lib/index.js', import.meta.url), 'utf8'),
     'lib/web-rpc.js': readFileSync(new URL('../lib/web-rpc.js', import.meta.url), 'utf8'),
     'client/client.js': readFileSync(new URL('../client/client.js', import.meta.url), 'utf8'),
+    'client/client.mobile.js': readFileSync(new URL('../client/client.mobile.js', import.meta.url), 'utf8'),
   };
   for (const [name, text] of Object.entries(files)) {
-    assert.equal(text.includes('registry.npmjs.org'), false, name + ' 不再访问 npm registry（npm 上的 dsh-pocket 不是本 fork）');
-    assert.equal(text.includes('update --latest'), false, name + ' 不再代跑一键更新（更新只走重跑 add）');
+    assert.equal(text.includes('registry.npmjs.org'), false, name + ' 不再访问 npm registry');
+    assert.equal(text.includes('update --latest'), false, name + ' 不再代跑一键更新');
   }
   assert.equal(files['lib/index.js'].includes('performUpdate'), false, 'lib/index.js 没有一键更新的 spawn 实现');
   assert.equal(files['lib/web-rpc.js'].includes('POCKET_ENDPOINTS.update'), false, 'web-rpc 不再注册 pocket.update 端点');
