@@ -1,5 +1,5 @@
 diff --git a/effects/AGENTS.md b/effects/AGENTS.md
-index e6cf52e..5dfcbcf 100644
+index e6cf52e..a489c4e 100644
 --- a/effects/AGENTS.md
 +++ b/effects/AGENTS.md
 @@ -19,6 +19,12 @@ effect；`components/` 只用 `platform/` + `core/`。`tests/architecture.test.t
@@ -15,7 +15,7 @@ index e6cf52e..5dfcbcf 100644
  - **`panel-exit.ts` 退场是先动画后提交**：挂 `data-mobile-panel-leaving` → CSS
    `dsh-web-mobile-panel-out`（220ms）→ `animationend` 之后才 `selectPanel()`。先提交会让宿主
    在同一次 commit 卸载面板，动画落在 0×0 空槽上。
-@@ -40,15 +46,21 @@ effect；`components/` 只用 `platform/` + `core/`。`tests/architecture.test.t
+@@ -40,15 +46,26 @@ effect；`components/` 只用 `platform/` + `core/`。`tests/architecture.test.t
    任务注册面 `addReconcilerTask` + 本插件全部 reconciler 任务。改全树观察逻辑找这里，
    **不是** phone-chrome.ts。
  - `drawer-close.ts` — 抽屉关闭三条监听路（Escape / 遮罩与导航目标的捕获 click / DSHA
@@ -23,6 +23,11 @@ index e6cf52e..5dfcbcf 100644
 +  `dsha-session-open`）与共用的那一个 `toggleDrawer`（晚提交关闭）。**Escape 只有这一个主**
 +  （Phase 1 ④）：归属顺序 宿主 `[aria-modal=true]` 弹窗 > 插件的可关闭层（`dismissTopPanel()`，
 +  见 `platform/panel-stack.ts`）> 抽屉。层不再各挂 Esc —— 一次 Esc 只关一层。
++  注意**打开着的抽屉自己就是 `div[role=dialog][aria-modal=true]`**（`wtg9ga_root`），所以抽屉
++  开着时 Esc 一路归宿主：宿主的 modal 先吃、我们的面板栈不被问到，插件菜单随抽屉一起关
++  （`drawer-session-log` 的 frameObserver 见 `data-sidebar-collapsed` 回来就 closeMenu）。
++  抽屉关着、只有插件层在场时才是「一次 Esc 只关一层」的战场——别为前者调换模态检查与
++  `dismissTopPanel()` 的顺序。
  - `drawer-session-log.ts` — 抽屉品牌行右端的会话日志导出图标（issue #225，替代页脚胶囊）：往
    `[class*="sidebarCol"] [class*="logoRow"]` 注入 `data-mobile-nav="session-log"` 按钮，
 -  `scopes:['*']` 处理宿主重建，`dispose` 退订 + 移除；无当前会话置灰。
@@ -39,7 +44,7 @@ index e6cf52e..5dfcbcf 100644
  - `header-metrics.ts` — 顶栏高度 → CSS 变量 `--mobile-nav-header-h`（`scopes:['*']`）。
  - `image-lightbox-zoom.ts` — 宿主原图灯箱（body 直挂 `div[role=dialog][aria-modal=true]`，stage 直接孩子是 img）
    自己的缩放层：只给 img 写 `translate3d + scale` 的 transform，pointer/gesturestart/touchmove 全部只挂灯箱
-@@ -67,9 +79,18 @@ effect；`components/` 只用 `platform/` + `core/`。`tests/architecture.test.t
+@@ -67,9 +84,18 @@ effect；`components/` 只用 `platform/` + `core/`。`tests/architecture.test.t
  - `session-menu.ts` — touch 门控注入「删除会话」菜单项（自 fork wzxmt-zhc v2.7.0 移植）。
    守卫 = TOUCH_QUERY（每个宽度都算，横屏大平板也算）+ 行/菜单/标签选择器在场。删除当前会话后
    `toggleDrawer` 只在 mobile query 下跑。
@@ -61,7 +66,7 @@ index e6cf52e..5dfcbcf 100644
  - `composer-clearance.ts` — 键盘压矮的横屏（issue #245）：量「可见带 / 顶栏底 / 座位高」，座位被
    插件的 top-z 顶栏盖住时给 frame 打 `data-mobile-nav-composer-tight`，CSS 让座位压过顶栏并收起
    dock 行。纯核 `core/composer-clearance.ts`；不是键盘抬升（座位本来就贴底，被盖的是它的上半截）。
-@@ -83,42 +104,42 @@ effect；`components/` 只用 `platform/` + `core/`。`tests/architecture.test.t
+@@ -83,42 +109,42 @@ effect；`components/` 只用 `platform/` + `core/`。`tests/architecture.test.t
  - `workspace-chip-toggle.ts` / `team-chip-toggle.ts` / `composer-plus-toggle.ts` — 三处
    「再点关闭」同型修补：宿主把菜单开成 `<Menu anchor={null} portal>`，触发器在 Menu 子树外，
    于是「外部 pointerdown 关闭」把自己的第二击也吃掉。

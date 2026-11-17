@@ -49,6 +49,11 @@ effect；`components/` 只用 `platform/` + `core/`。`tests/architecture.test.t
   `dsha-session-open`）与共用的那一个 `toggleDrawer`（晚提交关闭）。**Escape 只有这一个主**
   （Phase 1 ④）：归属顺序 宿主 `[aria-modal=true]` 弹窗 > 插件的可关闭层（`dismissTopPanel()`，
   见 `platform/panel-stack.ts`）> 抽屉。层不再各挂 Esc —— 一次 Esc 只关一层。
+  注意**打开着的抽屉自己就是 `div[role=dialog][aria-modal=true]`**（`wtg9ga_root`），所以抽屉
+  开着时 Esc 一路归宿主：宿主的 modal 先吃、我们的面板栈不被问到，插件菜单随抽屉一起关
+  （`drawer-session-log` 的 frameObserver 见 `data-sidebar-collapsed` 回来就 closeMenu）。
+  抽屉关着、只有插件层在场时才是「一次 Esc 只关一层」的战场——别为前者调换模态检查与
+  `dismissTopPanel()` 的顺序。
 - `drawer-session-log.ts` — 抽屉品牌行右端的会话日志导出图标（issue #225，替代页脚胶囊）：往
   `[class*="sidebarCol"] [class*="logoRow"]` 注入 `data-mobile-nav="session-log"` 按钮，
   `scopes:['*']` 处理宿主重建，`dispose` 退订 + 移除；无当前会话置灰。点开的下载菜单是面板栈的一层

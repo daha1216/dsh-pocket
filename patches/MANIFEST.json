@@ -67,9 +67,9 @@
       "seq": 8,
       "file": "effects/AGENTS.md",
       "patch": "0008-effects__AGENTS.md.patch",
-      "added": 46,
+      "added": 51,
       "removed": 25,
-      "sha256": "9ccfc01198289217abc88abe3ee5b7a33a8a2066bb0544fbf8c70e7b19555cdb"
+      "sha256": "a97d64104c62d4efeabbd7a443df3e2315894250df23fd49022c0852366637a5"
     },
     {
       "seq": 9,
