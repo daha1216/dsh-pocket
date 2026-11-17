@@ -1,3 +1,37 @@
+## [3.1.0](https://github.com/daha1216/dsh-pocket/compare/v3.0.12...v3.1.0) (2026-11-17)
+
+> 按终局评审做完 Phase 0 止血与 Phase 1 五项重构，并补上手机端轻量视图（路线 A）、使用探针与三处真机故障修复。
+
+### Features
+
+* **lite:** 手机端轻量视图 `GET /__dsh-pocket/lite`：由代理直出四个静态文件（index.html / app.css / app.js / manifest.webmanifest，进程内缓存按 mtime 失效），不加载宿主界面——线上宿主页带 225 个 `style[data-plugin]`、约 1.1 MB CSS，轻量视图只做「看会话、发消息、批审批」三件事，弱网和旧手机快得多，也能加到主屏幕（独立 manifest 与 theme-color）。数据走宿主自己的 `/api/session/list`、`session/messages`、`session/send`，审批走 `remote.mux` 的 `$events`，两边读写同一份会话；页面直出前代理先用 `GET /?token=…` 替浏览器换好宿主 cookie，所以手机上首屏没有二次跳转、token 也不留在地址栏。宿主界面仍是默认入口，轻量视图里和断线横幅里都有回主界面的入口
+* **probe:** 使用探针（默认关）：`client/mobile/probe-core.mjs` 采集页面停留、点击区域、断线恢复耗时、锚点缺失与设备环境，宿主侧 `lib/probe.mjs` 用字段白名单 `normalizePacket` 重建后落盘 `$DSH_HOME/dsh-pocket/probe.jsonl`，8 MB 轮转、每分钟最多 60 包、两包间隔 ≥500ms，不联网也不含消息内容；`node scripts/probe-report.mjs --days 7` 出人读周报并给出「轻量视图 / 宿主 UI」判定。因为评审已直接定下路线 A，探针默认关闭，公开 fork 不默认采集，需要数据时在设置里打开
+* **settings:** 缓存统一 36 MiB 预算（各类响应共享同一份配额，不再各自为政）并在设置页加「清缓存」；同时收掉 6 处体验断点：断线横幅、首访引导、登录页说明、局域网调试提示、回底胶囊、键盘动画期取消过渡
+
+### Bug Fixes
+
+* **mobile:** 左上角抽屉开关看不见——宿主给标题簇 `class*="_titleCluster"` 挂了 `mask-image: linear-gradient(to left, transparent calc(.3 * var(--title-cluster-fade)), #000 var(--title-cluster-fade))`（实测 `--title-cluster-fade` 为 20px），而 mask 盒只覆盖元素自身 border box；插件把 toggle 绝对定位在 header 的 `left: 8px`，整颗落在簇盒外被擦成透明（`elementFromPoint(22,12)` 只拿到标题行，按钮既画不出也点不到，但 `display: flex`、`visibility: visible`、`opacity: 1` 一切正常，所以按位置和层级怎么查都查不出来）。手机档把标题簇的 mask 关掉（`-webkit-mask-image: none !important; mask-image: none !important`），按钮恢复绘制与命中，顺带修好同排文件夹按钮右缘被渐隐咬淡
+* **mobile:** 断线重连风暴，页面反复跳——插件链路看门狗在宿主自报断线时立刻 `connection.reconnect()`，与宿主自己的退避重连抢跑：实测 3 轮「断网 4 秒 / 恢复 7 秒」共建了 9 条 WebSocket（每轮 3 条），恢复时间被拖到 7 秒以上，页面每轮重建一次。改成只对「静默死」（快照说 up 但两次探活都失败）强制重连，宿主自报断线时等 15 秒才补一次；复测同样 3 轮只剩 1+3 条 socket
+* **mobile:** 冷启动误报断线——首次连接成功前 `generation` 本来就是 undefined，判断被当成 down，页面还在「Loading plugins…」时就弹红条并抢跑 reconnect。改为首次连上之前一律不算断线，只保留 30 秒「一直连不上」的安全网；复测冷启动 0 条横幅，横幅本身也加了 1200ms 宽限与 3 秒绿条门槛，短抖动不再闪
+* **lite:** 列表轮询把弱网拖死——宿主 `session/list` 没有分页参数（limit / maxSessions / projections 全被忽略），本机 2856 个会话一次 16.7 MiB JSON、2.2–4.2 秒，而轻量视图每 5 秒重拉一次且没有单飞保护。改为 localStorage 先渲染缓存、请求单飞、会话数 ≥400 时轮询降到 30 秒；页面资源改为按文件 mtime 失效，改 CSS/JS 不再需要重启宿主
+
+### 重构与维护
+
+* **upstream:** `client/mobile/upstream/` 不再是「没人知道改了哪」的手改 fork：源换成 `vendor/dsh-web-mobile/`（git archive v3.2.3 = 91b328c 的 72 个文件快照 + 逐文件 sha256 清单），构建期套三条变换（T0 换行归一化、T1 命名空间改名、T2 stats 选择器让位），本地补丁固化进 `patches/`（40 个补丁，+1246/−1326）并带 MANIFEST 与哈希校验；`npm run upstream:check|apply|regen|bump` 取代原先硬编码落点的私人同步脚本。`client/mobile/PORTING.md` 重写，补上补丁 ↔ 历史台账 #1…#17 的对照；`.gitattributes` 钉住 LF，新 clone 直接 `upstream:check` 就 OK
+* **proxy:** `lib/proxy.mjs` 从 2454 行降到 390 行，按职责拆成 `lib/proxy/` 下 13 个模块（auth / auth-flow / cache / handshake / hosts / html-inject / inject / pages / response-encode / response-gate / slim-response / upgrade / ws），27 个公开导出一个没变，调用方无需改动
+* **settings:** `client/index.jsx` 从 1253 行降到 142 行，拆出 `client/settings/` 下 `use-settings.js`（20 个状态 + 7 个 ref 的数据层，`useSettings()` 单一数据源，10 秒轮询只在页面可见时跑）、`sections.jsx`（连接 / 偏好 / 维护 / 弹窗四个分区的纯渲染函数）、`ui.jsx`、`util.js`、`styles.js`；七个源码断言测试改用 `test/helpers/settings-source.js` 拼源码，断言口径不变
+* **mobile:** Phase 1 ④ 收敛键盘与 Escape 归属：4 个 focus / keyboard guard 合成一个 `focus-domain`（唯一 `installMobileEffect`、单影子槽、单窗口、按下事件统一分发，composer 长按粘贴的关闭判据抽成纯逻辑 `core/focus-press.ts`）；3 个抽屉 effect 的 Escape 收归 `platform/panel-stack.ts`，优先级固定为「宿主 `aria-modal` 弹窗 > 插件可关闭层 > 抽屉」，一次 Esc 只关一层
+* **phase 0:** 删死路径（CLI 独立模式、`installComposerKeyboardLift`、aionui 兼容层，CSS 6907 → 6633 行）；新增锚点契约测试把 170 个锚点（118 host / 25 legacy / 27 external）钉在 `client/mobile/anchors.ts`；更新检查不再探测 npm registry、也不代用户跑更新；断线恢复从约 12 秒降到约 2.9 秒
+
+### 测试
+
+* 全量 468 项（466 通过 / 2 跳过）。新增 `anchors-contract`、`upstream-transform`、`upstream-provenance`、`focus-domain`、`drawer-panel-stack`、`lite-view`、`probe-store`、`mobile-nav` 等测试；CI 继续校验 `client/client.js` 必须与源码同步构建
+
+### 升级提示
+
+* 轻量视图与使用探针都是新增入口，宿主界面不变，探针默认关闭；重跑一次 `dsh plugin --profile web add github:daha1216/dsh-pocket -w` 即可升级
+* 设置页改成四个分区（连接 / 偏好 / 维护 / 弹窗），条目名称未变但位置有移动
+* `client/mobile/upstream/` 现在是生成物：要改手机界面行为，请改 `patches/` 里的补丁或上游镜像之外的效果层，然后 `npm run upstream:regen`（细节见 `client/mobile/PORTING.md`）
 ## [3.0.12](https://github.com/daha1216/dsh-pocket/compare/v3.0.11...v3.0.12) (2026-11-09)
 
 > 修三个手机端故障：页签文字互相压住、滑开侧栏又自动收回、宿主静默断线后不自愈。

@@ -236,7 +236,7 @@ npx @deepseek-ai/dsh web
 ```sh
 npm install
 node client/build.mjs   # 改 client/ 后重新打包
-npm test                # 代理 / 认证 / 压缩 / 隧道 / 服务 / RPC / 设置 / 锚点 / 探针 / 轻量视图（430 测试）
+npm test                # 代理 / 认证 / 压缩 / 隧道 / 服务 / RPC / 设置 / 锚点 / 探针 / 轻量视图（468 测试）
 node scripts/probe-report.mjs --days 7   # 手机端使用探针周报（数据在 $DSH_HOME/dsh-pocket/probe.jsonl）
 ```
 

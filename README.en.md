@@ -224,7 +224,7 @@ Every 5 minutes the phone appends a summary packet to `$DSH_HOME/dsh-pocket/prob
 ```sh
 npm install
 node client/build.mjs   # rebuild after editing client/
-npm test                # proxy / auth / compression / tunnel / service / RPC / settings / anchors / probe / lightweight view (430 tests)
+npm test                # proxy / auth / compression / tunnel / service / RPC / settings / anchors / probe / lightweight view (468 tests)
 node scripts/probe-report.mjs --days 7   # weekly mobile usage report (data: $DSH_HOME/dsh-pocket/probe.jsonl)
 ```
 
