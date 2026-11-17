@@ -243,9 +243,9 @@
       "seq": 30,
       "file": "styles/layout.css.ts",
       "patch": "0030-styles__layout.css.ts.patch",
-      "added": 183,
+      "added": 196,
       "removed": 73,
-      "sha256": "01b4b5313cd5d0cd8e16918bc088921a77fee37732cd1c63881bd254500f85a4"
+      "sha256": "d790caf7e426c75e4f558b84cbb32e90f8550dede274d171e7550d5a5a3918c3"
     },
     {
       "seq": 31,

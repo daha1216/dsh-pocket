@@ -2206,6 +2206,19 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
        无实害；findHorizontalScroller 对 overflow-x 容器让位。 */
     overflow-x: auto !important;
   }
+  /* 宿主给标题簇挂了一条渐隐 mask（.an3WzG_titleCluster 的 mask-image:
+     linear-gradient(to left, transparent calc(.3 * var(--title-cluster-fade)),
+     #000 var(--title-cluster-fade))，实测 --title-cluster-fade=20px）。mask 的
+     盒子只覆盖簇自身的 border box，画在盒外的绝对定位子节点会被整体 mask 成
+     全透明——toggle 钉在 header 的 left:8（簇从 x=36 起），整颗按钮就这样消失，
+     elementFromPoint(22,12) 也只拿到 titleRow（2026-11-17 手机端报「左上角的
+     按钮没有了」；实测只把这条 mask 去掉，按钮立刻恢复绘制与命中）。手机档关掉
+     渐隐：右端那个 utility 座位在本插件里是空的，渐隐在这只剩副作用，还会把
+     files 按钮右缘一起咬淡。 */
+  [data-mobile-nav="frame"] [data-phase] header [class*="_titleCluster"] {
+    -webkit-mask-image: none !important;
+    mask-image: none !important;
+  }
   [data-mobile-nav="frame"] [data-phase] header:has([class*="_headerLeading"]) [class*="_titleCluster"] > [class*="_crumbs"] {
     /* 标题改成自适应：面包屑条吃掉动作区之外的剩余宽度，标题多长就显示多少，
        装不下时由每一段自己的滑动窗口（见下）横向滑。min-width 保底 4 字，

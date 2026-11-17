@@ -66,3 +66,14 @@ test('抽屉 frame 样式 + 桌面隐藏闸在产物中（宽屏/鼠标设备不
   );
   assert.ok(bundle.includes('data-sidebar-collapsed'), '抽屉状态订阅 data-sidebar-collapsed 存在（a11y 与 chrome 状态）');
 });
+
+test('标题簇的 mask 渐隐在手机档被关掉（否则左缘的 toggle 整颗被 mask 掉）', () => {
+  // 宿主给 .an3WzG_titleCluster 挂的是 mask-image 渐隐，而 mask 的盒子只覆盖簇自身
+  // 的 border box：钉在 header left:8 的 toggle（簇从 x=36 起）落在盒外，被整体 mask
+  // 成透明、elementFromPoint 也取不到 —— 2026-11-17 手机端「左上角的按钮没有了」。
+  assert.match(
+    bundle,
+    /header \[class\*="_titleCluster"\] \{\s+-webkit-mask-image: none !important;\s+mask-image: none !important;/,
+    'client.js 必须带上关掉标题簇 mask 的那条规则',
+  );
+});

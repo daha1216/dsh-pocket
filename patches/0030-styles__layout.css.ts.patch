@@ -1,5 +1,5 @@
 diff --git a/styles/layout.css.ts b/styles/layout.css.ts
-index 0b8d4a4..d37e5ff 100644
+index 0b8d4a4..4d5c41f 100644
 --- a/styles/layout.css.ts
 +++ b/styles/layout.css.ts
 @@ -41,6 +41,10 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
@@ -203,7 +203,27 @@ index 0b8d4a4..d37e5ff 100644
    }
    /* 0.1.6 的新头部里，titleRow 的第一个孩子是新增的空座位
       headerLeading（macOS 桌面控件，安卓上渲染 null）。插件按 0.1.5 老结构
-@@ -2224,7 +2317,7 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
+@@ -2113,6 +2206,19 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
+        无实害；findHorizontalScroller 对 overflow-x 容器让位。 */
+     overflow-x: auto !important;
+   }
++  /* 宿主给标题簇挂了一条渐隐 mask（.an3WzG_titleCluster 的 mask-image:
++     linear-gradient(to left, transparent calc(.3 * var(--title-cluster-fade)),
++     #000 var(--title-cluster-fade))，实测 --title-cluster-fade=20px）。mask 的
++     盒子只覆盖簇自身的 border box，画在盒外的绝对定位子节点会被整体 mask 成
++     全透明——toggle 钉在 header 的 left:8（簇从 x=36 起），整颗按钮就这样消失，
++     elementFromPoint(22,12) 也只拿到 titleRow（2026-11-17 手机端报「左上角的
++     按钮没有了」；实测只把这条 mask 去掉，按钮立刻恢复绘制与命中）。手机档关掉
++     渐隐：右端那个 utility 座位在本插件里是空的，渐隐在这只剩副作用，还会把
++     files 按钮右缘一起咬淡。 */
++  [data-mobile-nav="frame"] [data-phase] header [class*="_titleCluster"] {
++    -webkit-mask-image: none !important;
++    mask-image: none !important;
++  }
+   [data-mobile-nav="frame"] [data-phase] header:has([class*="_headerLeading"]) [class*="_titleCluster"] > [class*="_crumbs"] {
+     /* 标题改成自适应：面包屑条吃掉动作区之外的剩余宽度，标题多长就显示多少，
+        装不下时由每一段自己的滑动窗口（见下）横向滑。min-width 保底 4 字，
+@@ -2224,7 +2330,7 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
       !important 胜宿主 (0,1,0) 普通声明，与书写顺序无关；data-mobile-nav=
       "stats" 是 stats-line 效果打的稳定标记，无哈希、跨宿主代际可用。
       本条置于 ①嵌套块外：裁切陷阱与断点 A 的档位无关，全移动宽度生效。 */
@@ -212,7 +232,7 @@ index 0b8d4a4..d37e5ff 100644
      justify-content: flex-start !important;
      /* 指标行的空隙在手机上偏松（2026-10-07 店主截图：「距离缩一点，更紧致一点」）。
         宿主 dsh-client-ui-chat 的 StatsPills 叠了三层：root 的 12px 列间距 +
-@@ -2235,18 +2328,19 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
+@@ -2235,18 +2341,19 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
         限定在本插件自己的 stats 标记内：换代只会让规则惰性化，不会误伤别处。 */
      gap: 6px !important;
    }
@@ -239,7 +259,7 @@ index 0b8d4a4..d37e5ff 100644
    /* 三轮（店主截图：两组之间 ~26px，组内「·」只有 ~4px，环 ~12px，疏密不一）：
       组间距原是 stats gap 6 + 锚 margin 3 + 两侧药丸内边距 6+6 叠出来的，这里把药丸
       朝向组间的那侧内边距与锚 margin 清零，组间只由 stats 的 gap 决定（12px）；环与
-@@ -2254,7 +2348,7 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
+@@ -2254,7 +2361,7 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
    [data-mobile-nav="frame"] [data-phase] [data-composer-dock]:has([data-composer-stat]) {
      gap: 8px !important;
    }
@@ -248,7 +268,7 @@ index 0b8d4a4..d37e5ff 100644
      flex: 1 1 auto !important;
      width: auto !important;
      gap: 12px !important;
-@@ -2341,7 +2435,12 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
+@@ -2341,7 +2448,12 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
      display: none !important;
    }
    [data-mobile-nav="frame"] [data-phase] header:has([class*="_headerLeading"]) [role="tablist"] {
@@ -262,7 +282,7 @@ index 0b8d4a4..d37e5ff 100644
      margin-top: 4px !important;
    }
    /* 状态 chip 的座位：
-@@ -2442,6 +2541,7 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
+@@ -2442,6 +2554,7 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
      bottom: auto !important;
      width: auto !important;
      max-width: none !important;
@@ -270,7 +290,7 @@ index 0b8d4a4..d37e5ff 100644
      max-height: calc(100dvh - 96px) !important;
    }
    /* 官方 agent-team 插件（@deepseek-ai/dsh-experimental-client-ui-agent-team）的
-@@ -2466,6 +2566,7 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
+@@ -2466,6 +2579,7 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
         面板伸到 y=828，底部 90px 的任务列表被输入框盖住（2026-09-19 用户
         报障）。120px = composer 区 106px + 14px 呼吸间距；键盘弹出时 dvh
         收缩，面板随之再缩。 */
@@ -278,7 +298,7 @@ index 0b8d4a4..d37e5ff 100644
      max-height: calc(100dvh - 200px) !important;
      /* 面板虽被拖出头部渲染点，white-space 仍继承 0.1.6 头部的 nowrap
         （头部整行防换行是既有决策）——手机 374px 宽 + 长任务标题时内容
-@@ -2539,6 +2640,20 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
+@@ -2539,6 +2653,20 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
      right: 8px !important;
      margin: 0 !important;
    }
@@ -299,7 +319,7 @@ index 0b8d4a4..d37e5ff 100644
    /* 2026-10-12：≥3 标签版的让位规则（原 right:126px）已一并删除 —— 同 Y1，
       主次对调后谱系 chip 不再为后台任务 chip 让位。 */
    /* 真机反馈：「标题下面多了一条灰色滑条」。第 4/5 条为了让长标题能左右拖着看，
-@@ -3262,12 +3377,15 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
+@@ -3262,12 +3390,15 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
         heading(≈154) + gap16 + toolbar(≈172) 放不下一行，就折成三行堆叠。
         这里禁止换行、把 heading 让成可收缩的 flex 项（min-width:0 才能压到内容宽），
         toolbar 保持自身宽度贴右；说明过长时在左列内换行，不再把工具栏挤下去。 */
@@ -321,7 +341,7 @@ index 0b8d4a4..d37e5ff 100644
      [data-mobile-nav="frame"] section[data-plugin-panel] [class*="_pageHeading"] {
        flex: 1 1 auto !important;
        min-width: 0 !important;
-@@ -3602,13 +3720,13 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
+@@ -3602,13 +3733,13 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
       Mbwy4a_ 是该包 QuestionComposer.module.css 的稳定前缀，哈希变更时整组
       规则自动失效，不误伤别家（哈希子串锚，非后缀锚，见 pitfalls「哈希子
       串」）。 */
@@ -338,7 +358,7 @@ index 0b8d4a4..d37e5ff 100644
      content: '';
      position: absolute;
      inset: -4px;
-@@ -3663,17 +3781,17 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
+@@ -3663,17 +3794,17 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
       until: 宿主把 Mbwy4a_body 的 overflow-x 钉成 hidden/clip 并给五族文本补换行、或卡片自带「展开」形态与键盘感知定高 —— 届时整节删除
       test: tests/question-fullscreen.test.ts
    */
@@ -362,7 +382,7 @@ index 0b8d4a4..d37e5ff 100644
      min-width: 0;
      overflow-wrap: anywhere;
    }
-@@ -3681,11 +3799,11 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
+@@ -3681,11 +3812,11 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
       "Mbwy4a_headerActions" 的前缀子串（pitfalls §哈希子串：前缀重叠片段用 :not
       防误伤），少了这个 :not 就会把动作行的 padding 一起改成 10px 8px 0 12px。 */
    @media (max-width: 767px) and (pointer: coarse) {
@@ -376,7 +396,7 @@ index 0b8d4a4..d37e5ff 100644
        position: relative;
        padding: 10px 8px 0 12px !important;
      }
-@@ -3703,7 +3821,7 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
+@@ -3703,7 +3834,7 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
         间距 2026-10-25 二批由 6 改 20：44px 热区要求三颗图标两两中心距 ≥44px，
         否则外扩的命中盒会彼此叠住、抢同一笔（见下一条）。可见图标仍是 24px，
         整排从 84px 变 112px；动作行 top 6 → 10 让 44px 热区整块落在卡片内。 */
@@ -385,7 +405,7 @@ index 0b8d4a4..d37e5ff 100644
        position: absolute;
        /* 10 而不是 6：宿主 _card 是 overflow:hidden，热区顶边要落在卡片内
           （6 − 10 = −4 会被裁掉 4px，44 只剩 40）。10 − 10 = 0，整 44 都在卡内；
-@@ -3720,19 +3838,19 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
+@@ -3720,19 +3851,19 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
         可见尺寸 / 圆底 / 行高一律不动（与 035dd21 的 44px 热区同一手法）。
         纵向会伸进正文首行右侧约 13px（热区 y 6~50、正文顶边 33）：正文不可点，
         可接受；换来的是 44px 的最小命中。 */
@@ -409,7 +429,7 @@ index 0b8d4a4..d37e5ff 100644
        /* 112（三颗 24 + 两个 20 间距）+ 6 右距 − 8 卡头右内边距 + 4 呼吸 ≈ 116：
           图标列整体右移后，eyebrow（短标题）不能钻到里面。 */
        margin-right: 116px;
-@@ -3742,7 +3860,7 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
+@@ -3742,7 +3873,7 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
         23 —— 字号不动、行距放宽，是同一密度带里最保守的一档，不再自创刻度。
         首行 padding-top 2：图标底边 30，标题顶边 = 10 + 16 + 5 + 2 = 33，仍不重叠。
         Markdown 段落（_detail 走 MarkdownText）补 8px 段距，末段不留尾隙。 */
@@ -418,7 +438,7 @@ index 0b8d4a4..d37e5ff 100644
        padding-top: 2px;
        font-size: 15px;
        line-height: 23px;
-@@ -3756,10 +3874,10 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
+@@ -3756,10 +3887,10 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
           （约 6~7 行正文），问题区与选项区高度观感终于同级。
           overscroll-behavior:contain 防止滑到底后
           把会话一起带走；touch-action 按全库约定写 pan-y pinch-zoom。
@@ -433,7 +453,7 @@ index 0b8d4a4..d37e5ff 100644
      }
      /* @patch
         id: question-card-single-scroll
-@@ -3770,28 +3888,28 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
+@@ -3770,28 +3901,28 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
         until: 宿主让 header 参与滚动或自己给长问题限高
         test: tests/question-fullscreen.test.ts
      */
@@ -466,7 +486,7 @@ index 0b8d4a4..d37e5ff 100644
        position: sticky;
        bottom: -10px;
        z-index: 1;
-@@ -3801,38 +3919,30 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
+@@ -3801,38 +3932,30 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
        margin-top: 4px !important;
        margin-bottom: -10px !important;
      }
@@ -515,7 +535,7 @@ index 0b8d4a4..d37e5ff 100644
      position: relative;
      display: grid;
      place-items: center;
-@@ -3846,12 +3956,12 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
+@@ -3846,12 +3969,12 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
      color: var(--dsw-alias-label-tertiary);
      cursor: pointer;
    }
@@ -530,7 +550,7 @@ index 0b8d4a4..d37e5ff 100644
      width: 14px;
      height: 14px;
    }
-@@ -3864,12 +3974,12 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
+@@ -3864,12 +3987,12 @@ export const LAYOUT_CSS = `/* ---------- mobile-only layout (narrow viewport AND
    [data-mobile-nav="frame"][data-mobile-nav-question-full] [data-mobile-nav="question-expand"] .dsh-web-mobile-question-collapse {
      display: block;
    }
