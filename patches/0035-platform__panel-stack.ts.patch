@@ -1,0 +1,51 @@
+diff --git a/platform/panel-stack.ts b/platform/panel-stack.ts
+new file mode 100644
+index 0000000..30d2e52
+--- /dev/null
++++ b/platform/panel-stack.ts
+@@ -0,0 +1,45 @@
++// Platform layer: who owns Escape while a plugin-owned layer is open.
++//
++// 2026-11-17（Phase 1 ④，评审 §6.2「3 个抽屉 effect → 一个面板栈」）：抽屉里可关闭的
++// 层以前各挂一个 document 捕获期 Escape——drawer-session-log 的菜单关自己，drawer-close
++// 同时把抽屉也收掉，一次 Esc 关两层，用户按一次就丢了上下文。现在归属只有一个：
++// 层打开时给自己打 PANEL_MARKER，drawer-close 那唯一的 Escape 监听先问「有没有层要关」，
++// 有就只关那一层并吃掉这个键；没有才轮到抽屉。
++//
++// 层与其所有者之间靠 DOM 标记 + 事件通信，不共享模块状态：两个 effect 分属不同 reconciler
++// 任务、装卸时机不同，模块级单例反而要额外管生命周期（也与 effects/AGENTS.md 的
++// 「跨效果状态用 data-* 标记」一致）。事件名与 panel-exit 的 dsh-mobile-panel-exit 同族。
++//
++// 栈的深度只在「谁在上面」这一个意义上成立：portal 层按打开顺序追加到 body 末尾，
++// 所以 DOM 顺序里最后一个开着的层就是最上面那层。
++//
++// 自带 aria-modal="true" 的层（composer-file-picker 的两选项浮层）不必进栈：drawer-close
++// 在问栈之前就先让位给 aria-modal，那些层自己处理 Escape。
++
++/** Marks an open, dismissible layer owned by an effect. The value names the layer. */
++export const PANEL_MARKER = 'data-mobile-nav-panel'
++
++/** Asks the topmost open layer to close itself. Dispatched on the layer element,
++ *  bubbles, carries no detail: the layer already knows what to do. */
++export const PANEL_DISMISS_EVENT = 'dsh-mobile-panel-dismiss'
++
++/** Every open layer, newest last (portals append). */
++export function openPanels(): HTMLElement[] {
++  return Array.from(document.querySelectorAll<HTMLElement>(`[${PANEL_MARKER}]`))
++}
++
++/**
++ * Close the topmost open layer.
++ *
++ * @returns true when a layer took the request — the caller must treat Escape as
++ *   consumed and leave the drawer alone. A layer that is already closing still
++ *   counts: the next Escape should close the drawer, so it must drop its own
++ *   marker as part of closing (the drawer-session-log menu removes its node).
++ */
++export function dismissTopPanel(): boolean {
++  const panels = openPanels()
++  const top = panels[panels.length - 1]
++  if (top === undefined) return false
++  top.dispatchEvent(new CustomEvent(PANEL_DISMISS_EVENT, { bubbles: true, composed: true }))
++  return true
++}

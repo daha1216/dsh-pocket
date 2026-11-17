@@ -1,0 +1,99 @@
+diff --git a/index.tsx b/index.tsx
+index 4918ac9..c8df046 100644
+--- a/index.tsx
++++ b/index.tsx
+@@ -11,8 +11,11 @@ import { installOverlayInteractions } from './effects/drawer-close.ts'
+ import { installSidebarSwipe } from './effects/sidebar-swipe.ts'
+ import { installSubagentChipTouch } from './effects/subagent-chip-touch.ts'
+ import { installSessionMenuDelete } from './effects/session-menu.ts'
+-import { installComposerKeyboardGuard } from './effects/composer-keyboard-guard.ts'
+-import { installComposerKeyboardLift } from './effects/composer-keyboard-lift.ts'
++import { composerKeyboardPolicy } from './effects/composer-keyboard-guard.ts'
++import { installFocusDomain } from './effects/focus-domain.ts'
++import { modelMenuKeyboardPolicy } from './effects/model-menu-keyboard-guard.ts'
++import { createSessionFocusPolicy } from './effects/session-focus-guard.ts'
++import { shortcutModalKeyboardPolicy } from './effects/shortcut-modal-keyboard-guard.ts'
+ import { installComposerClearance } from './effects/composer-clearance.ts'
+ import { installDocumentScrollLock } from './effects/document-scroll-lock.ts'
+ import { installQuestionFullscreen } from './effects/question-fullscreen.ts'
+@@ -20,13 +23,9 @@ import { installComposerPlusToggle } from './effects/composer-plus-toggle.ts'
+ import { installWorkspaceChipToggle } from './effects/workspace-chip-toggle.ts'
+ import { installTeamChipToggle } from './effects/team-chip-toggle.ts'
+ import { installModelMenuAnchor } from './effects/model-menu-anchor.ts'
+-import { installShortcutModalKeyboardGuard } from './effects/shortcut-modal-keyboard-guard.ts'
+-import { installModelMenuKeyboardGuard } from './effects/model-menu-keyboard-guard.ts'
+ import { installPluginCardTap } from './effects/plugin-card-tap.ts'
+ import { installInstalledListRows } from './effects/installed-list.ts'
+ import { installTabletQuickSettings } from './effects/tablet-quick-settings.ts'
+-import { installSessionFocusGuard } from './effects/session-focus-guard.ts'
+-import { installAionuiCompat } from './effects/aionui-compat.ts'
+ import { installComposerPasteGuard } from './effects/composer-paste-guard.ts'
+ import { installComposerFilePicker } from './effects/composer-file-picker.ts'
+ import { installAttachmentMention } from './effects/attachment-mention.ts'
+@@ -224,15 +223,23 @@ export function apply(ctx: ClientContext): void {
+   // hover-timer driven and has no onClick on the count variant).
+   installSubagentChipTouch(ctx)
+ 
+-  // iOS: tapping the composer's send/stop/+ buttons must not re-raise the
+-  // dismissed keyboard (upstream keepFocus focuses the editor on mousedown).
+-  installComposerKeyboardGuard(ctx)
+-  // iOS: the host Lexical scroll helper mis-scrolls the window on every
+-  // keystroke (issue #149); pin the composer seat above the keyboard.
+-  // 2026-10-31: 键盘抬升不武装。帧数据显示它和引擎自己的滚动纠正互相拉扯
+-  // （seat 578→283→560，conv 8572↔8587 每帧来回），而引擎单独工作时座位是落在
+-  // 可见带内的。实现原样保留在 effects/composer-keyboard-lift.ts，改回一行即可重开。
+-  void installComposerKeyboardLift
++  // Phase 1 ④ (评审 §6.2): the four keyboard guards are policies of ONE effect —
++  // one capture-listener set, one shadow slot, one timed window
++  // (platform/focus-domain.ts; each guard file keeps its own doc block for the
++  // failure it prevents). Order carries no meaning: the policies share no state.
++  installFocusDomain(ctx, [
++    // 快捷键弹层打开时宿主把焦点抢到搜索框，键盘盖掉半个屏幕。
++    shortcutModalKeyboardPolicy,
++    // 模型菜单 drill-in 的 passive effect 聚焦「搜索模型…」。
++    modelMenuKeyboardPolicy,
++    // composer 的 send/stop/+ 在 mousedown 里重新聚焦编辑器。
++    composerKeyboardPolicy,
++    // 切会话 / 面板退场重挂载 InputBar 时的自动聚焦。
++    createSessionFocusPolicy(ctx),
++  ])
++  // 2026-11-12：上游 #149 的键盘抬升（effects/composer-keyboard-lift.ts）已删除。帧数据
++  // 显示它和引擎自己的滚动纠正互相拉扯（seat 578→283→560，conv 8572↔8587 每帧来回），
++  // 而引擎单独工作时座位就落在可见带内。重开这条路要先解释那组帧数据为什么不再成立。
+   // Keyboard-shrunken landscape (issue #245): the sticky composer seat's editing
+   // row lands inside the opaque, z-index-30 conversation header, so the input
+   // box is covered until the page reloads. Measure the band and let the CSS
+@@ -256,23 +263,8 @@ export function apply(ctx: ClientContext): void {
+   // Model/reasoning menu portals to <body>; the CSS centering rule died with the
+   // portal move, so re-anchor it on the trigger here (owner report: opens far left).
+   installModelMenuAnchor(ctx)
+-  // Shortcut modal (settings → 通用设置 → 快捷键): the host focuses its search
+-  // field on open, which raises the soft keyboard over a page the user came to
+-  // EDIT, and the keyboard shrinking the viewport resizes the sheet (owner
+-  // report: 「打开的时候还是会闪，而且还会唤起键盘」).
+-  installShortcutModalKeyboardGuard(ctx)
+-  // Model / reasoning-level menu (owner report 2026-10-07): drilling into the
+-  // model pane focuses the host's 「搜索模型…」 field from a passive effect, so the
+-  // keyboard covers the list the user just opened. Same method-shadow cure,
+-  // armed from the capture-phase tap that precedes the pane switch.
+-  installModelMenuKeyboardGuard(ctx)
++
+   installPluginCardTap(ctx)
+-  // Entering a session (issue #140): the host's InputBar focuses the editor
+-  // from a [locked, sessionId, editor] passive effect on every switch, which
+-  // raises the soft keyboard over the history the user wanted to read. A short
+-  // shadow-focus window per observed session switch swallows that one
+-  // autofocus; real taps are unaffected.
+-  installSessionFocusGuard(ctx)
+ 
+   // Multi-line paste after an IME commit keeps only the first line (host
+   // Lexical routes Android's insertText paste through the text-insertion
+@@ -290,8 +282,6 @@ export function apply(ctx: ClientContext): void {
+ 
+   installPhoneChrome(ctx)
+ 
+-  installAionuiCompat(ctx)
+-
+   // Mobile file sharing: Files-tree row buttons + preview header button
+   // (official 0.2.0 slots), share sheet with download fallback.
+   installFileShare(ctx)

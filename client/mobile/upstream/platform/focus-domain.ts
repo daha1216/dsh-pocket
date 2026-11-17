@@ -1,0 +1,189 @@
+// Platform layer: the one focus domain every mobile keyboard guard shares.
+//
+// 2026-11-17（Phase 1 ④，评审 §6.2）：四个键盘守卫此前各自挂一套 document 捕获监听，
+// 各自抄一份 own-property 影子配方；其中 composer-keyboard-guard 与 session-focus-guard
+// 还共用同一个影子槽（同一 marker 属性、同一个 delete el.focus）却不共享状态——谁先
+// restore 就把对方的影子拆了，而对方仍以为自己的窗口还开着。这些状态现在只由本模块持有：
+// 一个影子槽、一个定时窗口、一组捕获监听、一条「按一下」事件流，以及
+// core/prototype-focus-shadow.ts 那个 input 原型影子（模块级单例，同装互不覆盖）。
+// 守卫只剩触发条件与决策（见 effects/focus-domain.ts 的策略表）。
+//
+// 本模块不读 ctx、不注册 effect：它是 platform 层原语，武装/拆卸由 effects/focus-domain.ts
+// 那唯一一个 installMobileEffect 负责。
+import { shadowFocus } from '../core/prototype-focus-shadow.ts'
+import type { FocusSkip } from '../core/prototype-focus-shadow.ts'
+
+/** The one shadow slot's marker: one own-property `focus` shadow at a time, shared by
+ *  every guard. The marker names the slot, not the guard that filled it. */
+export const SHADOW_MARKER = 'data-mobile-nav-focus-shadow'
+
+/** The Lexical editing surface — the only element whose programmatic focus is swallowed.
+ *  Present in every released host since 0.1.2-alpha.2 (docs/debug/composer-tree-recon.md). */
+export const COMPOSER_INPUT_SELECTOR = '[data-composer-input]'
+
+/** Which capture listener saw the press. Guards that only ever armed on pointerdown
+ *  filter on this instead of attaching their own listener set. */
+export type PressKind = 'pointer' | 'touch' | 'mouse'
+
+/** One press, already reduced to the element the guard has to reason about. */
+export interface PressEvent {
+  readonly kind: PressKind
+  readonly target: Element
+}
+
+export type PressHandler = (press: PressEvent) => void
+
+/** A guard's policy: installed while the mobile breakpoint is armed. Returning a
+ *  disposer detaches whatever the policy subscribed to. */
+export type FocusPolicy = (domain: FocusDomain) => (() => void) | undefined
+
+export interface FocusDomain {
+  /** The editing-surface selector, so guards never re-declare it. */
+  readonly inputSelector: string
+  /** Shadow one editing surface's own `focus`; false when it is already shadowed. */
+  shadow(element: HTMLElement): boolean
+  /** Drop the shadow and close the window (idempotent). */
+  release(): void
+  /** Open a guard window. `trackMounts` additionally shadows editing surfaces that
+   *  mount while it is open (session switches and panel exits remount the InputBar). */
+  hold(ms: number, trackMounts?: boolean): void
+  /** Whether a guard window is open right now. */
+  holding(): boolean
+  /** Subscribe to the capture-phase press stream; returns the unsubscribe. */
+  onPress(handler: PressHandler): () => void
+  /** Share the input-prototype focus shadow (core/prototype-focus-shadow.ts). */
+  guardInputFocus(shouldSkip: FocusSkip): () => void
+  /** Release everything this domain owns (effect teardown). */
+  dispose(): void
+}
+
+/** Create the domain and attach its one capture-listener set. */
+export function createFocusDomain(): FocusDomain {
+  let shadowed: HTMLElement | null = null
+  let windowTimer = 0
+  let windowOpen = false
+  const pressHandlers = new Set<PressHandler>()
+  const protoReleases = new Set<() => void>()
+
+  function dropShadow(): void {
+    // The shadowed node can be gone (session switch unmounts the InputBar): fall
+    // back to the marker so a stale slot can never outlive its element.
+    const element = shadowed !== null && shadowed.isConnected
+      ? shadowed
+      : document.querySelector<HTMLElement>(`[${SHADOW_MARKER}]`)
+    shadowed = null
+    if (element === null) return
+    element.removeAttribute(SHADOW_MARKER)
+    const own = element as Partial<Record<'focus', () => void>>
+    if (Object.prototype.hasOwnProperty.call(element, 'focus')) delete own.focus
+  }
+
+  function shadow(element: HTMLElement): boolean {
+    if (shadowed === element && element.hasAttribute(SHADOW_MARKER)) return false
+    dropShadow()
+    shadowed = element
+    element.setAttribute(SHADOW_MARKER, '')
+    Object.defineProperty(element, 'focus', {
+      configurable: true,
+      writable: true,
+      value: function swallowedFocus(): void {
+        /* a guard is holding this dispatch; keep the dismissed keyboard down */
+      },
+    })
+    return true
+  }
+
+  // Window-scoped mount observer: a resident childList+subtree observer would run
+  // on every streamed mutation for the whole app lifetime (2026-11-03 measurement).
+  const mounts = new MutationObserver(() => {
+    if (!windowOpen) return
+    const element = document.querySelector<HTMLElement>(COMPOSER_INPUT_SELECTOR)
+    if (element !== null) shadow(element)
+  })
+
+  function release(): void {
+    window.clearTimeout(windowTimer)
+    windowTimer = 0
+    windowOpen = false
+    mounts.disconnect()
+    dropShadow()
+  }
+
+  function hold(ms: number, trackMounts = false): void {
+    release()
+    windowOpen = true
+    if (trackMounts) {
+      const element = document.querySelector<HTMLElement>(COMPOSER_INPUT_SELECTOR)
+      if (element !== null) shadow(element)
+      mounts.observe(document.documentElement, { childList: true, subtree: true })
+    }
+    windowTimer = window.setTimeout(release, ms)
+  }
+
+  // Timing fallback for the window's lifetime: the host focuses a freshly mounted
+  // editor from the commit's synchronous layout-effect phase, before the observer
+  // microtask can shadow it (headless-measured 2026-09-29), so any focus that still
+  // lands on the editing surface inside the window is blurred on the spot — at the
+  // focusin capture phase, before the IME can rise.
+  function onFocusIn(event: Event): void {
+    if (!windowOpen) return
+    const target = event.target
+    if (target instanceof HTMLElement && target.closest(COMPOSER_INPUT_SELECTOR) !== null) target.blur()
+  }
+
+  function dispatchPress(kind: PressKind, event: Event): void {
+    const target = event.target
+    if (!(target instanceof Element)) return
+    // A tap on the editing surface is the user saying "I want to type": close the
+    // window on the spot so the residual shadow cannot eat this focus. Policies
+    // then see the press with the window already shut (the composer policy may
+    // re-open it for a control tap).
+    if (windowOpen && target.closest(COMPOSER_INPUT_SELECTOR) !== null) release()
+    for (const handler of pressHandlers) handler({ kind, target })
+  }
+
+  // All three press events: Android WebView often swallows the compatibility
+  // mousedown when touchstart was preventDefaulted (2026-09-23 real-device report),
+  // so a single entry point is not enough. Dispatch is idempotent per handler.
+  const onPointerDown = (event: Event): void => dispatchPress('pointer', event)
+  const onTouchStart = (event: Event): void => dispatchPress('touch', event)
+  const onMouseDown = (event: Event): void => dispatchPress('mouse', event)
+
+  function dispose(): void {
+    release()
+    document.removeEventListener('pointerdown', onPointerDown, true)
+    document.removeEventListener('touchstart', onTouchStart, true)
+    document.removeEventListener('mousedown', onMouseDown, true)
+    document.removeEventListener('focusin', onFocusIn, true)
+    for (const off of protoReleases) off()
+    protoReleases.clear()
+    pressHandlers.clear()
+  }
+
+  document.addEventListener('pointerdown', onPointerDown, true)
+  document.addEventListener('touchstart', onTouchStart, true)
+  document.addEventListener('mousedown', onMouseDown, true)
+  document.addEventListener('focusin', onFocusIn, true)
+
+  return {
+    inputSelector: COMPOSER_INPUT_SELECTOR,
+    shadow,
+    release,
+    hold,
+    holding: (): boolean => windowOpen,
+    onPress(handler: PressHandler): () => void {
+      pressHandlers.add(handler)
+      return () => {
+        pressHandlers.delete(handler)
+      }
+    },
+    guardInputFocus(shouldSkip: FocusSkip): () => void {
+      const off = shadowFocus(shouldSkip)
+      protoReleases.add(off)
+      return () => {
+        if (protoReleases.delete(off)) off()
+      }
+    },
+    dispose,
+  }
+}

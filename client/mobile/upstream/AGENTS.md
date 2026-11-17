@@ -47,6 +47,9 @@
 
 `platform/` 是每个 effect 共享的浏览器基础设施原语——`frame.ts`（`getFrame`/`findFrame` + 记忆化标记
 查找）、`breakpoints.ts`（`MOBILE_QUERY`/`DESKTOP_QUERY`/`TOUCH_QUERY`、`installMobileEffect`）、
+`focus-domain.ts`（`createFocusDomain`：四个键盘守卫共用的影子槽、定时窗口、捕获监听与按下事件流）、
+`panel-stack.ts`（`PANEL_MARKER` / `PANEL_DISMISS_EVENT` / `dismissTopPanel`：插件可关闭层与 Escape 的
+归属契约，层用 data-* 标记入栈、用事件关自己）、
 `device.ts`（`detectIosWebKit`）。它无特性语义、不拥有 DOM 标记。
 
 **依赖方向 `index.tsx → effects → platform → core`**；`components/` 可用 `platform/` + `core/` 但**绝不**

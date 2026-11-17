@@ -1,8 +1,8 @@
 diff --git a/AGENTS.md b/AGENTS.md
-index 82c0854..2d9365e 100644
+index 82c0854..cbba332 100644
 --- a/AGENTS.md
 +++ b/AGENTS.md
-@@ -39,9 +39,9 @@
+@@ -39,14 +39,17 @@
  - 任务只在移动断点激活时跑，每动画帧合并一次。`stats-line` 保持 `scopes: ['*', 'characterData']`——
    树键因为它的槽随树重建，文本键因为 TPS 更新可能以原地 `nodeValue` 改写到达。**加键安全；删掉树键
    正是这行要防的失效模式**。
@@ -15,7 +15,15 @@ index 82c0854..2d9365e 100644
  
  ## 分层与依赖
  
-@@ -61,9 +61,8 @@
+ `platform/` 是每个 effect 共享的浏览器基础设施原语——`frame.ts`（`getFrame`/`findFrame` + 记忆化标记
+ 查找）、`breakpoints.ts`（`MOBILE_QUERY`/`DESKTOP_QUERY`/`TOUCH_QUERY`、`installMobileEffect`）、
++`focus-domain.ts`（`createFocusDomain`：四个键盘守卫共用的影子槽、定时窗口、捕获监听与按下事件流）、
++`panel-stack.ts`（`PANEL_MARKER` / `PANEL_DISMISS_EVENT` / `dismissTopPanel`：插件可关闭层与 Escape 的
++归属契约，层用 data-* 标记入栈、用事件关自己）、
+ `device.ts`（`detectIosWebKit`）。它无特性语义、不拥有 DOM 标记。
+ 
+ **依赖方向 `index.tsx → effects → platform → core`**；`components/` 可用 `platform/` + `core/` 但**绝不**
+@@ -61,9 +64,8 @@
  同步）；misc.css.ts 的桌面隐藏块是它的精确补集，必须保持未安装形态。
  
  CSS 写在 `styles/`，不写进组件文件；保留拼接顺序与完整 CSS 注释/分段边界。**该顺序是行为契约，不是
@@ -27,7 +35,7 @@ index 82c0854..2d9365e 100644
  
  ## 选择器与 DOM 标记
  
-@@ -73,7 +72,6 @@ CSS 写在 `styles/`，不写进组件文件；保留拼接顺序与完整 CSS 
+@@ -73,7 +75,6 @@ CSS 写在 `styles/`，不写进组件文件；保留拼接顺序与完整 CSS 
  `[class*="_treeRow"]`，区分目录/文件时排除 `[class*="_treeArrowEmpty"]`。
  
  DOM 标记即跨模块状态契约：`data-mobile-nav="frame"`、`data-sidebar-collapsed`、

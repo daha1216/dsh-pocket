@@ -1,0 +1,33 @@
+diff --git a/core/focus-press.ts b/core/focus-press.ts
+new file mode 100644
+index 0000000..ee63191
+--- /dev/null
++++ b/core/focus-press.ts
+@@ -0,0 +1,27 @@
++/**
++ * Pure decision for one press inside the composer card (no DOM access).
++ *
++ * 2026-11-17（Phase 1 ④）：这段判定原本内联在 composer-keyboard-guard 的捕获监听里，
++ * 三条分支各自带着一次 `restore()` 调用，改一次就要重读整段监听。抽出来之后监听只负责
++ * 「算出三个布尔，交给这里」，判定表可以逐格单测（test/focus-domain.test.js）。
++ *
++ * 三格的语义（全部来自真机报障）：
++ * - 不在卡片内：与 composer 无关的按下，连窗口都不该碰。
++ * - 在编辑面上：用户自己点输入框 = 要打字，立刻收窗，绝不能让兜底 blur 打到这一下。
++ * - 在卡片空白处（输入区留白、输入区与按钮行之间 12px 的 gap）：引擎的长按手势会经触点
++ *   校正把光标放进编辑面并在窗口内聚焦，窗口开着就会把「粘贴」吃掉（2026-10-04 B2）。
++ *   所以空白处按「要打字」处理，与点编辑面同路。
++ * - 只有按在**控件**上才是宿主 keepFocus / focusDraftEditor 的来源：开窗吞掉程序化聚焦。
++ */
++export type ComposerPressVerdict = 'ignore' | 'close' | 'arm'
++
++/** Classify a composer press; see the module doc block for each branch. */
++export function classifyComposerPress(press: {
++  insideCard: boolean
++  onInput: boolean
++  onControl: boolean
++}): ComposerPressVerdict {
++  if (!press.insideCard) return 'ignore'
++  if (press.onInput) return 'close'
++  return press.onControl ? 'arm' : 'close'
++}

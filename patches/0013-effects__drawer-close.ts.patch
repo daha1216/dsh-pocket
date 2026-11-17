@@ -1,0 +1,39 @@
+diff --git a/effects/drawer-close.ts b/effects/drawer-close.ts
+index 9f217f8..57712cc 100644
+--- a/effects/drawer-close.ts
++++ b/effects/drawer-close.ts
+@@ -9,6 +9,7 @@ import { consumeIfGestured, isStrokeLocked } from './gesture-guard.ts'
+ import { findSessionIdInFiber, isTapWithinSlop, reactFiberOf } from './session-row-fiber.ts'
+ import { currentSessionIdOf, sessionsCanOpen } from '../core/sessions-compat.ts'
+ import { closeDrawerAnimated } from './sidebar-swipe.ts'
++import { dismissTopPanel } from '../platform/panel-stack.ts'
+ 
+ /** Finger-down to finger-up travel that still counts as a tap on a session row
+  *  (#49). Per-axis (`isTapWithinSlop` is max-norm, not Euclidean): the drawer
+@@ -27,7 +28,8 @@ let touchDownAt: { x: number; y: number } | null = null
+  * Drawer close interactions that are plain event listeners, not DOM
+  * reconciliation:
+  * - Escape closes the drawer (yielding to any open modal dialog, which owns
+- *   its own Escape handling).
++ *   its own Escape handling, and to a plugin-owned panel through
++ *   `dismissTopPanel()` — platform/panel-stack.ts).
+  * - Tapping a navigation target inside the drawer (session row, sidebar panel
+  *   row, task board / ssh takeover entries, search results) closes the drawer
+  *   so the content it opened gets the whole screen. Session-row action buttons
+@@ -75,9 +77,16 @@ export function installOverlayInteractions(ctx: ClientContext): void {
+       const frame = getFrame()
+       return frame !== null && !frame.hasAttribute('data-sidebar-collapsed')
+     }
++    // Escape 的唯一归属（Phase 1 ④，评审 §6.2）：宿主模态弹窗 > 插件的可关闭层 > 抽屉。
++    // 层（drawer-session-log 的下载菜单）以前自己挂一个 Esc，和这里同时触发，一次 Esc 会
++    // 把菜单和抽屉一起关掉；现在层只在自己身上打 PANEL_MARKER，由这里先问栈顶。
+     const onKeyDown = (event: KeyboardEvent): void => {
+       if (event.key !== 'Escape') return
+       if (document.querySelector('[aria-modal="true"]') !== null) return
++      if (dismissTopPanel()) {
++        event.preventDefault()
++        return
++      }
+       if (drawerOpen()) toggleSidebar()
+     }
+     // Capture phase: run before the shell or a plugin processes the click,

@@ -32,11 +32,12 @@ test('viewport-meta: band var follows the keyboard, the settle event fires once 
   assert.match(src, /dispatchEvent\(new CustomEvent\(VISIBLE_BAND_EVENT\)\)/);
 });
 
-test('session-focus-guard: input observer is window-scoped', () => {
-  const src = upstream('effects/session-focus-guard.ts');
-  assert.match(src, /windowOpen = true\s*\n\s*const el/);
-  assert.match(src, /inputObserver\.observe\(document\.documentElement, \{ childList: true, subtree: true \}\)/);
-  assert.match(src, /windowOpen = false\s*\n\s*inputObserver\.disconnect\(\)/);
+test('focus domain: input observer is window-scoped', () => {
+  // Phase 1 ④ 之后窗口化观察者在 platform/focus-domain.ts（四个守卫共用）。
+  const src = upstream('platform/focus-domain.ts');
+  assert.match(src, /windowOpen = true\s*\n\s*if \(trackMounts\)/);
+  assert.match(src, /mounts\.observe\(document\.documentElement, \{ childList: true, subtree: true \}\)/);
+  assert.match(src, /windowOpen = false\s*\n\s*mounts\.disconnect\(\)/);
 });
 
 test('session-focus-guard: resident observer watches only the panel-exit attribute', () => {
