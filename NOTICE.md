@@ -1,32 +1,64 @@
-# NOTICE / 来源与第三方声明
+# NOTICE / 来源与第三方开源许可声明
 
-本仓库**不是原始作品**，是以下项目的个人 fork（纯净合并版）。
+本项目（`dsh-pocket`）以 **GPL-2.0** 许可证开源发布（全文见根目录 `LICENSE`）。自 **v4.0.0** 起，本仓库作为独立架构版本自主演进，不再使用历史 `vendor/` 快照与 `patches/` 补丁队列机制，同时完整保留并致谢以下上游项目与第三方组件的版权及许可声明。
 
-## 主体：dsh-pocket
+---
 
-- 上游：https://github.com/shaobeichen/dsh-pocket （作者：程序员少北晨 / shaobeichen）
-- 许可：**GPL-2.0**（全文见 `LICENSE`，原样保留上游版权声明与许可文本）
-- 本仓库基线：上游 main（v2.10.6 线，d2e0b46），维护者 **大哈**（[@daha1216](https://github.com/daha1216)）
-- 合并策略：**纯净合并**——不带旧 fork 的自用定制（静态资源缓存与 PWA、已授权设备管理、
-  Web Push 通知等均不包含），只保留两上游的最新代码 + 必要适配修复
-  （如 dsh 0.2.0-rc.1 手机端模型设置页加载失败修复）+ 品牌化（设置页页脚与仓库链接指向本 fork）。
-- 按 GPL-2.0 要求：本副本同样以 GPL-2.0 发布；上游版权与许可全文保留，改动之处即本仓库
-  相对上游的 git 差异（`CHANGELOG.md` 为上游历史记录，原样保留）。
+## 1. 基础前身项目：shaobeichen/dsh-pocket
 
-## 移动端适配：dsh-web-mobile
+- **上游仓库**：https://github.com/shaobeichen/dsh-pocket
+- **原作者**：程序员少北晨（`shaobeichen`）
+- **许可证**：**GPL-2.0**（版权声明与许可正文完整保留于 `LICENSE`）
+- **演进说明**：本仓库早期由 [@daha1216](https://github.com/daha1216)（大哈）基于上游 `dsh-pocket` 派生维护；v4.0.0 重构了设备级持久认证、一步扫码配对、Worker 异步代理瘦身、隧道守护自愈与 DSH 官方规范 TSX 设置页，所有衍生修改均遵循 GPL-2.0 开源发布。
 
-- 上游：https://github.com/mexiaosqwq/dsh-web-mobile （作者：mexiaosqwq）
-- 许可：**MIT**（兼容 GPL-2.0），声明原文保留在 `client/mobile/LICENSE.dsh-web-mobile`
-- 范围：`client/mobile/upstream/**` 为其 `src/client/**` 的原样镜像，另含 pocket 侧适配层
+---
 
-## 运行时下载的第三方二进制：cloudflared
+## 2. 内化的移动端适配代码：mexiaosqwq/dsh-web-mobile (MIT)
 
-- 上游：https://github.com/cloudflare/cloudflared （Cloudflare，Apache-2.0）
-- **本仓库不打包、不分发**该二进制；`lib/tunnel.mjs` 在用户首次开启公网访问时按平台从
-  cloudflared 官方发布页（及国内镜像）下载到本机 `$DSH_HOME/dsh-pocket/bin/`，
-  并以 `--no-autoupdate` 启动。
+本仓库中用于将 DeepSeek Harness 桌面 Web 界面适配为移动端抽屉与触控体验的部分核心模块，最初移植并衍生自 `dsh-web-mobile`：
 
-## 依赖
+- **上游仓库**：https://github.com/mexiaosqwq/dsh-web-mobile
+- **原作者**：`mexiaosqwq`
+- **许可证**：**MIT License**（与 GPL-2.0 完全兼容）
+- **涉及路径与文件**：
+  - `client/mobile/upstream/**`（内化并持续维护的抽屉框架、焦点域管理、面板栈、手势与移动端样式层，已移除外部私有图标包运行时依赖并改为自有内联 SVG）
+  - `lib/delete-session.mjs`（会话回收站安全删除路由与事务逻辑）
+  - `client/mobile/LICENSE.dsh-web-mobile`（上游版权声明文件）
+- **MIT 版权与许可正文**：
 
-- 运行时依赖：`qrcode`（MIT）、`qrcode-terminal`（Apache-2.0）
-- 对等依赖：`@deepseek-ai/cordis`（DeepSeek Harness 侧提供，本仓库不打包）
+```text
+Copyright (c) mexiaosqwq
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+---
+
+## 3. 运行时按需下载的外部工具：cloudflared
+
+- **上游仓库**：https://github.com/cloudflare/cloudflared （Cloudflare, Inc.）
+- **许可证**：**Apache-2.0**
+- **说明**：本仓库**不打包、不分发** `cloudflared` 二进制文件。仅当用户主动配置并开启公网命名隧道且本机未安装 `cloudflared` 时，`lib/tunnel.mjs` 才从官方发布源或镜像按需下载至用户本机 `$DSH_HOME/dsh-pocket/bin/` 目录并以独立子进程方式调用。
+
+---
+
+## 4. 运行时与对等依赖
+
+- **运行时依赖**：`qrcode`（MIT License，用于本地生成配对与通道二维码）
+- **宿主对等依赖（Peer Dependencies）**：`@deepseek-ai/cordis`（由宿主 DeepSeek Harness 环境提供，本仓库不打包分发）

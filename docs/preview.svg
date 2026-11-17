@@ -1,0 +1,178 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="300" viewBox="0 0 640 300" fill="none">
+  <defs>
+    <linearGradient id="stageBg" x1="20" y1="10" x2="620" y2="290" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0F172A"/>
+      <stop offset="0.52" stop-color="#131C33"/>
+      <stop offset="1" stop-color="#0B1120"/>
+    </linearGradient>
+    <radialGradient id="ambientBlue" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(340 148) rotate(90) scale(140 250)">
+      <stop offset="0" stop-color="#3B82F6" stop-opacity="0.24"/>
+      <stop offset="1" stop-color="#1E3A8A" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="syncBeam" x1="276" y1="150" x2="424" y2="150" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#38BDF8"/>
+      <stop offset="0.5" stop-color="#3B82F6"/>
+      <stop offset="1" stop-color="#818CF8"/>
+    </linearGradient>
+    <linearGradient id="badgeFill" x1="330" y1="126" x2="374" y2="174" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2563EB"/>
+      <stop offset="1" stop-color="#4F46E5"/>
+    </linearGradient>
+    <linearGradient id="phoneShell" x1="426" y1="26" x2="588" y2="274" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#E2E8F0"/>
+      <stop offset="1" stop-color="#94A3B8"/>
+    </linearGradient>
+    <linearGradient id="desktopCard" x1="42" y1="42" x2="290" y2="258" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1E293B"/>
+      <stop offset="1" stop-color="#0F172A"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Self-contained rounded studio canvas (reads cleanly on both light and dark host panes) -->
+  <rect x="4" y="4" width="632" height="292" rx="24" fill="url(#stageBg)"/>
+  <rect x="4" y="4" width="632" height="292" rx="24" fill="url(#ambientBlue)"/>
+  <rect x="4.5" y="4.5" width="631" height="291" rx="23.5" stroke="#64748B" stroke-opacity="0.34" stroke-width="1"/>
+
+  <!-- Subtle background grid dots -->
+  <g fill="#94A3B8" fill-opacity="0.14">
+    <circle cx="312" cy="48" r="1.5"/>
+    <circle cx="336" cy="48" r="1.5"/>
+    <circle cx="360" cy="48" r="1.5"/>
+    <circle cx="384" cy="48" r="1.5"/>
+    <circle cx="312" cy="252" r="1.5"/>
+    <circle cx="336" cy="252" r="1.5"/>
+    <circle cx="360" cy="252" r="1.5"/>
+    <circle cx="384" cy="252" r="1.5"/>
+  </g>
+
+  <!-- ================= LEFT: DESKTOP DSH WINDOW ================= -->
+  <g>
+    <!-- Window container -->
+    <rect x="38" y="42" width="246" height="216" rx="16" fill="url(#desktopCard)" stroke="#475569" stroke-opacity="0.55" stroke-width="1"/>
+    <!-- Title bar -->
+    <path d="M38 58C38 49.1634 45.1634 42 54 42H268C276.837 42 284 49.1634 284 58V68H38V58Z" fill="#0F172A" fill-opacity="0.72"/>
+    <line x1="38" y1="68" x2="284" y2="68" stroke="#334155" stroke-width="1"/>
+    <circle cx="54" cy="55" r="3.5" fill="#EF4444" fill-opacity="0.85"/>
+    <circle cx="65" cy="55" r="3.5" fill="#F59E0B" fill-opacity="0.85"/>
+    <circle cx="76" cy="55" r="3.5" fill="#10B981" fill-opacity="0.85"/>
+    <rect x="118" y="51" width="86" height="8" rx="4" fill="#334155"/>
+
+    <!-- Desktop left session sidebar -->
+    <rect x="39" y="69" width="62" height="188" rx="0" fill="#0F172A" fill-opacity="0.45"/>
+    <line x1="101" y1="69" x2="101" y2="257" stroke="#334155" stroke-width="1"/>
+    <rect x="47" y="80" width="46" height="10" rx="5" fill="#2563EB" fill-opacity="0.32" stroke="#3B82F6" stroke-opacity="0.55" stroke-width="1"/>
+    <rect x="47" y="98" width="42" height="8" rx="4" fill="#334155" fill-opacity="0.85"/>
+    <rect x="47" y="113" width="36" height="8" rx="4" fill="#334155" fill-opacity="0.65"/>
+    <rect x="47" y="128" width="44" height="8" rx="4" fill="#334155" fill-opacity="0.5"/>
+
+    <!-- Desktop main conversation & terminal stream -->
+    <!-- User message pill -->
+    <rect x="150" y="80" width="120" height="22" rx="11" fill="#2563EB" fill-opacity="0.85"/>
+    <rect x="162" y="88" width="84" height="6" rx="3" fill="#EFF6FF" fill-opacity="0.9"/>
+
+    <!-- Agent terminal / code card -->
+    <rect x="113" y="112" width="157" height="72" rx="10" fill="#0B1120" stroke="#334155" stroke-width="1"/>
+    <path d="M124 127L131 133L124 139" stroke="#38BDF8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="136" y1="139" x2="148" y2="139" stroke="#38BDF8" stroke-width="2.4" stroke-linecap="round"/>
+    <rect x="124" y="150" width="96" height="5" rx="2.5" fill="#818CF8" fill-opacity="0.8"/>
+    <rect x="124" y="161" width="122" height="5" rx="2.5" fill="#64748B" fill-opacity="0.65"/>
+    <rect x="124" y="172" width="70" height="5" rx="2.5" fill="#34D399" fill-opacity="0.75"/>
+
+    <!-- Desktop bottom composer bar -->
+    <rect x="113" y="226" width="157" height="20" rx="10" fill="#0F172A" stroke="#334155" stroke-width="1"/>
+    <rect x="123" y="233" width="76" height="6" rx="3" fill="#475569"/>
+    <circle cx="260" cy="236" r="6" fill="#2563EB"/>
+
+    <!-- Floating Scan-to-Pair QR Card overlapping desktop edge -->
+    <rect x="218" y="112" width="78" height="78" rx="14" fill="#FFFFFF" stroke="#38BDF8" stroke-opacity="0.65" stroke-width="1.5"/>
+    <!-- QR Finder TL -->
+    <rect x="228" y="122" width="18" height="18" rx="3" stroke="#0F172A" stroke-width="3"/>
+    <rect x="234" y="128" width="6" height="6" rx="1" fill="#0F172A"/>
+    <!-- QR Finder TR -->
+    <rect x="268" y="122" width="18" height="18" rx="3" stroke="#0F172A" stroke-width="3"/>
+    <rect x="274" y="128" width="6" height="6" rx="1" fill="#0F172A"/>
+    <!-- QR Finder BL -->
+    <rect x="228" y="162" width="18" height="18" rx="3" stroke="#0F172A" stroke-width="3"/>
+    <rect x="234" y="168" width="6" height="6" rx="1" fill="#0F172A"/>
+    <!-- QR Data modules -->
+    <rect x="252" y="124" width="6" height="6" rx="1" fill="#2563EB"/>
+    <rect x="252" y="134" width="10" height="6" rx="1" fill="#0F172A"/>
+    <rect x="228" y="146" width="10" height="6" rx="1" fill="#0F172A"/>
+    <rect x="244" y="146" width="14" height="6" rx="1" fill="#2563EB"/>
+    <rect x="264" y="146" width="8" height="12" rx="1" fill="#0F172A"/>
+    <rect x="276" y="146" width="10" height="6" rx="1" fill="#0F172A"/>
+    <rect x="252" y="160" width="8" height="8" rx="1" fill="#0F172A"/>
+    <rect x="264" y="164" width="12" height="6" rx="1" fill="#2563EB"/>
+    <rect x="252" y="174" width="16" height="6" rx="1" fill="#0F172A"/>
+    <rect x="274" y="174" width="12" height="6" rx="1" fill="#0F172A"/>
+  </g>
+
+  <!-- ================= CENTER: ONE-STEP QR PAIRING WAVE ================= -->
+  <g>
+    <!-- Bidirectional luminous sync waves -->
+    <path d="M298 144C324 126 376 126 420 144" stroke="url(#syncBeam)" stroke-width="2.5" stroke-dasharray="5 5" stroke-linecap="round"/>
+    <path d="M298 158C324 176 376 176 420 158" stroke="url(#syncBeam)" stroke-width="2.5" stroke-opacity="0.7" stroke-dasharray="5 5" stroke-linecap="round"/>
+    <path d="M298 151H420" stroke="url(#syncBeam)" stroke-width="2" stroke-opacity="0.45"/>
+
+    <!-- Wireless pulse rings around center node -->
+    <circle cx="356" cy="151" r="34" stroke="#38BDF8" stroke-opacity="0.22" stroke-width="1.5"/>
+    <circle cx="356" cy="151" r="25" stroke="#60A5FA" stroke-opacity="0.38" stroke-width="1.5"/>
+
+    <!-- Central verified pairing hub badge -->
+    <circle cx="356" cy="151" r="18" fill="url(#badgeFill)" stroke="#BAE6FD" stroke-opacity="0.7" stroke-width="1.5"/>
+    <path d="M349 151.5L354 156.5L364 146" stroke="#FFFFFF" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- Sparkle accent above hub -->
+    <path d="M384 114L386.2 119.8L392 122L386.2 124.2L384 130L381.8 124.2L376 122L381.8 119.8L384 114Z" fill="#7DD3FC"/>
+  </g>
+
+  <!-- ================= RIGHT: MOBILE DRAWER CONVERSATION UI ================= -->
+  <g>
+    <!-- Smartphone outer shell -->
+    <rect x="424" y="24" width="174" height="252" rx="28" fill="url(#phoneShell)"/>
+    <!-- Smartphone inner bezel & screen -->
+    <rect x="429" y="29" width="164" height="242" rx="24" fill="#0B1120"/>
+    <rect x="429.5" y="29.5" width="163" height="241" rx="23.5" stroke="#334155" stroke-width="1"/>
+
+    <!-- Top dynamic island & live status header -->
+    <rect x="491" y="37" width="40" height="6" rx="3" fill="#1E293B"/>
+
+    <!-- Mobile header bar: drawer hamburger + session pill + live green dot + file icon -->
+    <g>
+      <line x1="444" y1="55" x2="456" y2="55" stroke="#CBD5E1" stroke-width="2" stroke-linecap="round"/>
+      <line x1="444" y1="60" x2="453" y2="60" stroke="#CBD5E1" stroke-width="2" stroke-linecap="round"/>
+      <rect x="466" y="53" width="66" height="9" rx="4.5" fill="#1E293B"/>
+      <circle cx="566" cy="57.5" r="4" fill="#10B981"/>
+      <circle cx="566" cy="57.5" r="7" stroke="#10B981" stroke-opacity="0.3" stroke-width="1.5"/>
+      <line x1="436" y1="70" x2="586" y2="70" stroke="#1E293B" stroke-width="1"/>
+    </g>
+
+    <!-- Synced user prompt bubble -->
+    <rect x="478" y="82" width="102" height="24" rx="12" fill="#2563EB"/>
+    <rect x="490" y="91" width="76" height="6" rx="3" fill="#EFF6FF" fill-opacity="0.92"/>
+
+    <!-- Synced agent response + terminal block -->
+    <rect x="441" y="116" width="139" height="68" rx="12" fill="#151F32" stroke="#334155" stroke-width="1"/>
+    <path d="M452 130L458 135L452 140" stroke="#38BDF8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="463" y1="140" x2="474" y2="140" stroke="#38BDF8" stroke-width="2.2" stroke-linecap="round"/>
+    <rect x="452" y="150" width="90" height="5" rx="2.5" fill="#818CF8" fill-opacity="0.85"/>
+    <rect x="452" y="160" width="112" height="5" rx="2.5" fill="#94A3B8" fill-opacity="0.6"/>
+    <rect x="452" y="170" width="64" height="5" rx="2.5" fill="#34D399" fill-opacity="0.8"/>
+
+    <!-- Mobile bottom-sheet file preview card peek -->
+    <rect x="441" y="192" width="139" height="32" rx="10" fill="#1E293B" stroke="#38BDF8" stroke-opacity="0.4" stroke-width="1"/>
+    <path d="M453 205L449 208L453 211" stroke="#7DD3FC" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M461 205L465 208L461 211" stroke="#7DD3FC" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="474" y="205" width="72" height="6" rx="3" fill="#E2E8F0" fill-opacity="0.82"/>
+    <rect x="556" y="204" width="14" height="8" rx="4" fill="#2563EB" fill-opacity="0.45"/>
+
+    <!-- Mobile bottom composer capsule with send button -->
+    <rect x="441" y="233" width="139" height="24" rx="12" fill="#0F172A" stroke="#334155" stroke-width="1"/>
+    <rect x="453" y="242" width="72" height="6" rx="3" fill="#475569"/>
+    <circle cx="567" cy="245" r="8" fill="#2563EB"/>
+    <path d="M567 248.5V241.5M567 241.5L564 244.5M567 241.5L570 244.5" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- Home indicator bar -->
+    <rect x="491" y="263" width="40" height="3.5" rx="1.75" fill="#475569"/>
+  </g>
+</svg>

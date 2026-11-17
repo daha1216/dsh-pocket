@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="500" viewBox="0 0 880 500" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="880" y2="500" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B0F17"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+    <linearGradient id="qrGlow" x1="254" y1="158" x2="366" y2="270" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#38BDF8" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#2563EB" stop-opacity="0.1"/>
+    </linearGradient>
+  </defs>
+
+  <style>
+    .t { font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+  </style>
+
+  <!-- Canvas background -->
+  <rect width="880" height="500" rx="20" fill="url(#bg)"/>
+
+  <!-- DSH Settings Modal R28 container -->
+  <rect x="24" y="20" width="832" height="460" rx="28" fill="#141821" stroke="#334155" stroke-opacity="0.7" stroke-width="1"/>
+  <line x1="216" y1="20" x2="216" y2="480" stroke="#262D3D" stroke-width="1"/>
+
+  <!-- Left Sidebar -->
+  <text x="44" y="54" class="t" fill="#94A3B8" font-size="12" font-weight="500">设置</text>
+
+  <g fill="#94A3B8" font-size="13" font-weight="400" class="t">
+    <rect x="36" y="72" width="164" height="34" rx="10" fill="transparent"/>
+    <circle cx="52" cy="89" r="5" stroke="#64748B" stroke-width="1.5"/>
+    <text x="66" y="94">通用设置</text>
+
+    <!-- Active item: 手机访问 -->
+    <rect x="36" y="112" width="164" height="36" rx="10" fill="#1E293B" stroke="#3B82F6" stroke-opacity="0.55" stroke-width="1"/>
+    <rect x="47" y="122" width="10" height="16" rx="2.5" stroke="#60A5FA" stroke-width="1.5"/>
+    <line x1="50" y1="135" x2="54" y2="135" stroke="#60A5FA" stroke-width="1.5" stroke-linecap="round"/>
+    <text x="66" y="135" fill="#F8FAFC" font-weight="500">手机访问</text>
+
+    <rect x="36" y="156" width="164" height="34" rx="10" fill="transparent"/>
+    <rect x="47" y="167" width="11" height="11" rx="2.5" stroke="#64748B" stroke-width="1.5"/>
+    <text x="66" y="178">模型</text>
+
+    <rect x="36" y="196" width="164" height="34" rx="10" fill="transparent"/>
+    <path d="M48 213H57M52.5 208.5V217.5" stroke="#64748B" stroke-width="1.5" stroke-linecap="round"/>
+    <text x="66" y="218">插件</text>
+  </g>
+
+  <!-- Right Pane: Header -->
+  <text x="240" y="54" class="t" fill="#F8FAFC" font-size="17" font-weight="500">手机访问</text>
+  <text x="240" y="72" class="t" fill="#94A3B8" font-size="11.5" font-weight="400">扫码一步免密配对 · 跨重启持久登录 · 自配固定域名</text>
+
+  <!-- Status Chips -->
+  <rect x="598" y="40" width="114" height="24" rx="12" fill="#064E3B" fill-opacity="0.55" stroke="#10B981" stroke-opacity="0.45" stroke-width="0.75"/>
+  <circle cx="611" cy="52" r="3.5" fill="#10B981"/>
+  <text x="621" y="56" class="t" fill="#A7F3D0" font-size="11" font-weight="500">局域网 · 已开启</text>
+
+  <rect x="720" y="40" width="114" height="24" rx="12" fill="#1E3A8A" fill-opacity="0.5" stroke="#3B82F6" stroke-opacity="0.5" stroke-width="0.75"/>
+  <circle cx="733" cy="52" r="3.5" fill="#38BDF8"/>
+  <text x="743" y="56" class="t" fill="#BAE6FD" font-size="11" font-weight="500">公网 · 已连接</text>
+
+  <!-- Card 1: Connection Hub Card (R20 + 0.5px stroke) -->
+  <rect x="240" y="88" width="594" height="172" rx="20" fill="#1A202C" stroke="#334155" stroke-opacity="0.75" stroke-width="0.75"/>
+
+  <!-- Segmented Control (R12 outer + 4px pad + R8 inner) -->
+  <rect x="256" y="102" width="236" height="34" rx="12" fill="#0F172A" stroke="#334155" stroke-opacity="0.6" stroke-width="0.75"/>
+  <rect x="260" y="106" width="114" height="26" rx="8" fill="#1E293B" stroke="#475569" stroke-opacity="0.5" stroke-width="0.75"/>
+  <text x="278" y="123" class="t" fill="#F8FAFC" font-size="12" font-weight="500">📶 局域网访问</text>
+  <text x="392" y="123" class="t" fill="#94A3B8" font-size="12" font-weight="400">🌐 公网固定域名</text>
+
+  <!-- One-step Pairing Pill -->
+  <rect x="688" y="106" width="130" height="26" rx="13" fill="#1E3A8A" fill-opacity="0.45" stroke="#3B82F6" stroke-opacity="0.5" stroke-width="0.75"/>
+  <text x="700" y="123" class="t" fill="#93C5FD" font-size="11" font-weight="500">✨ 扫码免输密一步直连</text>
+
+  <!-- QR Box -->
+  <rect x="256" y="148" width="96" height="96" rx="14" fill="#FFFFFF" stroke="url(#qrGlow)" stroke-width="2"/>
+  <rect x="266" y="158" width="22" height="22" rx="3" stroke="#0F172A" stroke-width="3.5"/>
+  <rect x="273" y="165" width="8" height="8" rx="1" fill="#0F172A"/>
+  <rect x="320" y="158" width="22" height="22" rx="3" stroke="#0F172A" stroke-width="3.5"/>
+  <rect x="327" y="165" width="8" height="8" rx="1" fill="#0F172A"/>
+  <rect x="266" y="212" width="22" height="22" rx="3" stroke="#0F172A" stroke-width="3.5"/>
+  <rect x="273" y="219" width="8" height="8" rx="1" fill="#0F172A"/>
+  <!-- QR modules -->
+  <rect x="295" y="160" width="8" height="8" fill="#2563EB"/>
+  <rect x="307" y="160" width="7" height="14" fill="#0F172A"/>
+  <rect x="295" y="174" width="8" height="14" fill="#0F172A"/>
+  <rect x="266" y="188" width="12" height="8" fill="#0F172A"/>
+  <rect x="284" y="188" width="18" height="8" fill="#2563EB"/>
+  <rect x="308" y="188" width="12" height="14" fill="#0F172A"/>
+  <rect x="326" y="188" width="16" height="8" fill="#0F172A"/>
+  <rect x="294" y="204" width="10" height="12" fill="#0F172A"/>
+  <rect x="310" y="208" width="18" height="8" fill="#2563EB"/>
+  <rect x="294" y="224" width="18" height="10" fill="#0F172A"/>
+  <rect x="320" y="224" width="22" height="10" fill="#0F172A"/>
+
+  <!-- Right side of QR -->
+  <text x="368" y="166" class="t" fill="#F8FAFC" font-size="14" font-weight="500">http://192.168.31.18:3081</text>
+  <text x="368" y="186" class="t" fill="#94A3B8" font-size="12" font-weight="400">手机连接同一 Wi-Fi 后用相机扫码，无需输密码</text>
+  <rect x="368" y="196" width="212" height="22" rx="11" fill="#0F172A" stroke="#334155" stroke-width="0.75"/>
+  <circle cx="381" cy="207" r="3" fill="#38BDF8"/>
+  <text x="390" y="211" class="t" fill="#CBD5E1" font-size="11">单次配对票据 · 82s 后自动续期</text>
+
+  <rect x="368" y="226" width="92" height="24" rx="8" fill="#2563EB"/>
+  <text x="383" y="242" class="t" fill="#FFFFFF" font-size="11.5" font-weight="500">刷新配对码</text>
+  <rect x="468" y="226" width="84" height="24" rx="8" fill="#0F172A" stroke="#334155" stroke-width="0.75"/>
+  <text x="485" y="242" class="t" fill="#E2E8F0" font-size="11.5" font-weight="500">复制链接</text>
+
+  <!-- Card 2: Authorized Devices Card -->
+  <rect x="240" y="272" width="594" height="122" rx="20" fill="#1A202C" stroke="#334155" stroke-opacity="0.75" stroke-width="0.75"/>
+  <text x="256" y="297" class="t" fill="#F8FAFC" font-size="13.5" font-weight="500">已授权设备 (2)</text>
+  <rect x="748" y="280" width="70" height="24" rx="8" fill="#7F1D1D" fill-opacity="0.35" stroke="#EF4444" stroke-opacity="0.4" stroke-width="0.75"/>
+  <text x="760" y="296" class="t" fill="#FCA5A5" font-size="11" font-weight="500">全部移除</text>
+
+  <!-- Device 1 -->
+  <rect x="256" y="310" width="562" height="36" rx="12" fill="#0F172A" fill-opacity="0.7" stroke="#262D3D" stroke-width="0.75"/>
+  <circle cx="274" cy="328" r="4" fill="#10B981"/>
+  <text x="288" y="332" class="t" fill="#F8FAFC" font-size="12.5" font-weight="500">iPhone · Safari (iOS 18)</text>
+  <rect x="454" y="318" width="118" height="20" rx="10" fill="#064E3B" fill-opacity="0.5"/>
+  <text x="464" y="332" class="t" fill="#6EE7B7" font-size="10.5">局域网 · 当前在线</text>
+  <rect x="706" y="316" width="46" height="24" rx="8" fill="#1E293B"/>
+  <text x="717" y="332" class="t" fill="#CBD5E1" font-size="11">改名</text>
+  <rect x="758" y="316" width="48" height="24" rx="8" fill="#7F1D1D" fill-opacity="0.4"/>
+  <text x="770" y="332" class="t" fill="#FCA5A5" font-size="11">移除</text>
+
+  <!-- Device 2 -->
+  <rect x="256" y="352" width="562" height="34" rx="12" fill="#0F172A" fill-opacity="0.45" stroke="#262D3D" stroke-width="0.75"/>
+  <circle cx="274" cy="369" r="3.5" fill="#64748B"/>
+  <text x="288" y="373" class="t" fill="#E2E8F0" font-size="12.5" font-weight="400">iPad · Safari</text>
+  <rect x="454" y="359" width="132" height="20" rx="10" fill="#1E3A8A" fill-opacity="0.4"/>
+  <text x="464" y="373" class="t" fill="#93C5FD" font-size="10.5">公网 · 12 分钟前活跃</text>
+  <rect x="706" y="357" width="46" height="24" rx="8" fill="#1E293B"/>
+  <text x="717" y="373" class="t" fill="#CBD5E1" font-size="11">改名</text>
+  <rect x="758" y="357" width="48" height="24" rx="8" fill="#7F1D1D" fill-opacity="0.4"/>
+  <text x="770" y="373" class="t" fill="#FCA5A5" font-size="11">移除</text>
+
+  <!-- Card 3: Mobile Prefs Peek -->
+  <rect x="240" y="406" width="594" height="62" rx="20" fill="#1A202C" stroke="#334155" stroke-opacity="0.75" stroke-width="0.75"/>
+  <text x="256" y="431" class="t" fill="#F8FAFC" font-size="13.5" font-weight="500">手机端显示偏好</text>
+  <text x="256" y="451" class="t" fill="#94A3B8" font-size="11.5">聊天字号 · 15px &nbsp;&nbsp;|&nbsp;&nbsp; 代码文件底部预览抽屉 · 已开启 &nbsp;&nbsp;|&nbsp;&nbsp; 右边栏 · 已开启</text>
+
+  <!-- Switch ON indicator -->
+  <rect x="780" y="426" width="38" height="22" rx="11" fill="#2563EB"/>
+  <circle cx="807" cy="437" r="8" fill="#FFFFFF"/>
+</svg>

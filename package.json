@@ -1,7 +1,7 @@
 {
   "name": "dsh-pocket",
   "description": "把 DeepSeek Harness 装进你的口袋：一个包、一个设置页，手机扫码即同步访问电脑上的 DSH（局域网 + 公网，实时同屏）。",
-  "icon": "assets/icon.png",
+  "icon": "assets/icon.svg",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -9,6 +9,7 @@
       "default": "./lib/index.js"
     },
     "./client": "./client/client.js",
+    "./icon": "./assets/icon.svg",
     "./locale/*.json": "./locale/*.json",
     "./package.json": "./package.json"
   },
@@ -16,6 +17,7 @@
     "lib",
     "client",
     "assets",
+    "docs",
     "locale",
     "cordis.patch.yml",
     "README.md",
@@ -23,7 +25,9 @@
     "NOTICE.md"
   ],
   "scripts": {
+    "build": "node client/build.mjs",
     "build:client": "node client/build.mjs",
+    "typecheck": "tsc --noEmit",
     "release": "semantic-release",
     "test": "node --test --test-timeout=30000 \"test/*.test.js\"",
     "test:local": "node --test --test-timeout=300000 \"test/local/*.test.js\"",
@@ -31,11 +35,7 @@
     "anchors:gen": "node scripts/gen-anchors.mjs",
     "test:anchors": "node --test --test-timeout=300000 test/local/anchors-live.test.js",
     "anchors:report": "node scripts/anchor-report.mjs",
-    "anchors:rename": "node scripts/anchor-rename.mjs",
-    "upstream:check": "node scripts/upstream.mjs check",
-    "upstream:apply": "node scripts/upstream.mjs apply",
-    "upstream:regen": "node scripts/upstream.mjs regen",
-    "upstream:bump": "node scripts/upstream.mjs bump"
+    "anchors:rename": "node scripts/anchor-rename.mjs"
   },
   "dependencies": {
     "qrcode": "^1.5.4"
@@ -43,8 +43,11 @@
   "devDependencies": {
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/git": "^10.0.1",
+    "@types/node": "^22.20.5",
+    "@types/react": "^18.3.31",
     "esbuild": "^0.25.9",
     "semantic-release": "^24.2.9",
+    "typescript": "^5.9.3",
     "ws": "^8.18.0"
   },
   "peerDependencies": {
@@ -91,7 +94,7 @@
     "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
-  "version": "3.1.0",
+  "version": "4.0.0",
   "allowScripts": {
     "esbuild@0.25.12": true
   }

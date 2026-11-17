@@ -1,3 +1,40 @@
+## [4.0.0](https://github.com/daha1216/dsh-pocket/compare/v3.1.0...v4.0.0) (2026-11-18)
+
+> 全面迈入独立演进的 v4.0 架构：一步扫码免密配对、跨重启持久设备凭证与单台实时断流吊销、Named Tunnel 守护自愈与环境预检、64 MiB Worker 异步会话瘦身、桌面零开销双分包，以及对齐 DSH 官方 R20/0.5px 设计系统的 TSX 设置页与移动端代码预览抽屉。
+
+### ⚠ BREAKING CHANGES
+
+* **收敛为单一宿主 UI 移动入口并退役过渡模块：** 移除手机端独立轻量视图（`/__dsh-pocket/lite` 及 `lib/lite/**`）与本地使用探针（`lib/probe.mjs`、`client/mobile/probe-core.mjs`、`scripts/probe-report.mjs` 及 `probe.*` RPC 端点），集中精力打磨宿主桌面界面的移动端深度适配体验。
+* **退役上游快照与补丁队列机制：** 移除 `vendor/dsh-web-mobile`、`patches/` 与 `upstream:*` 构建期打补丁脚本；`client/mobile/**` 正式转为第一公民化的 TypeScript/TSX 源码自主维护（完整保留 `mexiaosqwq/dsh-web-mobile` MIT 版权归属声明于 `NOTICE.md` 与 `client/mobile/LICENSE.dsh-web-mobile`）。
+* **DSH `0.2.2+` 双代宿主与客户端全面兼容：** 宿主侧同时支持 `webserver/entry-url` 同步事件令牌捕获与 `auth: 'required'` + `Peer` 路由准入，客户端同时支持 `window.__ModuleLoader__.load` 的 `meta.stylesheets` 样式托管与 `require.async` 懒加载分包，并完整保留对 DSH `0.2.0–0.2.1` 的向下兼容回退。
+
+### Security & Authentication
+
+* **扫码免输密一步直连（`?pair=<ticket>`）：** 本机设置页自动签发 90 秒有效期的 128-bit CSPRNG 一次性配对票据（到期前 10 秒自动平滑续期），手机相机扫码即完成配对并签发持久凭证，全程免输密码、免电脑二次点击确认，单次核销即焚。
+* **跨重启持久登录与设备级独立管理（`lib/auth/device-store.mjs`）：** 扫码或备用密码登录均签发 1 年期 `HttpOnly` 设备凭证 Cookie（`dsh_pocket_device`），磁盘 `$DSH_HOME/dsh-pocket/devices.json` 仅持久化 `sha256` 密钥哈希并以 `crypto.timingSafeEqual` 恒定时间校验，配合持久化 `cookie-secret` 实现 `dsh web` 重启与升级后手机免重新登录。
+* **严格通道隔离与活跃 WebSocket 即时吊销：** `局域网` 与 `公网` 配对票据及设备凭证严格单向隔离（局域网授权设备绝不可访问公网隧道）；升级握手追踪每台设备的实时 Socket，设置页点击单台「移除」或「全部移除」时立即调用 `socket.destroy()` 毫秒级切断连接；轮换备用密码时仅精准吊销该通道以密码登录的会话，保留扫码配对设备。
+* **全链路敏感参数脱敏：** `?pair=` 与 `?token=` 在兑换后立即 `302` 剥离，并同步清洗转发 URL、`Referer` 请求头与访问日志。
+
+### Availability & Diagnostics
+
+* **Named Tunnel Supervisor 自动自愈与熔断：** `lib/service.mjs` 内置命名隧道守护器，`cloudflared` 意外退出时进入 `reconnecting` 状态并按 `[2s, 5s, 15s, 30s, 60s]`（±10% 抖动）指数退避自动重连；遇到 Token 鉴权错误或连续快速退出时触发熔断进入 `error` 状态，手动停止隧道立即取消待定重试。
+* **主动环境预检（`lib/preflight.mjs`）：** 自动检测活跃的 Clash / Mihomo / sing-box / v2ray 等 TUN 虚拟网卡、Shell 代理环境变量及本地代理端口偏移，在设置页公网面板提前给出可操作的排障提示与本地目标服务地址一键复制。
+* **零 I/O 鉴权心跳端点（`/__dsh-pocket/ping`）：** 在访问控制栅栏之后提供 `< 0.2ms` 的 `204 No Content` 探活响应，既消除移动端链路看门狗对重型 `pocket.status` RPC 的轮询开销，又能让被吊销设备第一时间感知 `401` 断权。
+
+### Performance
+
+* **64 MiB `worker_threads` 异步会话列表瘦身（`lib/proxy/slim-worker.mjs`）：** 将 `SESSION_LIST_SLIM_MAX` 从 16 MiB 提升至 64 MiB（覆盖 2,800+ 会话重度用户），并将解压、`JSON.parse`、字段裁剪与 Brotli/Gzip 重压缩全部卸载至带 `.unref()` 的复用 Worker 线程，彻底消除宿主事件循环阻塞。
+* **`< 1ms` 瘦身缓存命中组装：** 缓存条目按 `"rpcId":` 切分为 `prefixBuf` + `suffixBuf` 并采用异步压缩，修复此前缓存命中仍同步重跑多 MB `JSON.stringify` + `brotliCompressSync` 导致的 CPU 尖峰。
+* **无锁异步配置存储（`lib/settings.mjs`）：** 移除阻塞主线程的 `Atomics.wait` 自旋休眠，改为按 `DSH_HOME` 隔离的 `O(1)` 内存快照读取 + 后台串行原子落盘（`tmp` + `rename` + `.bak` 兜底）。
+* **双分包桌面零开销懒加载（`client.js` + `client.mobile.js`）：** 纯桌面宽屏环境不加载移动端适配分包，仅在窄屏、触屏设备或窗口缩窄时按需动态拉取 `client.mobile.js`；移动端启动期将 3 次独立 `pocket.status` 合并为单次调用，并移除「回到底部」胶囊的 `1200ms` 轮询定时器。
+
+### UI & UX
+
+* **官方 DSH R20/0.5px 设计系统设置页重构（`client/settings/*.tsx`）：** 完全移除 `@deepseek-ai/dsh-client-ui-primitives` 运行时依赖，采用自有可访问原语与内联矢量图标重写为四大渐进披露分区（双通道连接中枢、已授权设备管理、手机端显示偏好、可折叠高级选项与维护），严格遵循 R8/R12/R16/R20/R28 圆角阶梯、`0.5px` 细描边、`corner-shape: round`、粗指针 `16px` 输入防缩放下限与独立叶子计时器 `<ElapsedTimer />`。
+* **移动端工作区代码文件底部预览抽屉（`file-preview-sheet.ts`）：** 点击会话中的文件路径直接滑出带行号的代码预览面板（支持 128 KB 截断保护、全文一键复制、二进制识别，接入 `panel-stack.ts` 支持 `Escape` 与系统返回键关闭）。
+* **折叠屏与 iPad `auto` 模式动态切换修复：** 修复 `auto` 模式下宽屏启动提前返回导致折叠/分屏后无法激活移动布局及平板快捷设置失效的问题。
+* **现代化深浅色双语代理页面与插件商店资产：** 重写 `lib/proxy/pages.mjs`（自动跟随系统深色模式与 `Accept-Language`，右上角单按钮切换中英）；新增纯矢量 `assets/icon.svg`、`docs/preview.svg`（640×300 无文本纯图形）与 `docs/DETAIL*.md`。
+
 ## [3.1.0](https://github.com/daha1216/dsh-pocket/compare/v3.0.12...v3.1.0) (2026-11-17)
 
 > 按终局评审做完 Phase 0 止血与 Phase 1 五项重构，并补上手机端轻量视图（路线 A）、使用探针与三处真机故障修复。
